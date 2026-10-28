@@ -908,13 +908,14 @@ def test_capture_external_clock(run: record.Run):
             bits = lc.channel(lc.read_segment(seg), 0, seg.samples)
             runs.append({"level": level, "samples": seg.samples, "ones": sum(bits), "done_s": round(done_s, 4),
                          "start_uncertainty_ns": seg.start_uncertainty_ns})
-            assert seg.samples == samples and bits == [level] * samples, f"{runs[-1]}"
-            assert done_s >= samples / made.hz * 0.9, f"done after {done_s:.4f} s: {samples} edges of {made.hz:.0f} Hz"
+            n = cfg.samples                                        # as the probe answered (its own rounding)
+            assert seg.samples == n and bits == [level] * n, f"{runs[-1]}"
+            assert done_s >= n / made.hz * 0.9, f"done after {done_s:.4f} s: {n} edges of {made.hz:.0f} Hz"
         if qualifier:
             gpio.set([(data, gpio.OUTPUT_LOW)])
-            lc.configure(rate=CLOCK_HZ, samples=samples, options={"clock": (0, 0, 1, 1)})
+            cfg = lc.configure(rate=CLOCK_HZ, samples=samples, options={"clock": (0, 0, 1, 1)})
             lc.start()
-            time.sleep(samples / made.hz * 3)
+            time.sleep(cfg.samples / made.hz * 3)
             st = lc.status()
             runs.append({"qualifier": "low", "state": st.state, "write_pos": st.write_pos})
             assert st.state == capture.STATE["capturing"] and st.write_pos == 0, f"{runs[-1]}"
@@ -923,7 +924,7 @@ def test_capture_external_clock(run: record.Run):
             lc.start()
             (seg,) = lc.wait(timeout=5.0)
             runs.append({"qualifier": "high", "samples": seg.samples})
-            assert seg.samples == samples, f"{runs[-1]}"
+            assert seg.samples == cfg.samples, f"{runs[-1]}"
         if capture.DATA_FORMAT["state_timed"] in formats:
             cfg = lc.configure(rate=CLOCK_HZ, samples=samples, data_format=capture.DATA_FORMAT["state_timed"],
                                options={"clock": (0, 0, None, 0)})
