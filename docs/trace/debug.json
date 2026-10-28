@@ -1,5 +1,5 @@
 {
- "spec_commit": "cb3067c",
+ "spec_commit": "320c626",
  "units": {
   "debug:pre:1": {
    "text": "| `oep.wire.rvswd` | 1 | 2 線の RVSWD で RI",
@@ -67,7 +67,6 @@
    "verify": [
     "tests/test_trace_debug.py::test_every_wire_offers_attach_detach_connections_and_declares_scan_in_its_ops[esp32-v003]",
     "tests/test_trace_debug.py::test_max_connections_is_a_u8_and_one_when_not_declared",
-    "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.wire.rvswd-extra29-True]",
     "tests/test_trace_debug.py::test_each_target_request_picks_its_connection_by_the_number_it_starts_with",
     "tests/test_virtual_bench_rules_2026_10_06.py::test_c21_riscv_dm_ops_are_gated_on_the_ops_tag",
     "tests/test_trace_debug.py::test_a_minimal_wire_needs_no_scan_no_second_connection_and_no_console"
@@ -83,7 +82,8 @@
     "tests/test_conformance_registered_ops.py::test_every_minimal_mandatory_op_is_checked[oep.wire.rvswd-17]",
     "tests/test_conformance_registered_ops.py::test_every_minimal_mandatory_op_is_checked[oep.wire.swio-18]",
     "tests/test_conformance_registered_ops.py::test_every_minimal_mandatory_op_is_checked[oep.wire.swd-19]",
-    "tests/test_conformance_oep_declarations.py::test_scan_is_optional_and_the_mechanisms_are_counted"
+    "tests/test_conformance_oep_declarations.py::test_scan_is_optional_and_the_mechanisms_are_counted",
+    "tests/test_wire_hold.py::test_holds_needs_no_lock_and_tells_each_ports_rest"
    ],
    "mutants": [
     "tests/test_conformance_oep_declarations.py::test_standard_declaration_mutants_fail[missing_attach]",
@@ -114,7 +114,8 @@
     "tests/test_debug_attach.py::test_resource_ids_go_past_u16_and_are_never_reused",
     "tests/test_conformance_attach.py::test_standard_attach_and_console_contracts_pass"
    ],
-   "note": "attach makes a common §2 connection (u32, never reused) that target ops name first"
+   "note": "attach makes a common §2 connection (u32, never reused) that target ops name first",
+   "mutants": []
   },
   "debug:0:4": {
    "text": "- ピンの役と、速さの選び方;",
@@ -146,7 +147,8 @@
     "tests/test_trace_debug.py::test_attach_writes_only_the_setup_dmactive_and_the_scratch_and_gives_progbuf0_back[oep.wire.rvswd]",
     "tests/test_trace_debug.py::test_attach_writes_only_the_setup_dmactive_and_the_scratch_and_gives_progbuf0_back[oep.wire.swio]"
    ],
-   "note": "bench rvswd / swio attach: before the PROGBUF0 check only the set-up pair and dmactive are written (VirtualTarget.bringup); the line speed of these writes is not modelled"
+   "note": "bench rvswd / swio attach: before the PROGBUF0 check only the set-up pair and dmactive are written (VirtualTarget.bringup); the line speed of these writes is not modelled",
+   "mutants": []
   },
   "debug:1:2": {
    "text": "1. その wire の節が定める wake / 設定の手順（たとえば wake",
@@ -154,7 +156,8 @@
     "tests/test_trace_debug.py::test_attach_writes_only_the_setup_dmactive_and_the_scratch_and_gives_progbuf0_back[oep.wire.rvswd]",
     "tests/test_trace_debug.py::test_attach_writes_only_the_setup_dmactive_and_the_scratch_and_gives_progbuf0_back[oep.wire.swio]"
    ],
-   "note": "the set-up pair DMI 0x7E / 0x7D (twice) is the first write of attach and scan; the slowest-speed part is line-level, not modelled"
+   "note": "the set-up pair DMI 0x7E / 0x7D (twice) is the first write of attach and scan; the slowest-speed part is line-level, not modelled",
+   "mutants": []
   },
   "debug:1:3": {
    "text": "2. connection が RISC-V の DM に届く wire での ",
@@ -163,7 +166,8 @@
     "tests/test_trace_debug.py::test_attach_writes_only_the_setup_dmactive_and_the_scratch_and_gives_progbuf0_back[oep.wire.swio]",
     "tests/test_trace_debug.py::test_scan_leaves_the_target_as_it_was"
    ],
-   "note": "dmactive written only when DMCONTROL does not read it (haltreq 0), never when it reads 1; scan leaves it set"
+   "note": "dmactive written only when DMCONTROL does not read it (haltreq 0), never when it reads 1; scan leaves it set",
+   "mutants": []
   },
   "debug:1:4": {
    "text": "- **速さの確かめ方.** 可変速のwireは読むだけで速さを選ぶ。scrat",
@@ -172,7 +176,8 @@
     "tests/test_trace_debug.py::test_attach_writes_only_the_setup_dmactive_and_the_scratch_and_gives_progbuf0_back[oep.wire.swio]",
     "tests/test_trace_debug.py::test_attach_fails_when_the_scratch_does_not_read_back_and_makes_nothing"
    ],
-   "note": "PROGBUF0 read before, written, given back; ABSTRACTAUTO = 0 the only other check write; no read-back -> attach completed failed, no connection"
+   "note": "PROGBUF0 read before, written, given back; ABSTRACTAUTO = 0 the only other check write; no read-back -> attach completed failed, no connection",
+   "mutants": []
   },
   "debug:1:5": {
    "text": "- 速さを確かめる前に、これ以外のものを target に書かない（速さの合わな",
@@ -181,7 +186,8 @@
     "tests/test_trace_debug.py::test_attach_writes_only_the_setup_dmactive_and_the_scratch_and_gives_progbuf0_back[oep.wire.swio]",
     "tests/test_trace_debug.py::test_scan_leaves_the_target_as_it_was"
    ],
-   "note": "nothing but the allowed writes changes the bench target in attach / scan"
+   "note": "nothing but the allowed writes changes the bench target in attach / scan",
+   "mutants": []
   },
   "debug:1:6": {
    "text": "- **ピンの組**: describe の channel_group / r",
@@ -224,19 +230,10 @@
   "debug:1:8": {
    "text": "- 宣言が許さない組は unsupported。使用中のピンを含む組は unav",
    "verify": [
-    "tests/test_virtual_bench_rules_2026_10_02.py::test_p2_5_an_undeclared_combination_is_unsupported_scan_with_its_index",
-    "tests/test_virtual_bench_rules_2026_10_02.py::test_p2_1_a_named_output_idle_channel_is_unavailable_cause_5_and_the_channel",
-    "tests/test_config_disable.py::test_scan_refuses_a_named_pair_with_a_disabled_channel",
-    "tests/test_debug_attach.py::test_a_scan_over_a_live_pair_is_refused_and_leaves_its_settings",
-    "tests/test_conformance_scan.py::test_finite_scan_contracts_pass"
+    "tests/test_settings.py::test_an_attach_or_a_scan_naming_a_disabled_channel"
    ],
-   "mutants": [
-    "tests/test_conformance_scan.py::test_scan_checker_detects_independent_faults[touch_refusal-UNDECLARED-LATE]",
-    "tests/test_conformance_scan.py::test_scan_checker_detects_independent_faults[allocate-SINGLE]",
-    "tests/test_conformance_scan.py::test_scan_checker_detects_independent_faults[retain_pin-SINGLE]",
-    "tests/test_conformance_scan_options.py::test_scan_option_checker_detects_independent_faults[release_leaked-IDLE-1]"
-   ],
-   "note": "undeclared pair unsupported (TLV 0x40 index), held cause 1, disabled/output idle cause 5, all before any effect; tried pins freed, no connection"
+   "mutants": [],
+   "note": ""
   },
   "debug:1:9": {
    "text": "- **時間**: attach と scan の応答は、max_op_ms（c",
@@ -247,7 +244,8 @@
     "tests/test_conformance_wire_options.py::test_wire_options_contracts_pass",
     "tests/test_review5_debug_wires.py::test_the_wait_after_an_attach_reset_shares_max_op_ms_with_the_hold"
    ],
-   "note": "attach / scan answer within max_op_ms (the host's argument time); an attach nothing answers is completed failed, status line"
+   "note": "attach / scan answer within max_op_ms (the host's argument time); an attach nothing answers is completed failed, status line",
+   "mutants": []
   },
   "debug:1:10": {
    "text": "- **同時に持てる接続の数**: wire のインターフェースは descri",
@@ -271,7 +269,8 @@
     "tests/test_trace_debug.py::test_debug_vector_through_the_client[rvswd_attach__busy_pins_never_join_or_evict]",
     "tests/test_target_parts.py::test_find_reset_line_closes_a_live_connection_on_its_pins_first"
    ],
-   "note": "attach always makes a new connection; pins of a live one -> unavailable cause 1 with the channel, the live one unchanged"
+   "note": "attach always makes a new connection; pins of a live one -> unavailable cause 1 with the channel, the live one unchanged",
+   "mutants": []
   },
   "debug:1:12": {
    "text": "- 接続数の上限を超える attach は unavailable（cause ",
@@ -280,7 +279,8 @@
     "tests/test_trace_debug.py::test_max_connections_is_a_u8_and_one_when_not_declared",
     "tests/test_conformance_attach.py::test_standard_attach_and_console_contracts_pass"
    ],
-   "note": "past max_connections -> unavailable cause 2, no connection closed to make room"
+   "note": "past max_connections -> unavailable cause 2, no connection closed to make room",
+   "mutants": []
   },
   "debug:1:13": {
    "text": "- 失敗したattachはconnectionを作らず、既存のprobe資源を変",
@@ -303,7 +303,8 @@
     "tests/test_trace_debug.py::test_debug_vector_through_the_client[rvswd_attach__a_second_target_on_separate_pins]",
     "tests/test_trace_debug.py::test_swio_declares_its_fixed_speed_as_min_clock_hz_and_attach_runs_at_it"
    ],
-   "note": "speed_hz is the speed the probe chose, as attach and connections report it"
+   "note": "speed_hz is the speed the probe chose, as attach and connections report it",
+   "mutants": []
   },
   "debug:1:15": {
    "text": "- max_speed（u32 Hz）: probeはこれを超える速さを選ばない",
@@ -354,7 +355,8 @@
     "tests/test_debug_attach.py::test_the_client_reads_connections",
     "tests/test_conformance_wire_options.py::test_rvswd_target_id_may_be_attached"
    ],
-   "note": "TLV 0x10 target_id scheme(u8) value only when read; scheme 1's 0 / 0xFFFFFFFF are none (not reported)"
+   "note": "TLV 0x10 target_id scheme(u8) value only when read; scheme 1's 0 / 0xFFFFFFFF are none (not reported)",
+   "mutants": []
   },
   "debug:2:1": {
    "text": "- **reset後のDMの待ち**: attachのreset線またはrese",
@@ -384,7 +386,8 @@
     "tests/test_request_tails.py::test_detach_has_no_tlv_any_more",
     "tests/test_trace_common.py::test_a_connection_closes_on_detach_session_end_lost_line_or_failed_cleanup_streams_first[detach]"
    ],
-   "note": "detach frees the connection and its streams; no force TLV (its old tag is an unknown TLV)"
+   "note": "detach frees the connection and its streams; no force TLV (its old tag is an unknown TLV)",
+   "mutants": []
   },
   "debug:2:3": {
    "text": "- **target の reset では connection を閉じない**",
@@ -516,7 +519,59 @@
    "note": "closing a connection (detach, end, cut) neither resets nor resumes the hart"
   },
   "debug:2:11": {
-   "text": "- connection が閉じたら、その組の channel は core §",
+   "text": "- **閉じた後の線（保持）**: 線切れ以外で connection が閉じた",
+   "verify": [
+    "tests/test_wire_hold.py::test_the_halt_survives_another_session_by_default"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "debug:2:12": {
+   "text": "- **OFF にできる**: その wire の設定の項目 `hold.{}`",
+   "verify": [
+    "tests/test_wire_hold.py::test_wire_hold_off_lets_the_lines_go_and_the_target_loses_its_halt"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "debug:2:13": {
+   "text": "- **保持は空きの状態の一種**（core §8）: 保持中のピンは、どのイン",
+   "verify": [
+    "tests/test_wire_hold.py::test_the_halt_survives_another_session_by_default"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "debug:2:14": {
+   "text": "- **保持が終わるとき**: ピンが取られた、`hold.{}` が偽になった",
+   "verify": [
+    "tests/test_wire_hold.py::test_the_halt_survives_another_session_by_default",
+    "tests/test_wire_hold.py::test_wire_hold_off_lets_the_lines_go_and_the_target_loses_its_halt",
+    "tests/test_wire_hold.py::test_an_idle_item_on_a_held_pin_ends_the_hold",
+    "tests/test_wire_hold.py::test_a_restart_ends_the_hold"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "debug:2:15": {
+   "text": "- **線切れでは保持しない**: 線切れで閉じたら、上の「線が応えない間の線」",
+   "verify": [
+    "tests/test_wire_hold.py::test_a_lost_line_is_not_held"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "debug:2:16": {
+   "text": "- **見える**: 保持中の口は holds（§2.2）で読める。保持は co",
+   "verify": [
+    "tests/test_wire_hold.py::test_the_halt_survives_another_session_by_default",
+    "tests/test_wire_hold.py::test_holds_needs_no_lock_and_tells_each_ports_rest"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "debug:2:17": {
+   "text": "- connection が閉じたら、その組の channel は上の保持になる",
    "verify": [
     "tests/test_virtual_bench_rules_2026_10_02.py::test_p2_1_the_pins_of_a_closed_connection_go_back_to_their_idle_state",
     "tests/test_conformance_wire_options.py::test_wire_options_contracts_pass",
@@ -527,7 +582,9 @@
     "tests/test_trace_debug.py::test_every_way_a_connection_closes_frees_its_pins[lapse]",
     "tests/test_trace_debug.py::test_every_way_a_connection_closes_frees_its_pins[force]",
     "tests/test_trace_debug.py::test_every_way_a_connection_closes_frees_its_pins[lost]",
-    "tests/test_trace_debug.py::test_every_way_a_connection_closes_frees_its_pins[cleanup]"
+    "tests/test_trace_debug.py::test_every_way_a_connection_closes_frees_its_pins[cleanup]",
+    "tests/test_wire_hold.py::test_the_halt_survives_another_session_by_default",
+    "tests/test_wire_hold.py::test_a_lost_line_is_not_held"
    ],
    "mutants": [
     "tests/test_conformance_wire_options.py::test_wire_options_checker_detects_independent_faults[close_left_drive-DETACH-IDLE]",
@@ -535,12 +592,20 @@
    ],
    "note": "a closed connection's channels go back to the core §8 free state (idle_clock drive stops); review 3: every close path (detach, end, lease expiry, force, lost line, failed cleanup) frees the bench pins"
   },
-  "debug:2:12": {
+  "debug:2:18": {
+   "text": "| `hold.{}` | bool | channel（その口の SWDIO）",
+   "verify": [
+    "tests/test_wire_hold.py::test_wire_hold_off_lets_the_lines_go_and_the_target_loses_its_halt"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "debug:2:19": {
    "text": "| 出来事 | connection | hart | ストリーム |",
    "excluded": "informative: the header row of the connection / hart state table (its rows are traced below)"
   },
-  "debug:2:13": {
-   "text": "| detach / end / lease 切れ / force | 解放 |",
+  "debug:2:20": {
+   "text": "| detach / end / lease 切れ / force | 解放（線",
    "verify": [
     "tests/test_trace_debug.py::test_closing_a_connection_or_ending_the_session_leaves_a_halted_hart_halted[detach]",
     "tests/test_trace_debug.py::test_closing_a_connection_or_ending_the_session_leaves_a_halted_hart_halted[end]",
@@ -550,18 +615,20 @@
     "tests/test_no_resume.py::test_a_session_end_of_any_kind_releases_what_it_created[lapse]",
     "tests/test_no_resume.py::test_a_session_end_of_any_kind_releases_what_it_created[force]",
     "tests/test_conformance_wire_options.py::test_wire_options_contracts_pass",
-    "tests/test_trace_debug.py::test_detach_answers_nothing_and_releases_the_connection_and_its_streams"
+    "tests/test_trace_debug.py::test_detach_answers_nothing_and_releases_the_connection_and_its_streams",
+    "tests/test_wire_hold.py::test_the_halt_survives_another_session_by_default"
    ],
    "mutants": [
     "tests/test_conformance_wire_options.py::test_wire_options_checker_detects_independent_faults[close_resumed-DETACH-HALTED]"
    ],
    "note": "detach / end / lease expiry / force: connection and streams released, the hart untouched"
   },
-  "debug:2:14": {
-   "text": "| 線切れ | 解放 | — | 解放 |",
+  "debug:2:21": {
+   "text": "| 線切れ | 解放（線は空き） | — | 解放 |",
    "verify": [
     "tests/test_conformance_cut.py::test_cut_contracts_pass",
-    "tests/test_trace_common.py::test_a_connection_closes_on_detach_session_end_lost_line_or_failed_cleanup_streams_first[lost]"
+    "tests/test_trace_common.py::test_a_connection_closes_on_detach_session_end_lost_line_or_failed_cleanup_streams_first[lost]",
+    "tests/test_wire_hold.py::test_a_lost_line_is_not_held"
    ],
    "mutants": [
     "tests/test_conformance_cut.py::test_cut_checker_detects_independent_faults[stream_kept-CONSOLE]",
@@ -569,7 +636,7 @@
    ],
    "note": "a lost line releases the connection and its streams"
   },
-  "debug:2:15": {
+  "debug:2:22": {
    "text": "| targetの自己リセット | 保つ | targetの状態 | 保つ（ma",
    "verify": [
     "tests/test_conformance_dmseq.py::test_logical_probe_dmseq_contracts_pass",
@@ -581,15 +648,16 @@
    ],
    "note": "a target's own reset keeps the connection and stream (bytes, queue) and adds a restart mark where marks are offered"
   },
-  "debug:2:16": {
+  "debug:2:23": {
    "text": "| probeの再起動 | 無効 | 手順ではreset/resumeしない。ピ",
    "verify": [
     "tests/test_trace_debug.py::test_a_probe_restart_drops_the_connections_and_leaves_the_hart_as_it_was",
     "tests/test_virtual_bench_serve_reboot.py::test_reboot_resets_what_a_probe_loses_and_applies_the_saved_settings_again"
    ],
-   "note": "a probe restart: connections and streams invalid, the hart neither reset nor resumed by the procedure"
+   "note": "a probe restart: connections and streams invalid, the hart neither reset nor resumed by the procedure",
+   "mutants": []
   },
-  "debug:2:17": {
+  "debug:2:24": {
    "text": "- （参考、安全）セッションの終わり（end、lease の期限切れ、force",
    "verify": [
     "tests/test_trace_debug.py::test_closing_a_connection_or_ending_the_session_leaves_a_halted_hart_halted[end]",
@@ -611,7 +679,8 @@
     "tests/test_trace_debug.py::test_target_ops_need_a_connection_and_every_op_but_connections_the_lock",
     "tests/test_trace_debug.py::test_connections_fill_each_page_as_far_as_one_frame_holds"
    ],
-   "note": "live connections in creation order from first, a frame at a time, more = 1 while some are left; lock-free; review 3: a page with more = 1 has no room for the next entry"
+   "note": "live connections in creation order from first, a frame at a time, more = 1 while some are left; lock-free; review 3: a page with more = 1 has no room for the next entry",
+   "mutants": []
   },
   "debug:2.1:2": {
    "text": "- tidはattach時に読んだtarget_id（無ければtid_schem",
@@ -630,6 +699,23 @@
    ],
    "note": "tid is attach's target_id (none: scheme 0 len 0); swd scheme 2 len 4 DPIDR; selected_target TLV per entry with a targetsel; review 3: tid stays the value read at attach; review 4: the attach checker and its fixture now carry swd's scheme 2 / DPIDR too"
   },
+  "debug:2.2:1": {
+   "text": "- そのインターフェースが §2 の保持で駆動している口を、first 番目から",
+   "verify": [
+    "tests/test_wire_hold.py::test_holds_needs_no_lock_and_tells_each_ports_rest"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "debug:2.2:2": {
+   "text": "- swio は swclk = 0xFFFF。rest は rvswd ではそ",
+   "verify": [
+    "tests/test_wire_hold.py::test_holds_needs_no_lock_and_tells_each_ports_rest",
+    "tests/test_wire_hold.py::test_a_swio_hold_has_no_swclk_and_rest_0"
+   ],
+   "mutants": [],
+   "note": ""
+  },
   "debug:3:1": {
    "text": "| 0x10 | scan | count(u8)、count × (swdio",
    "verify": [
@@ -637,7 +723,8 @@
     "tests/test_trace_debug.py::test_debug_vector_through_the_client[rvswd_scan__one_combination_listed_and_found]",
     "tests/test_conformance_scan.py::test_finite_scan_contracts_pass"
    ],
-   "note": "scan 0x10 count pairs [TLV] -> tried count (kind swdio swclk id) [TLV], needs the lock, optional"
+   "note": "scan 0x10 count pairs [TLV] -> tried count (kind swdio swclk id) [TLV], needs the lock, optional",
+   "mutants": []
   },
   "debug:3:2": {
    "text": "| 0x11 | attach | method(u8: 0 止めない / 1 ",
@@ -648,7 +735,8 @@
     "tests/test_conformance_attach.py::test_standard_attach_and_console_contracts_pass",
     "tests/test_review5_debug_wires.py::test_the_attach_checker_runs_on_the_selected_registry"
    ],
-   "note": "attach 0x11 method swdio swclk max_speed [TLV] -> connection id flags speed_hz [TLV], mandatory"
+   "note": "attach 0x11 method swdio swclk max_speed [TLV] -> connection id flags speed_hz [TLV], mandatory",
+   "mutants": []
   },
   "debug:3:3": {
    "text": "| 0x12 | detach | connection(u32)、[TLV] ",
@@ -656,7 +744,8 @@
     "tests/test_trace_debug.py::test_detach_answers_nothing_and_releases_the_connection_and_its_streams",
     "tests/test_request_tails.py::test_detach_has_no_tlv_any_more"
    ],
-   "note": "detach 0x12 connection(u32) [TLV] -> nothing, needs the lock, mandatory"
+   "note": "detach 0x12 connection(u32) [TLV] -> nothing, needs the lock, mandatory",
+   "mutants": []
   },
   "debug:3:4": {
    "text": "| 0x13 | connections | first(u8) | §2.1 ",
@@ -665,9 +754,23 @@
     "tests/test_trace_debug.py::test_debug_vector_through_the_client[rvswd_connections__one_connection_with_a_target_id]",
     "tests/test_trace_debug.py::test_target_ops_need_a_connection_and_every_op_but_connections_the_lock"
    ],
-   "note": "connections 0x13 first(u8) -> §2.1, lock-free, mandatory"
+   "note": "connections 0x13 first(u8) -> §2.1, lock-free, mandatory",
+   "mutants": []
   },
   "debug:3:5": {
+   "text": "| 0x14 | holds | first(u8) | §2.2 | 不要 |",
+   "verify": [
+    "tests/test_wire_hold.py::test_every_wire_answers_holds_without_the_lock[esp32-v003]",
+    "tests/test_wire_hold.py::test_every_wire_answers_holds_without_the_lock[esp32-v003-64]",
+    "tests/test_wire_hold.py::test_every_wire_answers_holds_without_the_lock[p4-bench]",
+    "tests/test_wire_hold.py::test_every_wire_answers_holds_without_the_lock[p4-x035]",
+    "tests/test_wire_hold.py::test_every_wire_answers_holds_without_the_lock[rp2350-pins]",
+    "tests/test_wire_hold.py::test_holds_needs_no_lock_and_tells_each_ports_rest"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "debug:3:6": {
    "text": "- swio の組は swclk = 0xFFFF（1 本の線。swclk ≠ ",
    "verify": [
     "tests/test_virtual_bench_rules_2026_10_02.py::test_swio_swclk_other_than_0xffff_is_an_undeclared_combination_in_scan_and_attach",
@@ -681,7 +784,7 @@
    ],
    "note": "swio pairs have swclk 0xFFFF (else unsupported); scan kind 1, id DMSTATUS in scan and attach"
   },
-  "debug:3:6": {
+  "debug:3:7": {
    "text": "- method 0は必須。method 1はdescribeのfeatures",
    "verify": [
     "tests/test_trace_debug.py::test_method_1_only_where_attach_halt_is_declared_and_method_0_leaves_the_hart_running",
@@ -691,9 +794,10 @@
     "tests/test_review8_debug.py::test_attach_model_offers_method_1_only_with_attach_halt",
     "tests/test_review8_debug.py::test_attach_checker_refuses_method_1_offered_without_attach_halt"
    ],
-   "note": "method 0 mandatory; method 1 only with features attach_halt, success with hart 0 halted; others unsupported 0x00"
+   "note": "method 0 mandatory; method 1 only with features attach_halt, success with hart 0 halted; others unsupported 0x00",
+   "mutants": []
   },
-  "debug:3:7": {
+  "debug:3:8": {
    "text": "- **attach の flags**（3 線共通、registry の `a",
    "verify": [
     "tests/test_conformance_wire_options.py::test_wire_options_contracts_pass",
@@ -710,25 +814,27 @@
    ],
    "note": "attach flags: bit0 havereset acknowledged, bit1 0, bit2 dormant woken (swd), bit3 halt seen; dpc TLV only with bit3"
   },
-  "debug:3:8": {
+  "debug:3:9": {
    "text": "- **wake / 設定の手順**（§1 の 1）: rvswd: wake ",
    "verify": [
     "tests/test_trace_debug.py::test_attach_writes_only_the_setup_dmactive_and_the_scratch_and_gives_progbuf0_back[oep.wire.rvswd]",
     "tests/test_trace_debug.py::test_attach_writes_only_the_setup_dmactive_and_the_scratch_and_gives_progbuf0_back[oep.wire.swio]",
     "tests/test_trace_debug.py::test_scan_leaves_the_target_as_it_was"
    ],
-   "note": "rvswd / swio set-up writes DMI 0x7E then 0x7D = 0x5AA50400, the pair twice, in attach and scan (the wake pattern and frames are line-level, not modelled)"
+   "note": "rvswd / swio set-up writes DMI 0x7E then 0x7D = 0x5AA50400, the pair twice, in attach and scan (the wake pattern and frames are line-level, not modelled)",
+   "mutants": []
   },
-  "debug:3:9": {
+  "debug:3:10": {
    "text": "- **scratch**（§1）: PROGBUF0（DMI 0x20）。それ",
    "verify": [
     "tests/test_trace_debug.py::test_attach_writes_only_the_setup_dmactive_and_the_scratch_and_gives_progbuf0_back[oep.wire.rvswd]",
     "tests/test_trace_debug.py::test_attach_writes_only_the_setup_dmactive_and_the_scratch_and_gives_progbuf0_back[oep.wire.swio]",
     "tests/test_trace_debug.py::test_attach_fails_when_the_scratch_does_not_read_back_and_makes_nothing"
    ],
-   "note": "scratch PROGBUF0 (0x20) freed by ABSTRACTAUTO (0x18) = 0, which is not given back"
+   "note": "scratch PROGBUF0 (0x20) freed by ABSTRACTAUTO (0x18) = 0, which is not given back",
+   "mutants": []
   },
-  "debug:3:10": {
+  "debug:3:11": {
    "text": "- **reset をかけながらの attach**: TLV 0x04 res",
    "verify": [
     "tests/test_interfaces.py::test_attach_under_reset_is_the_reset_tlv",
@@ -746,27 +852,20 @@
    ],
    "note": "TLV 0x05 reset (channel hold_ms): held, released, method 1 halts early (bit3 + dpc), method 0 no halt; not offered -> unsupported 0x85; review 4: a reset line that is one of the attach's own pins is unavailable cause 1 before the reset"
   },
-  "debug:3:11": {
+  "debug:3:12": {
    "text": "- resetの線を離した後の待ちは§2。DMが答えてから速さを確認する（§1）",
    "verify": [
-    "tests/test_conformance_wire_options.py::test_wire_options_contracts_pass",
-    "tests/test_console_queue_and_reset_settle.py::test_attach_with_the_reset_tlv_waits_too_and_makes_nothing_when_it_fails",
-    "tests/test_trace_debug.py::test_attach_under_reset_checks_the_speed_only_after_the_dm_answered"
+    "tests/test_trace_debug.py::test_reset_channels_and_a_named_reset_line",
+    "tests/test_settings.py::test_an_attach_reset_on_a_disabled_channel"
    ],
-   "mutants": [
-    "tests/test_conformance_wire_options.py::test_wire_options_checker_detects_independent_faults[read_before_release-RESET-1]",
-    "tests/test_conformance_wire_options.py::test_wire_options_checker_detects_independent_faults[read_fast-RESET-1]",
-    "tests/test_conformance_wire_options.py::test_wire_options_checker_detects_independent_faults[no_retry-RESET-RECOVER]"
-   ],
-   "note": "after the reset line's release the DM is waited for (§2) before the speed check; review 3: no scratch write before the DM answered after the release; the check follows the wait"
+   "mutants": [],
+   "note": ""
   },
-  "debug:3:12": {
+  "debug:3:13": {
    "text": "- **reset の線に既定は無い**: どの線を reset に使うかは h",
    "verify": [
     "tests/test_virtual_bench_spec.py::test_no_default_reset_line_only_the_declared_channels",
     "tests/test_virtual_bench_rules_2026_10_06.py::test_attach_reset_tlv_on_an_output_idle_channel_is_unavailable_and_runs_nothing",
-    "tests/test_config.py::test_reset_channels_and_a_named_reset_line",
-    "tests/test_config_disable.py::test_an_attach_reset_on_a_disabled_channel",
     "tests/test_target_parts.py::test_attach_after_gpio_reset_pipelines_release_with_attach_and_retries",
     "tests/test_conformance_wire_options.py::test_wire_options_contracts_pass",
     "tests/test_review4_debug.py::test_the_attach_checker_requires_the_reset_line_to_be_declared_as_role_3"
@@ -779,7 +878,7 @@
    ],
    "note": "no default reset line: role 3 channels only (else unsupported 0x85), held ones unavailable; open-drain low, released free; review 4: the attach fixture declares its reset line as role 3 and the checker requires it"
   },
-  "debug:3:13": {
+  "debug:3:14": {
    "text": "| scan | 0x01 | max_speed | u32 Hz（無ければそ",
    "verify": [
     "tests/test_conformance_scan_options.py::test_scan_options_contracts_pass",
@@ -794,7 +893,7 @@
    ],
    "note": "scan TLV 0x01 max_speed u32 (absent: the slowest)"
   },
-  "debug:3:14": {
+  "debug:3:15": {
    "text": "| scan、attach（swd だけ） | 0x02 | targetsel",
    "verify": [
     "tests/test_conformance_scan_options.py::test_scan_options_contracts_pass",
@@ -809,7 +908,7 @@
    ],
    "note": "scan TLV 0x04 idle_clock (rvswd only): the rest levels during the scan"
   },
-  "debug:3:15": {
+  "debug:3:16": {
    "text": "| scan、attach（rvswd だけ） | 0x03 | idle_cl",
    "verify": [
     "tests/test_virtual_bench_spec.py::test_idle_clock_is_rvswd_s",
@@ -818,7 +917,12 @@
     "tests/test_request_tails.py::test_attach_idle_clock_value_left_unused_is_unsupported_with_the_tag_as_received[False]",
     "tests/test_conformance_wire_options.py::test_wire_options_contracts_pass",
     "tests/test_trace_debug.py::test_the_client_sends_rvswd_idle_clock_critical_and_nothing_for_the_default",
-    "tests/test_review5_debug_wires.py::test_the_bench_checks_every_copy_of_a_wire_tlv"
+    "tests/test_review5_debug_wires.py::test_the_bench_checks_every_copy_of_a_wire_tlv",
+    "tests/test_rvswd_rest.py::test_the_rest_comes_from_the_target_id_unless_the_host_says[l103-from-id]",
+    "tests/test_rvswd_rest.py::test_the_rest_comes_from_the_target_id_unless_the_host_says[other-from-id]",
+    "tests/test_rvswd_rest.py::test_the_rest_comes_from_the_target_id_unless_the_host_says[no-id-high]",
+    "tests/test_rvswd_rest.py::test_the_rest_comes_from_the_target_id_unless_the_host_says[host-high-wins]",
+    "tests/test_rvswd_rest.py::test_the_rest_comes_from_the_target_id_unless_the_host_says[host-low-wins]"
    ],
    "mutants": [
     "tests/test_conformance_wire_options.py::test_wire_options_checker_detects_independent_faults[clock_high-IDLE-1]",
@@ -827,7 +931,7 @@
    ],
    "note": "attach TLV 0x04 idle_clock (rvswd only, critical): 0 high (default), 1 low; other values unsupported; review 3: the client sends 0x84 critical with 0 / 1, nothing for the default high"
   },
-  "debug:3:16": {
+  "debug:3:17": {
    "text": "| attach | 0x04 | reset | channel(u16)、h",
    "verify": [
     "tests/test_request_tails.py::test_attach_reset_of_another_length_is_malformed_either_way[True]",
@@ -836,18 +940,20 @@
     "tests/test_review5_debug_wires.py::test_the_bench_checks_every_copy_of_a_wire_tlv",
     "tests/test_review5_debug_wires.py::test_the_attach_checker_runs_on_the_selected_registry"
    ],
-   "note": "attach TLV 0x05 reset: channel(u16) hold_ms(u16), another length malformed"
+   "note": "attach TLV 0x05 reset: channel(u16) hold_ms(u16), another length malformed",
+   "mutants": []
   },
-  "debug:3:17": {
+  "debug:3:18": {
    "text": "| attach の応答 | 0x01 | target_id | scheme",
    "verify": [
     "tests/test_interfaces.py::test_attach_reports_the_target_id_when_the_probe_reads_one",
     "tests/test_trace_debug.py::test_target_id_scheme_1_is_not_reported_for_its_none_values[56493569-True]"
    ],
-   "note": "attach answer TLV 0x10 target_id scheme(u8) value"
+   "note": "attach answer TLV 0x10 target_id scheme(u8) value",
+   "mutants": []
   },
-  "debug:3:18": {
-   "text": "| attach の応答 | 0x02 | dpc | u32。任意。hart",
+  "debug:3:19": {
+   "text": "| attach の応答 | 0x02 | dpc | u32。任意。hart ",
    "verify": [
     "tests/test_target_parts.py::test_find_reset_line_hits_the_vector_skips_disallowed_and_retries_failures",
     "tests/test_trace_debug.py::test_method_1_only_where_attach_halt_is_declared_and_method_0_leaves_the_hart_running",
@@ -857,6 +963,31 @@
     "tests/test_conformance_wire_options.py::test_wire_options_checker_detects_independent_faults[bad_dpc-RESET-HALT-2]"
    ],
    "note": "attach answer TLV 0x11 dpc u32 only with flags bit3"
+  },
+  "debug:3:20": {
+   "text": "| attach の応答（rvswd だけ） | 0x03 | idle_clo",
+   "verify": [
+    "tests/test_rvswd_rest.py::test_the_rest_comes_from_the_target_id_unless_the_host_says[l103-from-id]",
+    "tests/test_rvswd_rest.py::test_the_rest_comes_from_the_target_id_unless_the_host_says[other-from-id]",
+    "tests/test_rvswd_rest.py::test_the_rest_comes_from_the_target_id_unless_the_host_says[no-id-high]",
+    "tests/test_rvswd_rest.py::test_the_rest_comes_from_the_target_id_unless_the_host_says[host-high-wins]",
+    "tests/test_rvswd_rest.py::test_the_rest_comes_from_the_target_id_unless_the_host_says[host-low-wins]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "debug:3:21": {
+   "text": "| connections の応答（rvswd だけ） | 0x02 | idl",
+   "verify": [
+    "tests/test_rvswd_rest.py::test_the_rest_comes_from_the_target_id_unless_the_host_says[l103-from-id]",
+    "tests/test_rvswd_rest.py::test_the_rest_comes_from_the_target_id_unless_the_host_says[other-from-id]",
+    "tests/test_rvswd_rest.py::test_the_rest_comes_from_the_target_id_unless_the_host_says[no-id-high]",
+    "tests/test_rvswd_rest.py::test_the_rest_comes_from_the_target_id_unless_the_host_says[host-high-wins]",
+    "tests/test_rvswd_rest.py::test_the_rest_comes_from_the_target_id_unless_the_host_says[host-low-wins]",
+    "tests/test_wire_hold.py::test_holds_needs_no_lock_and_tells_each_ports_rest"
+   ],
+   "mutants": [],
+   "note": ""
   },
   "debug:3.1:1": {
    "text": "- probe が送るビット: probe は、その区切りを始める SWCLK ",
@@ -920,7 +1051,8 @@
     "tests/test_trace_debug.py::test_attach_fails_when_the_scratch_does_not_read_back_and_makes_nothing",
     "tests/test_trace_debug.py::test_attach_writes_only_the_setup_dmactive_and_the_scratch_and_gives_progbuf0_back[oep.wire.rvswd]"
    ],
-   "note": "review 3 (exclusion overturned): a DMI write has no acknowledgement - the bench's write that does not take is found only by the scratch read-back, and attach fails; the parity bit itself is line-level, not modelled"
+   "note": "review 3 (exclusion overturned): a DMI write has no acknowledgement - the bench's write that does not take is found only by the scratch read-back, and attach fails; the parity bit itself is line-level, not modelled",
+   "mutants": []
   },
   "debug:3.1:16": {
    "text": "- **休ませ方**（フレームの間）: idle_clock 0 では 2 本と",
@@ -935,39 +1067,103 @@
    "note": "between frames: idle_clock 0 both high, idle_clock 1 SWCLK low / SWDIO high, probe-driven (the logical rest levels)"
   },
   "debug:3.1:17": {
+   "text": "- **休ませ方の決め方**: 必要な休ませ方は target の系統で決まり、",
+   "verify": [
+    "tests/test_rvswd_rest.py::test_the_rest_comes_from_the_target_id_unless_the_host_says[l103-from-id]",
+    "tests/test_rvswd_rest.py::test_the_rest_comes_from_the_target_id_unless_the_host_says[other-from-id]",
+    "tests/test_rvswd_rest.py::test_the_rest_comes_from_the_target_id_unless_the_host_says[no-id-high]",
+    "tests/test_rvswd_rest.py::test_the_rest_comes_from_the_target_id_unless_the_host_says[host-high-wins]",
+    "tests/test_rvswd_rest.py::test_the_rest_comes_from_the_target_id_unless_the_host_says[host-low-wins]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "debug:3.1:18": {
+   "text": "1. attach の idle_clock の TLV（host の明示）があ",
+   "verify": [
+    "tests/test_rvswd_rest.py::test_the_rest_comes_from_the_target_id_unless_the_host_says[l103-from-id]",
+    "tests/test_rvswd_rest.py::test_the_rest_comes_from_the_target_id_unless_the_host_says[other-from-id]",
+    "tests/test_rvswd_rest.py::test_the_rest_comes_from_the_target_id_unless_the_host_says[no-id-high]",
+    "tests/test_rvswd_rest.py::test_the_rest_comes_from_the_target_id_unless_the_host_says[host-high-wins]",
+    "tests/test_rvswd_rest.py::test_the_rest_comes_from_the_target_id_unless_the_host_says[host-low-wins]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "debug:3.1:19": {
+   "text": "2. 無ければ、`oep.wire.rvswd` の設定の項目 `rest.{}",
+   "verify": [
+    "tests/test_rvswd_rest.py::test_the_setting_turns_the_automatic_rest_off_per_port[setting-high-off]",
+    "tests/test_rvswd_rest.py::test_the_setting_turns_the_automatic_rest_off_per_port[setting-low-off]",
+    "tests/test_rvswd_rest.py::test_the_setting_turns_the_automatic_rest_off_per_port[setting-auto]",
+    "tests/test_rvswd_rest.py::test_the_setting_turns_the_automatic_rest_off_per_port[tlv-over-setting]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "debug:3.1:20": {
+   "text": "3. 無いか auto なら自動の判定: probe は wake から tar",
+   "verify": [
+    "tests/test_rvswd_rest.py::test_the_rest_comes_from_the_target_id_unless_the_host_says[l103-from-id]",
+    "tests/test_rvswd_rest.py::test_the_rest_comes_from_the_target_id_unless_the_host_says[other-from-id]",
+    "tests/test_rvswd_rest.py::test_the_rest_comes_from_the_target_id_unless_the_host_says[no-id-high]",
+    "tests/test_rvswd_rest.py::test_the_rest_comes_from_the_target_id_unless_the_host_says[host-high-wins]",
+    "tests/test_rvswd_rest.py::test_the_rest_comes_from_the_target_id_unless_the_host_says[host-low-wins]",
+    "tests/test_rvswd_rest.py::test_the_setting_turns_the_automatic_rest_off_per_port[setting-high-off]",
+    "tests/test_rvswd_rest.py::test_the_setting_turns_the_automatic_rest_off_per_port[setting-low-off]",
+    "tests/test_rvswd_rest.py::test_the_setting_turns_the_automatic_rest_off_per_port[setting-auto]",
+    "tests/test_rvswd_rest.py::test_the_setting_turns_the_automatic_rest_off_per_port[tlv-over-setting]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "debug:3.1:21": {
+   "text": "| `rest.{}` | enum: 0 `auto`、1 `high`、2 ",
+   "verify": [
+    "tests/test_rvswd_rest.py::test_the_setting_turns_the_automatic_rest_off_per_port[setting-high-off]",
+    "tests/test_rvswd_rest.py::test_the_setting_turns_the_automatic_rest_off_per_port[setting-low-off]",
+    "tests/test_rvswd_rest.py::test_the_setting_turns_the_automatic_rest_off_per_port[setting-auto]",
+    "tests/test_rvswd_rest.py::test_the_setting_turns_the_automatic_rest_off_per_port[tlv-over-setting]",
+    "tests/test_rvswd_rest.py::test_an_unused_rest_mode_is_refused"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "debug:3.1:22": {
    "text": "1. 2 本とも high に駆動して 20 µs 以上;",
    "excluded": "behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - RVSWD's bit slots, conditions, frame fields, turnaround, wake pattern and T"
   },
-  "debug:3.1:18": {
+  "debug:3.1:23": {
    "text": "2. SWDIO high のビットの区切り 100 個;",
    "excluded": "behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - RVSWD's bit slots, conditions, frame fields, turnaround, wake pattern and T"
   },
-  "debug:3.1:19": {
+  "debug:3.1:24": {
    "text": "3. SWDIO low のビットの区切り 1 個;",
    "excluded": "behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - RVSWD's bit slots, conditions, frame fields, turnaround, wake pattern and T"
   },
-  "debug:3.1:20": {
+  "debug:3.1:25": {
    "text": "4. SWCLK が high の間に SWDIO が上がる（STOP の条件）",
    "excluded": "behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - RVSWD's bit slots, conditions, frame fields, turnaround, wake pattern and T"
   },
-  "debug:3.1:21": {
+  "debug:3.1:26": {
    "text": "5. 最初のフレームの前に、2 本とも high を 20 µs 以上。",
    "excluded": "behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - RVSWD's bit slots, conditions, frame fields, turnaround, wake pattern and T"
   },
-  "debug:3.1:22": {
+  "debug:3.1:27": {
    "text": "- **wake / 設定の手順の速さ**: T は 500 ns 以上、かつ ",
    "excluded": "behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - RVSWD's bit slots, conditions, frame fields, turnaround, wake pattern and T"
   },
-  "debug:3.1:23": {
+  "debug:3.1:28": {
    "text": "- **速さの選び方**: probe は、DMSTATUS の読み出しで、一番",
    "excluded": "behaviour this repository cannot model: the choice of T by DMSTATUS reads from the slowest - the bench's attach records its DMI writes (VirtualTarget.bringup) but has no line speeds to step through, and the attach / scan checkers leave 'attach speed/scratch algorithms' unchecked"
   },
-  "debug:3.1:24": {
+  "debug:3.1:29": {
    "text": "- wake のパターンは、target のデバッグの口だけでなく target",
    "verify": [
     "tests/test_trace_debug.py::test_on_a_connection_the_probe_sends_no_set_up_and_changes_nothing_by_itself[p4-bench-oep.wire.rvswd]"
    ],
-   "note": "review 3 (exclusion overturned): the rule it applies - the set-up (wake pattern included) is not sent again on a connection by the probe's own retries - is asserted on the bench's rvswd bringup log; that the wake resets a target is target-side"
+   "note": "review 3 (exclusion overturned): the rule it applies - the set-up (wake pattern included) is not sent again on a connection by the probe's own retries - is asserted on the bench's rvswd bringup log; that the wake resets a target is target-side",
+   "mutants": []
   },
   "debug:3.2:1": {
    "text": "| 区切り | low | その後の high |",
@@ -1024,7 +1220,8 @@
     "tests/test_review5_debug_targets.py::test_riscv_dm_declared_names_halt_and_resume_as_optional",
     "tests/test_review5_debug_targets.py::test_debug_checker_takes_a_dmi_only_fixture"
    ],
-   "note": "dmi mandatory; halt resume reset read/write_block run step optional in ops (absent -> unknown_operation)"
+   "note": "dmi mandatory; halt resume reset read/write_block run step optional in ops (absent -> unknown_operation)",
+   "mutants": []
   },
   "debug:4:2": {
    "text": "- **dmi 以外の op（高水準の op）の範囲**: RV32 の har",
@@ -1171,7 +1368,8 @@
     "tests/test_trace_debug.py::test_every_op_but_connections_needs_the_lock_and_two_connections_share_one_lock",
     "tests/test_conformance_registered_ops.py::test_every_minimal_mandatory_op_is_checked[oep.target.riscv-dm-16]"
    ],
-   "note": "dmi 0x10 n steps -> done status nvals values [TLV], mandatory; lock required (session_required), mandatory (a fn without dmi fails)"
+   "note": "dmi 0x10 n steps -> done status nvals values [TLV], mandatory; lock required (session_required), mandatory (a fn without dmi fails)",
+   "mutants": []
   },
   "debug:4:12": {
    "text": "| 0x11 | halt | — | status(u8)、[TLV] | 必",
@@ -1184,7 +1382,8 @@
     "tests/test_review5_debug_targets.py::test_riscv_dm_declared_names_halt_and_resume_as_optional",
     "tests/test_review5_debug_targets.py::test_debug_checker_takes_a_dmi_only_fixture"
    ],
-   "note": "halt 0x11 -> status [TLV], optional; lock required; optional (absent from ops: unknown_operation)"
+   "note": "halt 0x11 -> status [TLV], optional; lock required; optional (absent from ops: unknown_operation)",
+   "mutants": []
   },
   "debug:4:13": {
    "text": "| 0x12 | resume | — | status(u8)、[TLV] |",
@@ -1196,7 +1395,8 @@
     "tests/test_review5_debug_targets.py::test_riscv_dm_declared_names_halt_and_resume_as_optional",
     "tests/test_review5_debug_targets.py::test_debug_checker_takes_a_dmi_only_fixture"
    ],
-   "note": "resume 0x12 -> status [TLV], optional; lock required; optional (absent from ops: unknown_operation)"
+   "note": "resume 0x12 -> status [TLV], optional; lock required; optional (absent from ops: unknown_operation)",
+   "mutants": []
   },
   "debug:4:14": {
    "text": "| 0x13 | reset | mode(u8)、[TLV] | status",
@@ -1207,7 +1407,8 @@
     "tests/test_trace_debug.py::test_every_op_but_connections_needs_the_lock_and_two_connections_share_one_lock",
     "tests/test_trace_debug.py::test_each_optional_riscv_dm_op_is_unknown_operation_once_ops_leaves_it_out[reset]"
    ],
-   "note": "reset 0x13 mode [TLV] -> status flags pc [TLV]; lock required; optional (absent from ops: unknown_operation)"
+   "note": "reset 0x13 mode [TLV] -> status flags pc [TLV]; lock required; optional (absent from ops: unknown_operation)",
+   "mutants": []
   },
   "debug:4:15": {
    "text": "| 0x14 | read_block | address(u32)、count",
@@ -1219,7 +1420,8 @@
     "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.target.riscv-dm-extra1-False]",
     "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.target.riscv-dm-extra3-True]"
    ],
-   "note": "read_block 0x14 address count -> done status words; lock required; optional, paired with write_block"
+   "note": "read_block 0x14 address count -> done status words; lock required; optional, paired with write_block",
+   "mutants": []
   },
   "debug:4:16": {
    "text": "| 0x15 | write_block | address(u32)、coun",
@@ -1232,7 +1434,8 @@
     "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.target.riscv-dm-extra2-False]",
     "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.target.riscv-dm-extra3-True]"
    ],
-   "note": "write_block 0x15 address count words -> done status; lock required; optional, paired with read_block"
+   "note": "write_block 0x15 address count words -> done status; lock required; optional, paired with read_block",
+   "mutants": []
   },
   "debug:4:17": {
    "text": "| 0x16 | run | pc(u32)、timeout_ms(u32)、n",
@@ -1244,7 +1447,8 @@
     "tests/test_trace_debug.py::test_each_optional_riscv_dm_op_is_unknown_operation_once_ops_leaves_it_out[run]",
     "tests/test_review4_debug.py::test_a_run_whose_answer_would_not_fit_the_route_is_unsupported_before_the_hart_runs"
    ],
-   "note": "run 0x16 pc timeout_ms regs outs -> status stopped dpc elapsed_us nvals values; lock required; optional (absent from ops: unknown_operation); review 4: a run whose answer (11 + 4 x n_out) would not fit is unsupported 0x00 before the hart runs"
+   "note": "run 0x16 pc timeout_ms regs outs -> status stopped dpc elapsed_us nvals values; lock required; optional (absent from ops: unknown_operation); review 4: a run whose answer (11 + 4 x n_out) would not fit is unsupported 0x00 before the hart runs",
+   "mutants": []
   },
   "debug:4:18": {
    "text": "| 0x17 | step | — | status(u8)、moved(u8)",
@@ -1254,7 +1458,8 @@
     "tests/test_trace_debug.py::test_every_op_but_connections_needs_the_lock_and_two_connections_share_one_lock",
     "tests/test_trace_debug.py::test_each_optional_riscv_dm_op_is_unknown_operation_once_ops_leaves_it_out[step]"
    ],
-   "note": "step 0x17 -> status moved dpc_before dpc_after; lock required; optional (absent from ops: unknown_operation)"
+   "note": "step 0x17 -> status moved dpc_before dpc_after; lock required; optional (absent from ops: unknown_operation)",
+   "mutants": []
   },
   "debug:4.1:1": {
    "text": "| 0x01 | 書く | address(u8)、value(u32) | —",
@@ -1273,7 +1478,8 @@
     "tests/test_trace_debug.py::test_each_dmi_step_kind_takes_its_arguments_and_adds_its_value",
     "tests/test_interfaces.py::test_dmi_counts_its_steps_and_polls_return_their_last_value"
    ],
-   "note": "kind 0x02 read address -> the value"
+   "note": "kind 0x02 read address -> the value",
+   "mutants": []
   },
   "debug:4.1:3": {
    "text": "| 0x03 | 読む回数を上限に待つ | address(u8)、mask(u",
@@ -1293,7 +1499,8 @@
     "tests/test_trace_debug.py::test_each_dmi_step_kind_takes_its_arguments_and_adds_its_value",
     "tests/test_conformance_debug.py::test_mandatory_debug_contracts_pass"
    ],
-   "note": "kind 0x04 wait wait_us, no value"
+   "note": "kind 0x04 wait wait_us, no value",
+   "mutants": []
   },
   "debug:4.1:5": {
    "text": "| 0x05 | 時間を上限に待つ | address(u8)、mask(u32",
@@ -1355,7 +1562,8 @@
     "tests/test_conformance_debug.py::test_mandatory_debug_contracts_pass",
     "tests/test_trace_debug.py::test_the_host_waits_max_op_ms_for_run_and_dmi_not_their_own_times"
    ],
-   "note": "wait_us + max_us over max_op_ms unsupported; 0x03 bounded by count; reaching max_op_ms answers timeout at that step"
+   "note": "wait_us + max_us over max_op_ms unsupported; 0x03 bounded by count; reaching max_op_ms answers timeout at that step",
+   "mutants": []
   },
   "debug:4.1:10": {
    "text": "- **同じconnectionのconsole streamを開いているhos",
@@ -1363,7 +1571,8 @@
     "tests/test_trace_debug.py::test_the_client_puts_each_abstract_command_sequence_in_one_dmi_request",
     "tests/test_conformance_debug.py::test_mandatory_debug_contracts_pass"
    ],
-   "note": "the client's abstract command sequences (DATA0, command, wait, DATA0 read) go in one dmi request"
+   "note": "the client's abstract command sequences (DATA0, command, wait, DATA0 read) go in one dmi request",
+   "mutants": []
   },
   "debug:4.1:11": {
    "text": "- **同じ場合、haltreq / haveresetを扱う一連の手順も、待ち",
@@ -1372,7 +1581,8 @@
     "tests/test_conformance_reset.py::test_optional_reset_contracts_pass",
     "tests/test_trace_debug.py::test_the_client_puts_a_haltreq_sequence_in_one_dmi_request"
    ],
-   "note": "a reset-and-halt sequence (haltreq, ndmreset, havereset ack, wait, haltreq clear) in one dmi request"
+   "note": "a reset-and-halt sequence (haltreq, ndmreset, havereset ack, wait, haltreq clear) in one dmi request",
+   "mutants": []
   },
   "debug:4.1:12": {
    "text": "- **やり直してよい群**（[共通部品](oep-if-common.ja.m",
@@ -1437,7 +1647,8 @@
    "verify": [
     "tests/test_interfaces.py::test_ch32_resume_asks_again_while_dpc_has_not_moved"
    ],
-   "note": "(informative) a target needing more is the host's: the client resumes a CH32 again while dpc has not moved"
+   "note": "(informative) a target needing more is the host's: the client resumes a CH32 again while dpc has not moved",
+   "mutants": []
   },
   "debug:4.2:4": {
    "text": "- **step** は dcsr.step を立てて resume を 1 回",
@@ -1488,7 +1699,7 @@
    "note": "mode 0: the hart runs after the reset"
   },
   "debug:4.3:3": {
-   "text": "| 2 | 最初の命令の前で止める（haltreq を保ったまま ndmrese",
+   "text": "| 1 | 最初の命令の前で止める（haltreq を保ったまま ndmrese",
    "verify": [
     "tests/test_target_parts.py::test_reset_halt_and_step_decode",
     "tests/test_conformance_reset.py::test_optional_reset_contracts_pass"
@@ -1620,7 +1831,8 @@
     "tests/test_trace_debug.py::test_regno_is_the_abstract_register_number",
     "tests/test_conformance_run.py::test_optional_run_contracts_pass"
    ],
-   "note": "regno is the abstract register number (a0 = 0x100A)"
+   "note": "regno is the abstract register number (a0 = 0x100A)",
+   "mutants": []
   },
   "debug:4.5:1": {
    "text": "- 語（32 bit）単位。8 / 16 bit のアクセスは dmi の手順で",
@@ -1683,7 +1895,8 @@
     "tests/test_trace_debug.py::test_attach_acknowledges_a_pending_havereset_and_says_so",
     "tests/test_interfaces.py::test_attach_under_reset_is_the_reset_tlv"
    ],
-   "note": "attach acknowledges a pending havereset first (flags bit0)"
+   "note": "attach acknowledges a pending havereset first (flags bit0)",
+   "mutants": []
   },
   "debug:4.6:2": {
    "text": "- **haveresetの自動確認応答**は高水準のopとコンソールの読みで行",
@@ -1710,10 +1923,10 @@
    "verify": [
     "tests/test_target_parts.py::test_swd_scan_and_detach_are_debug_5s_forms",
     "tests/test_conformance_scan.py::test_finite_scan_contracts_pass",
-    "tests/test_trace_debug.py::test_swd_and_arm_adi_ops_need_the_lock_and_connections_does_not",
-    "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.wire.swd-extra31-True]"
+    "tests/test_trace_debug.py::test_swd_and_arm_adi_ops_need_the_lock_and_connections_does_not"
    ],
-   "note": "swd scan 0x10 the same form as §3; lock required; optional (offered or not)"
+   "note": "swd scan 0x10 the same form as §3; lock required; optional (offered or not)",
+   "mutants": []
   },
   "debug:5:2": {
    "text": "| 0x11 | attach | method(u8: 0だけ。ほかはunsu",
@@ -1723,7 +1936,8 @@
     "tests/test_trace_debug.py::test_swd_and_arm_adi_ops_need_the_lock_and_connections_does_not",
     "tests/test_conformance_registered_ops.py::test_every_minimal_mandatory_op_is_checked[oep.wire.swd-17]"
    ],
-   "note": "swd attach 0x11: method 0 only (others unsupported 0x00); lock required; mandatory"
+   "note": "swd attach 0x11: method 0 only (others unsupported 0x00); lock required; mandatory",
+   "mutants": []
   },
   "debug:5:3": {
    "text": "| 0x12 | detach | connection(u32)、[TLV] ",
@@ -1732,7 +1946,8 @@
     "tests/test_trace_debug.py::test_swd_and_arm_adi_ops_need_the_lock_and_connections_does_not",
     "tests/test_conformance_registered_ops.py::test_every_minimal_mandatory_op_is_checked[oep.wire.swd-18]"
    ],
-   "note": "swd detach 0x12 connection(u32); lock required; mandatory"
+   "note": "swd detach 0x12 connection(u32); lock required; mandatory",
+   "mutants": []
   },
   "debug:5:4": {
    "text": "| 0x13 | connections | first(u8) | §2.1 ",
@@ -1742,9 +1957,22 @@
     "tests/test_trace_debug.py::test_swd_and_arm_adi_ops_need_the_lock_and_connections_does_not",
     "tests/test_conformance_registered_ops.py::test_every_minimal_mandatory_op_is_checked[oep.wire.swd-19]"
    ],
-   "note": "swd connections 0x13 first(u8), §2.1; lock-free; mandatory"
+   "note": "swd connections 0x13 first(u8), §2.1; lock-free; mandatory",
+   "mutants": []
   },
   "debug:5:5": {
+   "text": "| 0x14 | holds | first(u8) | §2.2 | 不要 |",
+   "verify": [
+    "tests/test_wire_hold.py::test_every_wire_answers_holds_without_the_lock[esp32-v003]",
+    "tests/test_wire_hold.py::test_every_wire_answers_holds_without_the_lock[esp32-v003-64]",
+    "tests/test_wire_hold.py::test_every_wire_answers_holds_without_the_lock[p4-bench]",
+    "tests/test_wire_hold.py::test_every_wire_answers_holds_without_the_lock[p4-x035]",
+    "tests/test_wire_hold.py::test_every_wire_answers_holds_without_the_lock[rp2350-pins]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "debug:5:6": {
    "text": "- scanのkindは2 = arm-adi。idはscan、attachとも",
    "verify": [
     "tests/test_target_parts.py::test_swd_scan_and_detach_are_debug_5s_forms",
@@ -1756,7 +1984,7 @@
    ],
    "note": "scan kind 2 = arm-adi; id = DPIDR in scan and attach"
   },
-  "debug:5:6": {
+  "debug:5:7": {
    "text": "- scanのTLVは0x01 max_speed、0x02 targetsel",
    "verify": [
     "tests/test_conformance_scan_options.py::test_scan_options_contracts_pass",
@@ -1770,24 +1998,25 @@
    ],
    "note": "scan TLVs 0x01 max_speed, 0x06 targetsel; attach TLVs 0x02 targetsel, 0x05 reset"
   },
-  "debug:5:7": {
+  "debug:5:8": {
    "text": "- **wake / 設定の手順**（§1 の 1）: JTAG から SWD ",
    "excluded": "behaviour this repository cannot model: SWD's JTAG-to-SWD switch, dormant wake and TARGETSEL line sequences - the virtual bench has no swd wire and the logical swd models (wire options, scan options) keep no line sequence ('physical wake' unchecked)"
   },
-  "debug:5:8": {
+  "debug:5:9": {
    "text": "- **速さの確認**: max_speed以下でDPIDRの読みがACK OK",
    "excluded": "behaviour this repository cannot model: SWD's speed check by DPIDR reads with ACK OK and parity - no swd wire on the bench, and the logical swd models have no line speeds or parity ('attach speed/scratch algorithms' unchecked)"
   },
-  "debug:5:9": {
+  "debug:5:10": {
    "text": "- attach は JTAG から SWD への切り替えを試し、答えがなければ",
    "verify": [
     "tests/test_conformance_wire_options.py::test_wire_options_contracts_pass",
     "tests/test_target_parts.py::test_swd_attach_decodes_dpidr_and_dormant",
     "tests/test_trace_debug.py::test_the_host_powers_the_debug_domain_up_with_dp_writes"
    ],
-   "note": "attach wakes from dormant when the switch gets no answer (flags bit2); the host powers up with DP CTRL/STAT writes"
+   "note": "attach wakes from dormant when the switch gets no answer (flags bit2); the host powers up with DP CTRL/STAT writes",
+   "mutants": []
   },
-  "debug:5:10": {
+  "debug:5:11": {
    "text": "- **線と packet**: この wire の線は SWDIO（ピンの役 ",
    "verify": [
     "tests/test_trace_debug.py::test_swds_swdio_is_pin_role_1_and_swclk_pin_role_2"
@@ -1795,22 +2024,23 @@
    "mutants": [],
    "note": "SWDIO pin role 1, SWCLK pin role 2 (registry, the client reads the pair by role); the SWD packets and turnaround are the line's (hardware, not modelled)"
   },
-  "debug:5:11": {
+  "debug:5:12": {
    "text": "- **idle サイクル**: probe は、どの packet の後にも、",
    "excluded": "behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - SWD's idle cycles after each packet"
   },
-  "debug:5:12": {
+  "debug:5:13": {
    "text": "- **休み方**（やり取りの間）: SWDIO は probe が low に",
    "verify": [
     "tests/test_conformance_wire_options.py::test_wire_options_contracts_pass"
    ],
-   "note": "between exchanges SWDIO rests low and SWCLK high, both probe-driven (the logical rest levels)"
+   "note": "between exchanges SWDIO rests low and SWCLK high, both probe-driven (the logical rest levels)",
+   "mutants": []
   },
-  "debug:5:13": {
+  "debug:5:14": {
    "text": "- **probe が線の駆動をやめる前に**（detach などで conne",
    "excluded": "behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - SWD's 8 idle cycles before the probe stops driving"
   },
-  "debug:5:14": {
+  "debug:5:15": {
    "text": "- **targetsel（TLV 0x02、u32）はcriticalで送る*",
    "verify": [
     "tests/test_conformance_wire_options.py::test_wire_options_contracts_pass",
@@ -1823,7 +2053,7 @@
    ],
    "note": "targetsel TLV 0x02 critical, kept by the connection; same pins -> unavailable cause 1 whatever targetsel; scan without it"
   },
-  "debug:5:15": {
+  "debug:5:16": {
    "text": "- swdのconnectionにはコンソールは乗らない。",
    "verify": [
     "tests/test_conformance_attach.py::test_standard_attach_and_console_contracts_pass"
@@ -1855,8 +2085,6 @@
     "tests/test_conformance_arm_adi_blocks.py::test_mem_ap_packet_contracts_pass",
     "tests/test_target_parts.py::test_mem_ap_sets_csw_from_the_caller_and_chunks_blocks",
     "tests/test_trace_debug.py::test_swd_and_arm_adi_ops_need_the_lock_and_connections_does_not",
-    "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.target.arm-adi-extra32-False]",
-    "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.target.arm-adi-extra34-True]",
     "tests/test_review6_debug_b.py::test_mem_ap_reads_and_writes_with_raw_transfers_when_the_probe_has_no_block_ops"
    ],
    "mutants": [
@@ -1871,8 +2099,6 @@
     "tests/test_conformance_arm_adi_blocks.py::test_mem_ap_packet_contracts_pass",
     "tests/test_target_parts.py::test_mem_ap_sets_csw_from_the_caller_and_chunks_blocks",
     "tests/test_trace_debug.py::test_swd_and_arm_adi_ops_need_the_lock_and_connections_does_not",
-    "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.target.arm-adi-extra33-False]",
-    "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.target.arm-adi-extra34-True]",
     "tests/test_review6_debug_b.py::test_mem_ap_reads_and_writes_with_raw_transfers_when_the_probe_has_no_block_ops",
     "tests/test_review6_debug_b.py::test_an_arm_adi_features_tag_without_bits_is_not_a_defect"
    ],

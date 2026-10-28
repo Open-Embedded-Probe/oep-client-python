@@ -1,5 +1,5 @@
 {
- "spec_commit": "cb3067c",
+ "spec_commit": "320c626",
  "units": {
   "fixture:pre:1": {
    "text": "| `oep.fixture.gpio` | 1 | ピンを駆動し、読む | 1",
@@ -32,6 +32,66 @@
    ],
    "mutants": [],
    "note": "revision 1, the role numbers of the table are taken by plan_apply and the next one is unsupported (0x90)"
+  },
+  "fixture:pre:5": {
+   "text": "| `oep.fixture.i2c-controller` | 1 | I2C",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_names_revisions_and_roles[oep.fixture.i2c-controller-roles0]",
+    "tests/test_trace_fixture_drive.py::test_names_revisions_and_roles[oep.fixture.spi-controller-roles1]",
+    "tests/test_trace_fixture_drive.py::test_names_revisions_and_roles[oep.fixture.pwm-None]",
+    "tests/test_trace_fixture_drive.py::test_names_revisions_and_roles[oep.fixture.counter-None]",
+    "tests/test_trace_fixture_drive.py::test_names_revisions_and_roles[oep.fixture.dac-None]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:pre:6": {
+   "text": "| `oep.fixture.spi-controller` | 1 | SPI",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_names_revisions_and_roles[oep.fixture.i2c-controller-roles0]",
+    "tests/test_trace_fixture_drive.py::test_names_revisions_and_roles[oep.fixture.spi-controller-roles1]",
+    "tests/test_trace_fixture_drive.py::test_names_revisions_and_roles[oep.fixture.pwm-None]",
+    "tests/test_trace_fixture_drive.py::test_names_revisions_and_roles[oep.fixture.counter-None]",
+    "tests/test_trace_fixture_drive.py::test_names_revisions_and_roles[oep.fixture.dac-None]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:pre:7": {
+   "text": "| `oep.fixture.pwm` | 1 | 周波数とデューティを指定した",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_names_revisions_and_roles[oep.fixture.i2c-controller-roles0]",
+    "tests/test_trace_fixture_drive.py::test_names_revisions_and_roles[oep.fixture.spi-controller-roles1]",
+    "tests/test_trace_fixture_drive.py::test_names_revisions_and_roles[oep.fixture.pwm-None]",
+    "tests/test_trace_fixture_drive.py::test_names_revisions_and_roles[oep.fixture.counter-None]",
+    "tests/test_trace_fixture_drive.py::test_names_revisions_and_roles[oep.fixture.dac-None]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:pre:8": {
+   "text": "| `oep.fixture.counter` | 1 | 決めた時間のうちにエ",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_names_revisions_and_roles[oep.fixture.i2c-controller-roles0]",
+    "tests/test_trace_fixture_drive.py::test_names_revisions_and_roles[oep.fixture.spi-controller-roles1]",
+    "tests/test_trace_fixture_drive.py::test_names_revisions_and_roles[oep.fixture.pwm-None]",
+    "tests/test_trace_fixture_drive.py::test_names_revisions_and_roles[oep.fixture.counter-None]",
+    "tests/test_trace_fixture_drive.py::test_names_revisions_and_roles[oep.fixture.dac-None]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:pre:9": {
+   "text": "| `oep.fixture.dac` | 1 | アナログの値を出す（DUT ",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_names_revisions_and_roles[oep.fixture.i2c-controller-roles0]",
+    "tests/test_trace_fixture_drive.py::test_names_revisions_and_roles[oep.fixture.spi-controller-roles1]",
+    "tests/test_trace_fixture_drive.py::test_names_revisions_and_roles[oep.fixture.pwm-None]",
+    "tests/test_trace_fixture_drive.py::test_names_revisions_and_roles[oep.fixture.counter-None]",
+    "tests/test_trace_fixture_drive.py::test_names_revisions_and_roles[oep.fixture.dac-None]"
+   ],
+   "mutants": [],
+   "note": ""
   },
   "fixture:1:1": {
    "text": "| 0x10 | set | n(u8)、n × (channel(u16)、m",
@@ -270,9 +330,7 @@
     "tests/test_trace_fixture.py::test_uart_mark_row",
     "tests/test_conformance_uart.py::test_uart_checks"
    ],
-   "mutants": [
-    "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.fixture.uart-extra26-False]"
-   ],
+   "mutants": [],
    "note": "op 0x14 value, empty, lock; mark implies marks"
   },
   "fixture:2:6": {
@@ -435,6 +493,110 @@
     "tests/test_conformance_fixture_metadata.py::test_fixture_metadata_defects_detected[11-64-\\x02\\x00\\x02]"
    ],
    "note": "formats tag 0x40 n x u8 with 0 on every profile; undeclared format unsupported"
+  },
+  "fixture:2.1:1": {
+   "text": "| `passthrough.{}.rx` | channel | transp",
+   "verify": [
+    "tests/test_passthrough.py::test_the_uart_goes_out_between_frames_while_no_session_uses_it",
+    "tests/test_passthrough.py::test_a_set_it_cannot_take_is_refused[port]",
+    "tests/test_passthrough.py::test_a_set_it_cannot_take_is_refused[rx]",
+    "tests/test_passthrough.py::test_a_set_it_cannot_take_is_refused[baud0]",
+    "tests/test_passthrough.py::test_a_set_it_cannot_take_is_refused[format]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:2.1:2": {
+   "text": "| `passthrough.{}.baud` | u32 | transpor",
+   "verify": [
+    "tests/test_passthrough.py::test_without_baud_and_format_it_runs_at_115200_8n1"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:2.1:3": {
+   "text": "| `passthrough.{}.format` | enum | trans",
+   "verify": [
+    "tests/test_passthrough.py::test_without_baud_and_format_it_runs_at_115200_8n1",
+    "tests/test_passthrough.py::test_a_set_it_cannot_take_is_refused[port]",
+    "tests/test_passthrough.py::test_a_set_it_cannot_take_is_refused[rx]",
+    "tests/test_passthrough.py::test_a_set_it_cannot_take_is_refused[baud0]",
+    "tests/test_passthrough.py::test_a_set_it_cannot_take_is_refused[format]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:2.1:4": {
+   "text": "- key はシリアルの口（kind 1〜3、core §7.5）。ほかの経路は",
+   "verify": [
+    "tests/test_passthrough.py::test_a_set_it_cannot_take_is_refused[port]",
+    "tests/test_passthrough.py::test_a_set_it_cannot_take_is_refused[rx]",
+    "tests/test_passthrough.py::test_a_set_it_cannot_take_is_refused[baud0]",
+    "tests/test_passthrough.py::test_a_set_it_cannot_take_is_refused[format]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:2.1:5": {
+   "text": "- rx はその fn の role 1（RX）として宣言された channel",
+   "verify": [
+    "tests/test_passthrough.py::test_a_set_it_cannot_take_is_refused[port]",
+    "tests/test_passthrough.py::test_a_set_it_cannot_take_is_refused[rx]",
+    "tests/test_passthrough.py::test_a_set_it_cannot_take_is_refused[baud0]",
+    "tests/test_passthrough.py::test_a_set_it_cannot_take_is_refused[format]",
+    "tests/test_passthrough.py::test_a_disabled_rx_is_held_by_settings",
+    "tests/test_passthrough.py::test_an_rx_with_an_output_idle_is_held_by_settings"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:2.1:6": {
+   "text": "- baud と format は configure と同じ規則（baud 0",
+   "verify": [
+    "tests/test_passthrough.py::test_a_set_it_cannot_take_is_refused[port]",
+    "tests/test_passthrough.py::test_a_set_it_cannot_take_is_refused[rx]",
+    "tests/test_passthrough.py::test_a_set_it_cannot_take_is_refused[baud0]",
+    "tests/test_passthrough.py::test_a_set_it_cannot_take_is_refused[format]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:2.1:7": {
+   "text": "- **素通しの条件**: その口からセッションの要求が来ていない、その fn ",
+   "verify": [
+    "tests/test_passthrough.py::test_the_uart_goes_out_between_frames_while_no_session_uses_it",
+    "tests/test_passthrough.py::test_a_session_on_the_port_or_the_fns_plan_stops_it"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:2.1:8": {
+   "text": "- 素通しはセッションの資源と取り合わない: セッションの plan、接続、口の",
+   "verify": [
+    "tests/test_passthrough.py::test_a_session_on_the_port_or_the_fns_plan_stops_it"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:2.1:9": {
+   "text": "- 素通しで受けたバイトは OEP のストリーム（read）に入れず、保持しない",
+   "verify": [
+    "tests/test_passthrough.py::test_what_it_passes_is_not_kept_in_the_uarts_stream"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:2.1:10": {
+   "text": "- 口からフレームの外で来たバイトを target へ送ることは定めない（入力は",
+   "excluded": "it leaves undefined what the probe does with bytes from the port outside frames (input goes by OEP's write): nothing to check"
+  },
+  "fixture:2.1:11": {
+   "text": "- 1 つの口に置ける素通しは 1 つだけである（どの UART の fn の素",
+   "verify": [
+    "tests/test_passthrough.py::test_one_pass_through_per_port"
+   ],
+   "mutants": [],
+   "note": ""
   },
   "fixture:3:1": {
    "text": "| 0x10 | configure | address(u8、7 ビット)、[",
@@ -946,18 +1108,501 @@
    "note": "cs_setup_ns tag 0x43 u32 declared or left out (= 0), shown by the client; the ns timing itself and the concurrency refusal are not modelled"
   },
   "fixture:5:1": {
+   "text": "| 0x10 | configure | clock_hz(u32)、stret",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_i2c_configure_rules"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:5:2": {
+   "text": "| 0x11 | transfer | flags(u8)、n(u8)、n × ",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_i2c_segments_with_repeated_start_and_an_address_only_write",
+    "tests/test_trace_fixture_drive.py::test_i2c_results_stop_the_segments_and_let_the_bus_go[absent-1]",
+    "tests/test_trace_fixture_drive.py::test_i2c_results_stop_the_segments_and_let_the_bus_go[nack-2]",
+    "tests/test_trace_fixture_drive.py::test_i2c_results_stop_the_segments_and_let_the_bus_go[collide-3]",
+    "tests/test_trace_fixture_drive.py::test_i2c_results_stop_the_segments_and_let_the_bus_go[stretch-4]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:5:3": {
+   "text": "| 0x12 | status | — | state(u8)、held(u8)",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_i2c_status_counts_saturate",
+    "tests/test_trace_fixture_drive.py::test_a_running_i2c_controller_refuses_a_plan_change_and_a_release_starts_it_again"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:5:4": {
+   "text": "- このfnのplanはrole 1と2をちょうど1つずつ、別々のchannel",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_i2c_plan_takes_sda_and_scl_once_on_two_channels",
+    "tests/test_trace_fixture_drive.py::test_a_running_i2c_controller_refuses_a_plan_change_and_a_release_starts_it_again"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:5:5": {
+   "text": "- SDA と SCL は**オープンドレインだけ**で駆動する（§3 と同じ）",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_i2c_lines_are_open_drain_from_configure_and_idle_in_state_0"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:5:6": {
+   "text": "- configure は controller を作り直す: バスを持っていれ",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_i2c_configure_rules"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:5:7": {
+   "text": "- **区切り**: dir(u8: 0 書き込み、1 読み出し)、addres",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_i2c_segments_with_repeated_start_and_an_address_only_write"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:5:8": {
+   "text": "- **flags**: bit0 = 1 なら、すべての区切りが終わった後に ",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_without_stop_the_bus_stays_held_and_a_stop_alone_is_no_transfer"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:5:9": {
+   "text": "- 要求の確かめ（どれも、何もせずに断る）: state 0 は rejecte",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_i2c_transfer_refusals_change_nothing"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:5:10": {
+   "text": "- **result**: 0 すべて終えた、1 アドレスの byte に NA",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_i2c_results_stop_the_segments_and_let_the_bus_go[absent-1]",
+    "tests/test_trace_fixture_drive.py::test_i2c_results_stop_the_segments_and_let_the_bus_go[nack-2]",
+    "tests/test_trace_fixture_drive.py::test_i2c_results_stop_the_segments_and_let_the_bus_go[collide-3]",
+    "tests/test_trace_fixture_drive.py::test_i2c_results_stop_the_segments_and_let_the_bus_go[stretch-4]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:5:11": {
+   "text": "- result 1〜4 のときは、その場で区切りの並びをやめる。1、2、4 は",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_i2c_results_stop_the_segments_and_let_the_bus_go[absent-1]",
+    "tests/test_trace_fixture_drive.py::test_i2c_results_stop_the_segments_and_let_the_bus_go[nack-2]",
+    "tests/test_trace_fixture_drive.py::test_i2c_results_stop_the_segments_and_let_the_bus_go[collide-3]",
+    "tests/test_trace_fixture_drive.py::test_i2c_results_stop_the_segments_and_let_the_bus_go[stretch-4]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:5:12": {
+   "text": "- 1 回の transfer は core の max_op_ms に収める。",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_a_transfer_past_max_op_ms_is_refused_like_one_past_max_length"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:5:13": {
+   "text": "- status: state 0 未設定、1 動いている。held はバスを持",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_without_stop_the_bus_stays_held_and_a_stop_alone_is_no_transfer",
+    "tests/test_trace_fixture_drive.py::test_i2c_status_counts_saturate",
+    "tests/test_trace_fixture_drive.py::test_a_running_i2c_controller_refuses_a_plan_change_and_a_release_starts_it_again"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:5:14": {
+   "text": "- describe: ops、role_channels、max_length",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_controller_max_length_fits_every_frame[p4_x035]",
+    "tests/test_trace_fixture_drive.py::test_controller_max_length_fits_every_frame[esp32_v003]",
+    "tests/test_trace_fixture_drive.py::test_controller_max_length_fits_every_frame[esp32_v003_64]",
+    "tests/test_trace_fixture_drive.py::test_i2c_lines_are_open_drain_from_configure_and_idle_in_state_0"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:5:15": {
+   "text": "- max_lengthは、書き込みだけの最大の transfer の要求（見出",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_controller_max_length_fits_every_frame[p4_x035]",
+    "tests/test_trace_fixture_drive.py::test_controller_max_length_fits_every_frame[esp32_v003]",
+    "tests/test_trace_fixture_drive.py::test_controller_max_length_fits_every_frame[esp32_v003_64]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:6:1": {
+   "text": "| 0x10 | configure | mode(u8)、bit_order(",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_spi_configure_rules"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:6:2": {
+   "text": "| 0x11 | transfer | n(u8)、n × 転送、[TLV] |",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_spi_transfers_in_order_with_their_times_and_bit_order"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:6:3": {
+   "text": "| 0x12 | status | — | state(u8)、mode(u8)",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_spi_pins_from_configure_and_back_at_release",
+    "tests/test_trace_fixture_drive.py::test_spi_configure_rules"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:6:4": {
+   "text": "- mode、bit_order、CS が low で有効なこと、ビットのとり方",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_spi_transfers_in_order_with_their_times_and_bit_order"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:6:5": {
+   "text": "- このfnのplanはrole 1〜4をちょうど1つずつ、別々のchannel",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_spi_plan_takes_the_four_roles_once_on_four_channels"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:6:6": {
+   "text": "- state 1 の間、probe は CS を high に、SCK を C",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_spi_pins_from_configure_and_back_at_release"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:6:7": {
+   "text": "- configure は controller を作り直す（transfers",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_spi_configure_rules",
+    "tests/test_trace_fixture_drive.py::test_a_mode_or_bit_order_not_declared_is_unsupported"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:6:8": {
+   "text": "- **転送**: gap_ns(u32)、setup_ns(u32)、hold",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_spi_transfers_in_order_with_their_times_and_bit_order"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:6:9": {
+   "text": "- gap_ns: 前の転送で CS が無効になってから、この転送で CS が有",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_spi_transfers_in_order_with_their_times_and_bit_order"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:6:10": {
+   "text": "- setup_ns: CS が有効になってから、最初の SCK のエッジまで。",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_spi_transfers_in_order_with_their_times_and_bit_order"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:6:11": {
+   "text": "- hold_ns: 最後の SCK のエッジから、CS が無効になるまで。",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_spi_transfers_in_order_with_their_times_and_bit_order"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:6:12": {
+   "text": "- count 0 は、SCK を出さずに CS を有効にして無効に戻す（set",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_spi_transfers_in_order_with_their_times_and_bit_order"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:6:13": {
+   "text": "- tx の byte を bit_order の順に MOSI に出し、同じ数",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_spi_transfers_in_order_with_their_times_and_bit_order"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:6:14": {
+   "text": "- **時間**: probe は、頼まれた値以上で出せるいちばん近い時間を使い",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_spi_transfers_in_order_with_their_times_and_bit_order",
+    "tests/test_trace_fixture_drive.py::test_spi_transfer_refusals_change_nothing"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:6:15": {
+   "text": "- 要求の確かめ（どれも、何もせずに断る）: state 0 は rejecte",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_spi_transfer_refusals_change_nothing"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:6:16": {
+   "text": "- 答えは転送の順に n 個を並べる。transfer は completed ",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_spi_transfers_in_order_with_their_times_and_bit_order"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:6:17": {
+   "text": "- status: state 0 未設定、1 動いている。mode、bit_o",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_spi_pins_from_configure_and_back_at_release",
+    "tests/test_trace_fixture_drive.py::test_spi_configure_rules"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:6:18": {
+   "text": "- describe: ops、role_channels、max_length",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_controller_max_length_fits_every_frame[p4_x035]",
+    "tests/test_trace_fixture_drive.py::test_controller_max_length_fits_every_frame[esp32_v003]",
+    "tests/test_trace_fixture_drive.py::test_controller_max_length_fits_every_frame[esp32_v003_64]",
+    "tests/test_trace_fixture_drive.py::test_a_mode_or_bit_order_not_declared_is_unsupported"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:6:19": {
+   "text": "- max_lengthは、1 つの転送で最大の transfer の要求（見出",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_controller_max_length_fits_every_frame[p4_x035]",
+    "tests/test_trace_fixture_drive.py::test_controller_max_length_fits_every_frame[esp32_v003]",
+    "tests/test_trace_fixture_drive.py::test_controller_max_length_fits_every_frame[esp32_v003_64]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:7:1": {
+   "text": "| 0x10 | set | n(u8)、n × (role(u8)、hz(u3",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_pwm_set_status_and_stop"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:7:2": {
+   "text": "| 0x11 | status | — | n(u8)、n × (role(u8",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_pwm_set_status_and_stop"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:7:3": {
+   "text": "- role は出力の番号（0 から、describe の channels 未",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_pwm_roles_once_on_their_own_channels_and_counter_roles_once"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:7:4": {
+   "text": "- **set** は並びの順に行う。hz は周波数（Hz）。duty は 1 ",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_pwm_set_status_and_stop"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:7:5": {
+   "text": "- 要求の確かめ（どれも、何もせずに断る）: n 0、長さが合わない は rej",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_pwm_set_refusals_change_nothing"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:7:6": {
+   "text": "- plan で取った channel は、最初の set までそれまでの状態を",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_pwm_set_status_and_stop"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:7:7": {
+   "text": "- status は、plan に有る role ごとに今の出力を返す（まだ s",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_pwm_set_status_and_stop"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:7:8": {
+   "text": "- describe: role_channels（role ごと）、max_c",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_pwm_and_counter_describe"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:8:1": {
+   "text": "| 0x10 | measure | gate_us(u32)、edge(u8)",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_the_counter_counts_a_pwm_on_its_own_pin_and_the_edges_chosen"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:8:2": {
+   "text": "- role は入力の番号（0 から、describe の channels 未",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_pwm_roles_once_on_their_own_channels_and_counter_roles_once",
+    "tests/test_trace_fixture_drive.py::test_the_counter_shares_an_output_idle_or_a_gpio_pin"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:8:3": {
+   "text": "- **measure** は、plan に有るすべての role で同時に数え",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_the_counter_counts_a_pwm_on_its_own_pin_and_the_edges_chosen"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:8:4": {
+   "text": "- 要求の確かめ（どれも、何もせずに断る）: gate_us 0、edge が ",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_counter_refusals"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:8:5": {
+   "text": "- max_clock_hz を超える速さのエッジは数え落としてよい（数え落とし",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_the_counter_counts_a_pwm_on_its_own_pin_and_the_edges_chosen"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:8:6": {
+   "text": "- describe: role_channels、max_clock_hz（数",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_pwm_and_counter_describe"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:9:1": {
+   "text": "| 0x10 | set | n(u8)、n × (role(u8)、value",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_dac_set_status_and_release"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:9:2": {
+   "text": "| 0x11 | status | — | n(u8)、n × (role(u8",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_dac_set_status_and_release"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:9:3": {
+   "text": "- role は出力の番号（0 から、describe の channels 未",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_the_dac_shares_its_pin_with_nothing"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:9:4": {
+   "text": "- **set** は並びの順に行い、その出力を value（0〜2^bits ",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_dac_set_status_and_release",
+    "tests/test_trace_fixture_drive.py::test_dac_refusals",
+    "tests/test_trace_fixture_drive.py::test_dac_describe_and_the_nominal_voltage"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:9:5": {
+   "text": "- plan で取った channel は、最初の set まで出力しない（空き",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_dac_set_status_and_release"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:9:6": {
+   "text": "- status は、plan に有る role ごとに最後に set した値と",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_dac_set_status_and_release"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:9:7": {
+   "text": "- describe: role_channels、channels（tag 0",
+   "verify": [
+    "tests/test_trace_fixture_drive.py::test_dac_describe_and_the_nominal_voltage"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "fixture:10:1": {
    "text": "| インターフェース | 仕様 | 使う部分 |",
    "excluded": "informative: the heading row of the reference table (インターフェース / 仕様 / 使う部分)"
   },
-  "fixture:5:2": {
+  "fixture:10:2": {
    "text": "| `oep.fixture.i2c-target` | I2C-bus spe",
    "excluded": "informative: reference list (NXP UM10204 for i2c-target); the reserved addresses it names are the rule of fixture:3:10"
   },
-  "fixture:5:3": {
+  "fixture:10:3": {
    "text": "| `oep.fixture.spi-target` | 無し: SPI には正",
    "excluded": "informative: reference list (SPI has no formal standard; §4 defines mode, CS and bit order)"
   },
-  "fixture:5:4": {
+  "fixture:10:4": {
+   "text": "| `oep.fixture.i2c-controller` | I2C-bus",
+   "excluded": "informative: reference list (NXP UM10204 for i2c-controller; the parts it uses are §5's rules); nothing on the wire to check"
+  },
+  "fixture:10:5": {
+   "text": "| `oep.fixture.spi-controller` | 無し: SPI",
+   "excluded": "informative: reference list (SPI has no formal standard; §4 and §6 define it); nothing on the wire to check"
+  },
+  "fixture:10:6": {
+   "text": "| `oep.fixture.pwm`、`oep.fixture.counter",
+   "excluded": "informative: reference list (pwm, counter and dac follow §7-§9 alone); nothing on the wire to check"
+  },
+  "fixture:10:7": {
    "text": "| `oep.fixture.uart` | 無し | configure の ",
    "excluded": "informative: reference list (UART line format follows configure's format, §2); the electrical bit timing of the wire is not modelled"
   }

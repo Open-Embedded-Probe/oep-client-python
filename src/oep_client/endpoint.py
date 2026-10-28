@@ -99,6 +99,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Hashable
 
 from . import catalog, virtual_bench, virtual_bench_capture, message as m, registry as reg
+from .virtual_fixture_drive import DRIVE, FixtureDrive
 from . import registry as current_reg     # TRANSITIONAL: the common stream marks
 
 TOY_WRITE, TOY_READ = 0x10, 0x11                    # 0x01 / 0x02: subscribe / unsubscribe in every op space
@@ -617,7 +618,7 @@ SPEED_RATES = (300, 5_000_000)                     # what the virtual bench's UA
                                                    # the nearest end of the range)
 
 
-class Endpoint:
+class Endpoint(FixtureDrive):
     MARKS_PER_ANSWER = 3                     # small, so hosts must follow `more`
 
     def __init__(self, probe: virtual_bench.VirtualProbe, now_ms: Callable[[], int], boot_id: int = 0x1234ABCD,
@@ -705,8 +706,9 @@ class Endpoint:
             self.targets[(fn, first)] = VirtualTarget()
         self.target = next(iter(self.targets.values()), VirtualTarget())
         self.inner = {o.fn: dict(o.inner) for o in probe.offered}   # what each fn keeps to itself (not declared)
+        self.external_paths: dict[int, virtual_bench_capture.ExternalPath] = {}   # capture §3.9, by kind (TEST HOOK: read)
         self.captures: dict[int, virtual_bench_capture.VirtualCapture] = {
-            fn: self._capture_from(self.decl[fn], self.inner[fn]) for fn, name in self.names.items()
+            fn: self._new_capture(fn) for fn, name in self.names.items()
             if name in ("oep.fixture.logic", "oep.fixture.analog")}
         self.groups: dict[int, virtual_bench_capture.VirtualGroup] = {
             fn: self._group_from(self.decl[fn], self.inner[fn]) for fn, name in self.names.items()
@@ -838,10 +840,12 @@ class Endpoint:
         self.spi_selected: set[int] = set()            # spi-target fns whose CS is active now (spi_select)
         self.spi_ns = True                              # read_rx carries the optional TLV ns (fixture §4)
         self.spi: dict[int, SpiState] = {fn: SpiState() for fn, n in self.names.items() if n == _SPI.name}
+        self._drive_init()                             # i2c / spi controllers, pwm, counter, dac (fixture §5-§9)
         self.config: dict[tuple[int, str, int], bytes] = {}   # (fn, item, key) -> the user's value (core §13)
         self.generation = 1                            # the changes of this boot, from 1 (core §13.5)
         self.saved: dict | None = getattr(self, "saved", None)   # the stored items (they outlive a reboot)
         self.saved_unreadable = getattr(self, "saved_unreadable", False)   # a save left whose integrity is unknown (outlives a reboot)
+        self.storage_writes = getattr(self, "storage_writes", 0)   # the saves written to the store (a save of the same contents is not)
         self.saved_generation = 0                      # state's saved_generation (0: none, unreadable or partial)
         self.storage_state, self.storage_reason = 0, 0
         self.storage_fault: str | None = None          # TEST HOOK: the next save / erase fails ("old" / "none" / "unreadable")
@@ -924,6 +928,19 @@ class Endpoint:
     def target_id(self, value: int | None) -> None:
         self.target.target_id = value
 
+    def _new_capture(self, fn: int) -> virtual_bench_capture.VirtualCapture:
+        cap = self._capture_from(self.decl[fn], self.inner[fn])
+        cap.fn, cap.paths = fn, self.external_paths
+        return cap
+
+    def external_disconnect(self, kind: int) -> None:
+        """TEST HOOK: the host's end of external data path `kind` (capture §3.9) has gone: what it carries stops."""
+        path = self.external_paths.setdefault(kind, virtual_bench_capture.ExternalPath(kind))
+        path.connected = False
+        for fn, cap in self.captures.items():
+            if cap.path is not None and cap.path[0] == kind:
+                self._events(fn, cap.disconnected())
+
     @staticmethod
     def _capture_from(decl: list[tuple[int, bytes]], inner: dict) -> virtual_bench_capture.VirtualCapture:
         """A capture as its describe declares it (modes and their max_samples, rate_range, the frontends) and as it
@@ -958,7 +975,7 @@ class Endpoint:
                                         max_samples=most_samples, max_pretrigger=max_pre, exact=inner.get("exact", False),
                                         skews=inner.get("skews"), diagnostics=inner.get("diagnostics", True),
                                         opts=opts, records_max=records, formats=formats, carriage_kinds=kinds,
-                                        carriage_d=(lo_d, hi_d),
+                                        carriage_d=(lo_d, hi_d), options=virtual_bench_capture.options_of(decl, bool(fronts)),
                                         linked=bool(types >> reg.FIXTURE_LOGIC.enum["trigger"]["linked"] & 1))
 
     @staticmethod
@@ -1049,9 +1066,9 @@ class Endpoint:
             if op in (O["configure"], O["query"]):
                 analog = self.names[fn] == "oep.fixture.analog"
                 frontend_tag = virtual_bench_capture.ANA.tlv["configure"]["frontend"]
-                known = set(virtual_bench_capture.IMPLEMENTED) | ({frontend_tag} if analog else set())
-                # the frontend comes once per channel (capture §3.3): it repeats
-                got = t.tail(known, repeats={frontend_tag, virtual_bench_capture.TLV["carriage"]})
+                known = set(virtual_bench_capture.IMPLEMENTED) | ({frontend_tag} if analog else set()) | cap.option_tags()
+                # the frontend comes once per channel (capture §3.3), the §3.8 ones once per group / role: they repeat
+                got = t.tail(known, repeats={frontend_tag, virtual_bench_capture.TLV["carriage"]} | cap.repeating())
                 fronts = []                                        # (role, frontend, the tag as received)
                 for tag, v in t.repeated:
                     if tag & 0x7F != frontend_tag:
@@ -1592,7 +1609,7 @@ class Endpoint:
         self.reboots += 1
         self._origin_ns, self._last_ns = self._raw_ns(), 0
         for fn in self.captures:
-            self.captures[fn] = self._capture_from(self.decl[fn], self.inner[fn])
+            self.captures[fn] = self._new_capture(fn)
         for fn in self.groups:
             self.groups[fn] = self._group_from(self.decl[fn], self.inner[fn])
         self._boot()
@@ -1724,7 +1741,8 @@ class Endpoint:
             self._check_plan(got, tag_of=tag_of)
             self._refuse_disabled(ch for _, _, ch in got)          # a disabled channel (core §13.8): cause 5
             for fn, _, ch in got:                                  # only gpio and a logic capture take an output idle
-                if (self._output_idle(ch) and self.names.get(fn) not in ("oep.fixture.gpio", "oep.fixture.logic")
+                if (self._output_idle(ch) and self.names.get(fn) not in ("oep.fixture.gpio", "oep.fixture.logic",
+                                                                          "oep.fixture.pwm", "oep.fixture.counter")
                         and (fn, _, ch) not in self.plan):
                     raise unavailable("held_by_settings", ch)      # (fixture §1, capture §1.2; plan §2.4: cause 5)
             if self.plan_roles is not None and len([a for a in self.plan if a[0] not in named]) + len(got) > self.plan_roles:
@@ -1768,7 +1786,7 @@ class Endpoint:
                 return unavailable("wrong_state")
         if self.names.get(fn) == "oep.fixture.uart" and fn in self.uart_baud and fn in self.uarts:
             return unavailable("wrong_state")
-        if (fn in self.i2c and self.i2c[fn].state) or (fn in self.spi and self.spi[fn].state):
+        if (fn in self.i2c and self.i2c[fn].state) or (fn in self.spi and self.spi[fn].state) or self._drive_running(fn):
             return unavailable("wrong_state")
         return None
 
@@ -1778,14 +1796,14 @@ class Endpoint:
         cap = self.captures.get(fn)
         if cap is None or cap.state == virtual_bench_capture.STATE["unconfigured"]:
             return
-        fresh = self._capture_from(self.decl[fn], self.inner[fn])
-        fresh.generation = cap.generation
+        fresh = self._new_capture(fn)
+        fresh.generation, fresh.clock_hz = cap.generation, cap.clock_hz
         self.captures[fn] = fresh
 
     def _listens(self, fn: int) -> bool:
         """A logic capture only listens: it shares pins with anything (core §8.1). The analog does not: its pads go to
         their analog function, cutting their digital input and output (oep-if-capture §1.2), as on this library's ESP32s."""
-        return fn in self.captures and not self.captures[fn].analog
+        return (fn in self.captures and not self.captures[fn].analog) or self.names.get(fn) == "oep.fixture.counter"
 
     def _check_target_roles(self, got: list[tuple[int, int, int]], tag_of=None) -> None:
         """An i2c-target / spi-target plan holds each of its roles exactly once, on distinct channels (fixture §3 /
@@ -1796,6 +1814,7 @@ class Endpoint:
             mine = [(role, ch) for f, role, ch in got if f == fn and role in roles]
             if sorted(r for r, _ in mine) != sorted(roles) or len({ch for _, ch in mine}) != len(mine):
                 raise Reject(m.UNSUPPORTED, bytes([tag_of(fn) if tag_of else ROLE_ASSIGNMENT]))
+        self._check_drive_roles(got, tag_of)                       # controllers, pwm, counter, dac (fixture §5-§9)
 
     def _check_plan(self, got: list[tuple[int, int, int]], held: bool = True, tag_of=None) -> None:
         """plan_apply's all-or-nothing check, in core §4.3's order over the whole request: the roles and channels each
@@ -1811,7 +1830,7 @@ class Endpoint:
         others = {a for a in self.plan if a[0] not in named}
         kept = {a for a in others if not self._listens(a[0])}
         slot_pins = {p for c in self.conns.values() for p in c.pair if p != 0xFFFF}    # a live connection's pins
-        analog = {fn for fn, cap in self.captures.items() if cap.analog}
+        analog = {fn for fn, cap in self.captures.items() if cap.analog} | set(self.dac_out)   # a dac shares nothing (§9)
         current = [None]                                           # the fn of the assignment being checked
 
         def not_declared(ch: int) -> Reject | None:
@@ -1845,7 +1864,7 @@ class Endpoint:
                 if role not in self._declared_roles(fn, ch):
                     check(not_declared(ch))
                 continue
-            roles = TARGET_ROLES.get(self.names.get(fn, ""), set())
+            roles = TARGET_ROLES.get(self.names.get(fn, "")) or self._drive_roles(fn) or set()
             if role not in roles or ch not in self._declared_channels(fn):
                 check(not_declared(ch))
                 continue
@@ -1966,6 +1985,9 @@ class Endpoint:
                 if role == _SPI.enum["role"]["miso"]:
                     return "miso-driven" if fn in self.spi_selected else "miso-hi-z"
                 return "input"
+            drive = self._drive_pin_state(fn, role, idle)
+            if drive is not None:
+                return drive
             if fn in self.captures:                                # the analog: its pad leaves the digital function at start
                 acquiring = self.captures[fn].state in (virtual_bench_capture.STATE["waiting"],   # and comes back when
                                                         virtual_bench_capture.STATE["capturing"])  # it stops (capture §1.2)
@@ -1989,6 +2011,7 @@ class Endpoint:
             self.i2c[fn] = I2cState()
         if fn in self.spi:
             self.spi[fn] = SpiState()
+        self._drive_plan_changed(fn)                               # fixture §5-§9: back to the start
         if self.names.get(fn) != "oep.fixture.uart":
             return
         planned = any(a[0] == fn for a in self.plan)
@@ -3044,6 +3067,19 @@ class Endpoint:
                 out[port] = (fn, rx)
         return out
 
+    PASSTHROUGH_BAUD = 115_200                       # the pass-through's baud without a value (fixture §2.1)
+    PASSTHROUGH_FORMAT = 0x00                        # 8N1, the format without a value (fixture §2.1)
+
+    def passthrough_line(self, port: int) -> tuple[int, int] | None:
+        """TEST HOOK: the line the UART pass-through on serial port `port` runs at - (baud, format), the values or the
+        defaults 115200 and 8N1 (fixture §2.1); None when no pass-through is set there."""
+        rx = next((fn for (fn, p) in self._values_of("passthrough.{}.rx") if p == port), None)
+        if rx is None:
+            return None
+        baud = self._value(rx, "passthrough.{}.baud", port)
+        fmt = self._value(rx, "passthrough.{}.format", port)
+        return (struct.unpack("<I", baud)[0] if baud else self.PASSTHROUGH_BAUD, fmt[0] if fmt else self.PASSTHROUGH_FORMAT)
+
     def console_passthroughs(self) -> dict[int, tuple[int, tuple[int, int]]]:
         """The serial ports whose console pass-through runs and is attached now (console §2.1) -> port: (wire fn,
         pair). The condition: no session request on the port, no session connection or plan on its pins. When it
@@ -3479,7 +3515,10 @@ class Endpoint:
                 raise unavailable("storage_full")                  # more than the save holds, before anything (§13.7)
             if self._storage_failed():
                 return m.COMPLETED, m.FAILED, struct.pack("<I", self.generation)   # the same fixed part (§13.7)
-            self.saved, self.saved_unreadable = self._by_name(self.config), False
+            contents = self._by_name(self.config)
+            if self.saved != contents or self.saved_unreadable:     # the same contents saved already: not written again
+                self.saved, self.saved_unreadable = contents, False
+                self.storage_writes += 1
             self.storage_state, self.storage_reason, self.saved_generation = 1, 0, self.generation
             return m.COMPLETED, m.SUCCESS, struct.pack("<I", self.generation)
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
@@ -3532,8 +3571,11 @@ class Endpoint:
             addr, pfx = self._value(0, "ipv4.{}.address", netif), self._value(0, "ipv4.{}.prefix", netif)
             if addr is None or pfx is None:
                 return NET_STATE["waiting"], 0xFFFF, NET_REASON["no_address"], 0, zero   # static without its values
-            got = (addr, struct.unpack("<I", pfx)[0], self._value(0, "ipv4.{}.gateway", netif) or bytes(4),
-                   self._value(0, "ipv4.{}.dns", netif) or bytes(4))
+            prefix, gateway = struct.unpack("<I", pfx)[0], self._value(0, "ipv4.{}.gateway", netif)
+            mask = (0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF
+            if gateway is not None and (int.from_bytes(gateway, "big") ^ int.from_bytes(addr, "big")) & mask:
+                return NET_STATE["waiting"], 0xFFFF, NET_REASON["no_address"], 0, zero   # gateway outside the prefix
+            got = (addr, prefix, gateway or bytes(4), self._value(0, "ipv4.{}.dns", netif) or bytes(4))
         else:
             got = self.dhcp[name]
         return NET_STATE["up"], entry, 0, rssi, got
@@ -3708,7 +3750,8 @@ class Endpoint:
 SIMS = {"oep.probe.link": "link", "oep.probe.plan": "plan_op", "oep.probe.restart": "restart", "oep.wire.rvswd": "wire", "oep.wire.swio": "wire", "oep.target.riscv-dm": "dm",
         "oep.target.console": "console", "oep.fixture.gpio": "gpio", "oep.fixture.uart": "uart",
         "oep.fixture.logic": "capture", "oep.fixture.analog": "capture",
-        "oep.fixture.capture-group": "group", "oep.fixture.i2c-target": "i2c_op", "oep.fixture.spi-target": "spi_op"}
+        "oep.fixture.capture-group": "group", "oep.fixture.i2c-target": "i2c_op", "oep.fixture.spi-target": "spi_op",
+        **DRIVE}
 
 # A riscv-dm op whose exchanges got no answer from the wire: completed failed, status line, nothing done (debug §4)
 DM_LINE_FAILED = {_RV.op["dmi"]: struct.pack("<HBH", 0, LINE, 0), _RV.op["halt"]: bytes([LINE]),

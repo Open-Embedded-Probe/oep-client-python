@@ -16,7 +16,7 @@ from oep_client import cobs, core, settings, endpoint, virtual_bench, virtual_be
 
 RESTART = reg.PROBE_RESTART.op["restart"]
 VENDOR = 1                                       # p4-x035's transport 1: vendor bulk (not a serial port)
-FN = 15                                          # p4-x035's oep.probe.restart
+FN = next(o.fn for o in virtual_bench.p4_x035().offered if o.name == virtual_bench.RESTART)   # p4-x035's oep.probe.restart
 
 
 class Clock:

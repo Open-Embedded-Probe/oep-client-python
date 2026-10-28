@@ -102,13 +102,16 @@ def test_a_long_result_is_not_remembered():
     assert h.raw(2, RV["read_block"], struct.pack("<IIH", conn, 0x20000000, 32), corr=h.corr).detail == m.RESULT_LOST
 
 
+STAND_IN = max(o.fn for o in virtual_bench.esp32_v003().offered) + 1   # with_stand_in(esp32_v003)'s fn
+
+
 def test_open_empties_the_table():
     ep = endpoint.Endpoint(virtual_bench.with_stand_in(virtual_bench.esp32_v003()), Clock())
     h = Host(ep)
     h.open()
-    h.raw(13, endpoint.TOY_WRITE, struct.pack("<I", 5))                           # the stand-in fn
+    h.raw(STAND_IN, endpoint.TOY_WRITE, struct.pack("<I", 5))                           # the stand-in fn
     h.open()                                                        # a new open: the table goes
-    assert h.raw(13, endpoint.TOY_WRITE, struct.pack("<I", 5), corr=h.corr - 1).succeeded   # an old corr is new again
+    assert h.raw(STAND_IN, endpoint.TOY_WRITE, struct.pack("<I", 5), corr=h.corr - 1).succeeded   # an old corr is new again
 
 
 # ---- the lock: owner and lease (core §6.4) -----------------------------------------------------------
@@ -148,7 +151,8 @@ def test_core_describe_lists_the_transports_and_max_op_ms():
     kinds = [v[1] for t, v in tlvs if t == tags["transport"]]
     assert kinds == [3, 4, 5, 2]
     assert (tags["max_op_ms"], struct.pack("<I", virtual_bench.MAX_OP_MS)) in tlvs
-    assert (virtual_bench.PLAN_ROLES_TAG, struct.pack("<I", 32)) in describe(endpoint.Endpoint(virtual_bench.p4_x035(), Clock()), 14)
+    assert (virtual_bench.PLAN_ROLES_TAG, struct.pack("<I", 32)) in describe(endpoint.Endpoint(virtual_bench.p4_x035(), Clock()),
+                                                                          next(o.fn for o in virtual_bench.p4_x035().offered if o.name == virtual_bench.PLAN))
     assert any(t == tags["unit_id"] for t, _ in tlvs) and 0x48 not in [t for t, _ in tlvs]
     # declarations only (core §7.3): a label the settings give is not in the describe
     ep = endpoint.Endpoint(virtual_bench.p4_x035(), Clock())

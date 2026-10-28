@@ -1138,3 +1138,14 @@ def test_swds_swdio_is_pin_role_1_and_swclk_pin_role_2():
             return ok(b"\x00" + (catalog.channel_group(1, group) if fn == FNS["oep.wire.swd"] else b""))
         hst = ScriptedHost({(0, m.OP_DESCRIBE): describe})
         assert arm.SwdWire(hst).candidate_pairs() == [(10, 11)], group
+
+
+def test_reset_channels_and_a_named_reset_line():
+    """debug §3: there is no default reset line - the host reads the channels the probe allows for it and names one."""
+    ep = endpoint.Endpoint(virtual_bench.esp32_v003(), Clock())
+    hst = h.Host(lambda b: ep.handle(b, 0))
+    hst.open(3000)
+    wire = riscv.Wire(hst, "oep.wire.swio")
+    assert wire.reset_channels() == [23]
+    conn, dpc = wire.attach_under_reset(23)
+    assert conn in ep.conns and dpc == 0

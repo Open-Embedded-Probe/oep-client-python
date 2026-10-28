@@ -7,7 +7,7 @@ import pytest
 
 from oep_client import endpoint, virtual_bench, host, message as m
 
-TOY = 13         # a fn the virtual bench does not simulate (virtual_bench.with_stand_in(esp32_v003)) has the stand-in operations
+TOY = max(o.fn for o in virtual_bench.esp32_v003().offered) + 1   # with_stand_in(esp32_v003)'s fn: only the stand-in ops
 
 
 class Clock:

@@ -18,7 +18,8 @@ from oep_client import (catalog, conformance, conformance_retention, conformance
 PLAN = reg.PROBE_PLAN
 APPLY = PLAN.op["plan_apply"]
 ASSIGN = PLAN.tlv["plan_apply"]["role_assignment"]
-UART, PLAN_FN = 5, 11                                     # esp32-v003's uart and plan fns
+UART = 5                                                  # esp32-v003's uart
+PLAN_FN = next(o.fn for o in vb.esp32_v003().offered if o.name == vb.PLAN)
 
 
 class Clock:

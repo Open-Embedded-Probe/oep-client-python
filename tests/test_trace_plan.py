@@ -54,7 +54,8 @@ def test_the_interface_row_lists_oep_probe_plan_at_revision_1():
     """plan preamble (the interface row): the probe lists oep.probe.plan by that name at revision 1."""
     ep, hst = bench()
     entries = [e for e in core.list_entries(hst) if e.name == "oep.probe.plan"]
-    assert [(e.fn, e.revision) for e in entries] == [(11, 1)] and PLAN.revision == 1
+    plan_fn = next(o.fn for o in virtual_bench.esp32_v003().offered if o.name == virtual_bench.PLAN)
+    assert [(e.fn, e.revision) for e in entries] == [(plan_fn, 1)] and PLAN.revision == 1
 
 
 @pytest.mark.parametrize("op, code", sorted(PLAN.op.items()))

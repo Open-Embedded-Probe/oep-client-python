@@ -117,3 +117,30 @@ def test_a_stage_entered_with_its_level_already_true_follows_when(when):
         assert trigger[1] == ep.captures[logic.fn].time_of(33)   # the sample after stage 0's (one stage a sample)
     else:
         assert trigger is None
+
+
+@pytest.mark.parametrize("make, sample", [
+    (lambda a: Cond.cross_down(a, 0, 2000), 32),             # the analog's square (period 64) falls at 32
+    (lambda a: Cond.cross_up(a, 0, 2000), 64),               # and rises at 64
+    (lambda a: Cond.above(a, 0, 2000, when=0), 64),          # above, from false: once it has been below
+])
+def test_analog_conditions_hold_where_the_wave_does_it(make, sample):
+    ep, hst, logic, analog, group, clock = setup()
+    group.bind([logic, analog], TriggerSource([Stage([[make(analog)]])]))
+    group.start([logic, analog])
+    clock.t += 20
+    fn, ns, _ = group.status().trigger
+    assert fn == analog.fn and abs(ns - ep.captures[analog.fn].time_of(sample)) <= 1   # 1 ns: rounding
+
+
+def test_above_with_when_1_holds_at_the_arming_and_a_timer_counts_from_the_stage():
+    ep, hst, logic, analog, group, clock = setup()
+    group.bind([logic, analog], TriggerSource([Stage([[Cond.above(analog, 0, 2000, when=1)]]),
+                                               Stage([[Cond.timer(1_000_000)]])]))
+    group.start([logic, analog])
+    clock.t += 20
+    fn, ns, unc = group.status().trigger
+    # arm 1: judged from the pretrigger's 4 samples on, where the square is already high; the timer 1 ms after the
+    # next stage is entered (judged from the next sample on: within a sample period)
+    late = ns - ep.captures[analog.fn].time_of(4) - 1_000_000
+    assert 0 <= late <= 1_000_000_000 / ep.captures[analog.fn].rate + 1

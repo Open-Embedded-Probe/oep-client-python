@@ -314,3 +314,42 @@ def test_format_0_streaming_makes_a_tick_at_most_and_stop_answers():
     lc.stop()
     assert cap.produced <= 4 * vbc.BLOCKS_A_TICK < 2_000_000   # a tick or a few (the requests tick too), not 2 s
     assert lc.status().state == c.STATE["configured"]
+
+
+def test_format_1_with_every_channel_events_has_w_and_c_0():
+    ep, hst, lc, clock = bench()
+    roles = planned(hst, lc, 3)
+    events = {r: 8 for r in roles}
+    cfg = lc.configure(rate=1000, samples=64, data_format=LOGIC_BLOCKS, events=events, roles=roles, block_max=64)
+    assert (cfg.width, cfg.positions) == (0, [])             # §1.1's w range's exception: no raw part
+    lc.start()
+    clock.t += 100
+    (seg,) = lc.wait()
+    check_blocks(lc.blocks(lc.read_segment(seg), seg.samples), events, seg.samples, 0)
+
+
+def test_trigger_records_keep_the_newest_and_an_old_serial_reads_from_the_oldest_kept():
+    ep, hst, lc, clock = bench()
+    planned(hst, lc, 3)
+    lc.configure(rate=1000, mode=c.STREAMING, trigger=(c.EDGE, 2, 0), trigger_opts=c.TriggerOpts(rearm=1))
+    lc.subscribe()
+    lc.start()
+    clock.t += 200                                           # channel 2 rises every 8 samples: 25 events
+    ep.pushes()
+    kept = lc.triggers(0)
+    serials = [r.serial for r in kept]
+    assert len(serials) == 16 and serials == list(range(serials[0], serials[0] + 16)) and serials[0] > 0
+    assert [r.serial for r in lc.triggers(serials[0] + 3)] == serials[3:]
+
+
+def test_when_1_counts_at_every_arming_of_a_rearming_repeat():
+    ep, hst, lc, clock = bench()
+    planned(hst, lc, 6)
+    lc.configure(rate=1000, mode=c.REPEAT, samples=8, segments=3, trigger=(c.LEVEL, 5, 1),
+                 trigger_opts=c.TriggerOpts(rearm=1, when=1))
+    lc.start()
+    clock.t += 200
+    segs = lc.segments()
+    # channel 5 is high for samples 32-63, 96-127, ...: when 1 takes the level true at the arming, so the second
+    # segment begins at once after the first (40), still in the high half
+    assert [round((s.start_ns - segs[0].start_ns) / 1_000_000) for s in segs] == [0, 8, 16]

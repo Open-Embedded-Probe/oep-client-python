@@ -43,6 +43,17 @@ def test_a_mechanism_not_declared_or_unknown_is_unsupported_0x00():
     assert call(ep, hst, CON.op["open"], struct.pack("<IB", conn, ep.mech_names.index("dmseq") + 1)).succeeded
 
 
+def test_a_probes_own_mechanism_takes_its_place_in_the_named_list(monkeypatch):
+    """core §7.7, §12: another party adds its own choice to a named list under a reverse-DNS name; on the wire a choice
+    is its place (from 1), which the host finds by name - a name the probe does not list is 0."""
+    listed = [(MECHANISM, b"sdi"), (MECHANISM, b"io.example.mbox"), (MECHANISM, b"dmseq")]
+    monkeypatch.setattr(console, "describe", lambda host, fn: listed)
+    con = console.Console.__new__(console.Console)
+    con.host, con.fn = None, 3
+    assert con.mechanisms() == ["sdi", "io.example.mbox", "dmseq"]
+    assert [con.mechanism_number(n) for n in ("io.example.mbox", "dmseq", "dmdata")] == [2, 3, 0]
+
+
 def test_unknown_numbers_no_resource_and_another_kinds_number_cause_6():
     """console §1: an unknown stream is no_resource; a connection's number given as a stream, or a stream's as the
     connection of an open, is unavailable cause 6."""

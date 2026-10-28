@@ -1,5 +1,5 @@
 {
- "spec_commit": "cb3067c",
+ "spec_commit": "320c626",
  "units": {
   "transports:1:1": {
    "text": "| 経路 | フレーム |",
@@ -38,6 +38,15 @@
    "note": "HID report = count(u16), the stream's bytes, padding to the descriptor's size; client and bench model"
   },
   "transports:1:5": {
+   "text": "- **長さ 0 のフレーム**（vendor bulk、TCP）: 要求でも応",
+   "verify": [
+    "tests/test_trace_transports.py::test_length_frames_skip_length_0_and_need_no_boundaries_from_the_reads",
+    "tests/test_virtual_core.py::test_current_virtual_tcp_passes_core_and_tcp_faults"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "transports:1:6": {
    "text": "- **HID の report**: 向きごとに、report は 1 つのバ",
    "verify": [
     "tests/test_hid_stream.py::test_reads_join_the_counted_bytes_and_drop_the_padding",
@@ -47,7 +56,7 @@
    "mutants": [],
    "note": "per direction the reports carry one byte stream (client joins reads, splits writes; bench model reassembles)"
   },
-  "transports:1:6": {
+  "transports:1:7": {
    "text": "1. report の OEP のバイトは、count の後ろの count バ",
    "verify": [
     "tests/test_hid_stream.py::test_reads_join_the_counted_bytes_and_drop_the_padding",
@@ -57,7 +66,7 @@
    "mutants": [],
    "note": "the counted bytes joined in report order are the vendor-bulk length stream, frames across report boundaries"
   },
-  "transports:1:7": {
+  "transports:1:8": {
    "text": "2. count が 0 の report は空で、読み飛ばす。",
    "verify": [
     "tests/test_trace_transports.py::test_hid_reports_carry_counted_bytes_skip_count_0_and_ignore_any_padding",
@@ -67,7 +76,7 @@
    "mutants": [],
    "note": "count 0 reports are empty and skipped (client; bench CORE-HID-EMPTY-REPORT)"
   },
-  "transports:1:8": {
+  "transports:1:9": {
    "text": "3. 送る側は埋めを 0 にする。受ける側は、埋めをその値によらず無視する。",
    "verify": [
     "tests/test_trace_transports.py::test_hid_reports_carry_counted_bytes_skip_count_0_and_ignore_any_padding",
@@ -80,7 +89,7 @@
    ],
    "note": "sender pads with 0; receiver ignores nonzero padding (client and bench CORE-HID-PADDING)"
   },
-  "transports:1:9": {
+  "transports:1:10": {
    "text": "4. OEP の HID の interface は、report ID を宣言",
    "verify": [
     "tests/test_trace_transports.py::test_hid_reports_keep_the_declared_report_id_and_drop_another",
@@ -91,7 +100,7 @@
    "mutants": [],
    "note": "a declared report ID starts every report both ways, count after it; another ID is dropped (client; bench CORE-HID-REPORT-ID)"
   },
-  "transports:1:10": {
+  "transports:1:11": {
    "text": "5. §2 の途切れの規則はこの列に掛かる: フレームが途中で、report が",
    "verify": [
     "tests/test_trace_transports.py::test_usb_probe_drops_a_frame_that_stops_for_probe_frame_gap_ms[hid]",
@@ -103,7 +112,7 @@
    ],
    "note": "a HID frame stopping 200 ms is dropped by the probe and the next byte read as a length"
   },
-  "transports:1:11": {
+  "transports:1:12": {
    "text": "6. count が report に入る量（report の長さ − 2、re",
    "verify": [
     "tests/test_trace_transports.py::test_hid_count_over_the_report_breaks_the_stream_until_a_gap_at_the_probe",
@@ -115,7 +124,7 @@
    ],
    "note": "count over report capacity: report dropped, input dropped until 200 ms quiet (bench model and client, fixed)"
   },
-  "transports:1:12": {
+  "transports:1:13": {
    "text": "- **COBS のフレーム**: message の後ろに CRC-16/CC",
    "verify": [
     "tests/test_trace_transports.py::test_a_serial_frame_is_message_crc16_le_cobs_between_zeros_and_empty_frames_are_skipped",
@@ -129,7 +138,7 @@
    ],
    "note": "CRC-16/CCITT-FALSE LE, standard COBS, 0x00 both sides, no empty block after 254, both decoded, empty frames skipped"
   },
-  "transports:1:13": {
+  "transports:1:14": {
    "text": "- **host の受け方（COBS）**: 口を開いた直後から最初の 0x00",
    "verify": [
     "tests/test_trace_transports.py::test_on_tcp_an_answer_to_a_corr_not_waited_for_is_read_past",
@@ -140,7 +149,7 @@
    "mutants": [],
    "note": "host COBS: the span from open to the first 0x00 is a candidate; bad candidates and other-corr results discarded"
   },
-  "transports:1:14": {
+  "transports:1:15": {
    "text": "- **USB の束ね方**（vendor bulk）: host は、書き込み",
    "verify": [
     "tests/test_trace_transports.py::test_the_host_ends_a_whole_packet_bulk_write_with_a_zero_length_packet",
@@ -150,7 +159,7 @@
    "mutants": [],
    "note": "host ZLP after a write that is a multiple of wMaxPacketSize (both backends, fixed for 64-byte FS); probe ZLP / short last packet"
   },
-  "transports:1:15": {
+  "transports:1:16": {
    "text": "- **max_frame より大きい長さ**: probe はそのフレームと、",
    "verify": [
     "tests/test_trace_transports.py::test_the_probe_drops_a_frame_over_max_frame_and_what_follows_until_a_gap[esp32_v003]",
@@ -166,7 +175,7 @@
    ],
    "note": "over max_frame: dropped with input until a gap, no answer (serial/bulk/HID); TCP closes"
   },
-  "transports:1:16": {
+  "transports:1:17": {
    "text": "- どのフレームを使うかは経路の種類だけで決まる（VID:PID で選ばない）。",
    "verify": [
     "tests/test_trace_transports.py::test_the_framing_follows_the_kind_of_transport_not_the_vid_pid"
@@ -174,7 +183,7 @@
    "mutants": [],
    "note": "framing chosen by transport kind (serial COBS; usb/tcp length), whatever the VID:PID"
   },
-  "transports:1:17": {
+  "transports:1:18": {
    "text": "- **TCP は、信頼できるローカルの接続か、認証したトンネルの内側でだけ使う",
    "verify": [
     "tests/test_trace_transports.py::test_the_virtual_bench_listens_on_the_local_host_unless_told",
@@ -183,7 +192,7 @@
    "mutants": [],
    "note": "the bench's TCP listens on 127.0.0.1 by default; several hosts share one probe's one lock/session"
   },
-  "transports:1:18": {
+  "transports:1:19": {
    "text": "- **OEP の要求に自分で答える端点は probe である**。何が運び、後",
    "verify": [
     "tests/test_virtual_bench_serve_tcp_connections.py::test_two_clients_at_once_share_one_lock",
@@ -193,7 +202,7 @@
    "mutants": [],
    "note": "virtual_bench_serve answers OEP itself over TCP, so it is a probe: core and transport probe rules pass on it"
   },
-  "transports:1:19": {
+  "transports:1:20": {
    "text": "- **broker が OEP の要求へ自分で答える場合**は、独立した OE",
    "verify": [
     "tests/test_virtual_core.py::test_current_virtual_tcp_passes_core_and_tcp_faults",
@@ -203,7 +212,7 @@
    "mutants": [],
    "note": "the self-answering TCP endpoint implements discovery, transport declaration, sessions, resend, resource lifetime in full"
   },
-  "transports:1:20": {
+  "transports:1:21": {
    "text": "- **brokerが使う下流のprobe/target側の接続が失われた場合*",
    "verify": [
     "tests/test_virtual_bench_serve_reboot.py::test_lose_closes_the_connection_and_its_streams",
@@ -214,7 +223,7 @@
    "mutants": [],
    "note": "lost downstream line invalidates its resources (no_resource); a regenerated endpoint has a new boot_id; client close ends nothing"
   },
-  "transports:1:21": {
+  "transports:1:22": {
    "text": "- **TCP の経路**: TCP で待ち受ける probe は、待ち受けの ",
    "verify": [
     "tests/test_virtual_bench_rules_2026_10_02.py::test_c05_c07_virtual_bench_serve_tcp_is_a_tcp_transport_and_closes_on_an_over_long_length",
@@ -524,12 +533,15 @@
    "note": "answers and notifications use the same COBS frames, whole, one after another"
   },
   "transports:4:7": {
-   "text": "- **素通し（任意）**: [probe の設定](../interfaces",
+   "text": "- **素通し（任意）**: 設定の素通しの項目（[治具](../interfa",
    "verify": [
-    "tests/test_passthrough.py::test_the_uart_goes_out_between_frames_while_no_session_uses_it"
+    "tests/test_passthrough.py::test_the_uart_goes_out_between_frames_while_no_session_uses_it",
+    "tests/test_passthrough.py::test_a_session_on_the_port_or_the_fns_plan_stops_it",
+    "tests/test_passthrough.py::test_the_targets_console_goes_out_while_no_session_uses_it",
+    "tests/test_passthrough.py::test_a_session_on_the_port_closes_it_and_it_comes_back_after"
    ],
    "mutants": [],
-   "note": "between frames, a delimiter after, none while a session sends on the port; the host reads them past"
+   "note": ""
   },
   "transports:5:1": {
    "text": "- TCP のフレームの長さや形が壊れた場合は接続を閉じて開き直す。入力を静かに",
@@ -576,26 +588,251 @@
    "note": "after reopening, session and resend history stay; the new transport is confirmed and boot_id checked; no queue carried over"
   },
   "transports:7:1": {
+   "text": "- **netif** は名前の並び（core §7.7）: probe はネッ",
+   "verify": [
+    "tests/test_settings.py::test_describe_lists_the_items_and_their_choices",
+    "tests/test_settings.py::test_a_netif_past_the_list_is_unsupported"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "transports:7:2": {
+   "text": "- **共通の既定**: `wifi.{}.ssid` の値が 1 つも無ければ",
+   "verify": [
+    "tests/test_settings.py::test_wifi_off_without_entries_dhcp_without_ipv4"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "transports:7:3": {
+   "text": "- **probe が決めるもの**: つなぎ直しの間隔、mDNS の inst",
+   "excluded": "what the probe chooses (reconnection interval, mDNS instance name, TCP port, NTP): nothing to check but the network op's tcp_port, which §7.3's rows cover"
+  },
+  "transports:7:4": {
+   "text": "- **効く時**: set か unset が使っている経路の値（使っている ",
+   "verify": [
+    "tests/test_settings.py::test_static_ipv4_and_a_change_in_use_reconnects",
+    "tests/test_settings.py::test_initial_values_are_values_like_any_other"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "transports:7:5": {
+   "text": "- **（参考）TCP からの変更**: その経路で使っている値を変えると、その",
+   "excluded": "a note for hosts (reference: what a change made over TCP does to that connection), no rule of its own"
+  },
+  "transports:7:6": {
+   "text": "- **max_frame**: この節の項目を宣言する probe は、どの経",
+   "verify": [
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[esp32-v003]",
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[esp32-v003-64]",
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[p4-bench]",
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[p4-x035]",
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[rp2350-pins]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "transports:7.1:1": {
+   "text": "| `wifi.{}.ssid` | text（1〜32） | index（en",
+   "verify": [
+    "tests/test_settings.py::test_an_ssid_is_1_to_32_bytes",
+    "tests/test_settings.py::test_wifi_off_without_entries_dhcp_without_ipv4"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "transports:7.1:2": {
+   "text": "| `wifi.{}.passphrase` | text（8〜64）、secr",
+   "verify": [
+    "tests/test_settings.py::test_the_passphrase_is_a_secret"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "transports:7.1:3": {
+   "text": "- passphrase は secret（core §13.5）: 誰にも読ま",
+   "verify": [
+    "tests/test_settings.py::test_the_passphrase_is_a_secret"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "transports:7.1:4": {
+   "text": "- ssid の無い entry の passphrase は使わない。",
+   "verify": [
+    "tests/test_settings.py::test_a_passphrase_without_an_ssid_is_not_used"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "transports:7.1:5": {
+   "text": "- **つなぎ方**: probe は ssid のある entry を key",
+   "verify": [
+    "tests/test_settings.py::test_the_entries_are_tried_in_key_order_and_the_first_that_connects_is_used"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "transports:7.2:1": {
+   "text": "| `ipv4.{}.mode` | enum: 0 `dhcp`、1 `sta",
+   "verify": [
+    "tests/test_settings.py::test_static_ipv4_and_a_change_in_use_reconnects",
+    "tests/test_settings.py::test_wifi_off_without_entries_dhcp_without_ipv4"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "transports:7.2:2": {
+   "text": "| `ipv4.{}.address` | ipv4 | static のときの",
+   "verify": [
+    "tests/test_settings.py::test_an_ipv4_value_a_host_cannot_have_is_malformed[values0]",
+    "tests/test_settings.py::test_an_ipv4_value_a_host_cannot_have_is_malformed[values1]",
+    "tests/test_settings.py::test_an_ipv4_value_a_host_cannot_have_is_malformed[values2]",
+    "tests/test_settings.py::test_an_ipv4_value_a_host_cannot_have_is_malformed[values3]",
+    "tests/test_settings.py::test_static_ipv4_and_a_change_in_use_reconnects"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "transports:7.2:3": {
+   "text": "| `ipv4.{}.prefix` | u32（1〜32） | static ",
+   "verify": [
+    "tests/test_settings.py::test_an_ipv4_value_a_host_cannot_have_is_malformed[values0]",
+    "tests/test_settings.py::test_an_ipv4_value_a_host_cannot_have_is_malformed[values1]",
+    "tests/test_settings.py::test_an_ipv4_value_a_host_cannot_have_is_malformed[values2]",
+    "tests/test_settings.py::test_an_ipv4_value_a_host_cannot_have_is_malformed[values3]",
+    "tests/test_settings.py::test_static_ipv4_and_a_change_in_use_reconnects"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "transports:7.2:4": {
+   "text": "| `ipv4.{}.gateway` | ipv4 | static のときの",
+   "verify": [
+    "tests/test_settings.py::test_a_gateway_outside_the_prefix_gets_no_address"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "transports:7.2:5": {
+   "text": "| `ipv4.{}.dns` | ipv4 | static のときの DNS",
+   "verify": [
+    "tests/test_settings.py::test_static_ipv4_and_a_change_in_use_reconnects"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "transports:7.2:6": {
+   "text": "- dhcp では address、prefix、gateway、dns の値を",
+   "verify": [
+    "tests/test_settings.py::test_dhcp_keeps_the_static_values_but_does_not_use_them"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "transports:7.2:7": {
+   "text": "- static で address か prefix の値が無いとき、gate",
+   "verify": [
+    "tests/test_settings.py::test_static_ipv4_and_a_change_in_use_reconnects",
+    "tests/test_settings.py::test_a_gateway_outside_the_prefix_gets_no_address"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "transports:7.2:8": {
+   "text": "- 固定のアドレスが同じネットワークで使われていると分かったときの扱いは pro",
+   "excluded": "the probe's choice (how it treats a static address found in use), shown as reason 3, which §7.3's reason row covers"
+  },
+  "transports:7.3:1": {
+   "text": "| 0x25 | network | [TLV] | tcp_port(u16)",
+   "verify": [
+    "tests/test_settings.py::test_wifi_off_without_entries_dhcp_without_ipv4",
+    "tests/test_settings.py::test_static_ipv4_and_a_change_in_use_reconnects",
+    "tests/test_settings.py::test_the_network_op_only_with_netifs",
+    "tests/test_settings.py::test_the_lock_column"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "transports:7.3:2": {
+   "text": "| netif(u8) | netif の並びの位置（1 から） |",
+   "verify": [
+    "tests/test_settings.py::test_wifi_off_without_entries_dhcp_without_ipv4",
+    "tests/test_settings.py::test_static_ipv4_and_a_change_in_use_reconnects"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "transports:7.3:3": {
+   "text": "| state(u8) | 0 使わない（ssid の値が無い、有線の線がつなが",
+   "verify": [
+    "tests/test_settings.py::test_wifi_off_without_entries_dhcp_without_ipv4",
+    "tests/test_settings.py::test_static_ipv4_and_a_change_in_use_reconnects",
+    "tests/test_settings.py::test_a_passphrase_without_an_ssid_is_not_used"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "transports:7.3:4": {
+   "text": "| entry(u16) | Wi-Fi で、state 1 では試している、s",
+   "verify": [
+    "tests/test_settings.py::test_wifi_off_without_entries_dhcp_without_ipv4",
+    "tests/test_settings.py::test_static_ipv4_and_a_change_in_use_reconnects",
+    "tests/test_settings.py::test_the_entries_are_tried_in_key_order_and_the_first_that_connects_is_used"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "transports:7.3:5": {
+   "text": "| reason(u8) | 最後の失敗の理由: 0 なし、1 ネットワークが見",
+   "verify": [
+    "tests/test_settings.py::test_wifi_off_without_entries_dhcp_without_ipv4",
+    "tests/test_settings.py::test_static_ipv4_and_a_change_in_use_reconnects",
+    "tests/test_settings.py::test_a_gateway_outside_the_prefix_gets_no_address"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "transports:7.3:6": {
+   "text": "| rssi(i8) | Wi-Fi の state 2 で、受けている電波の強",
+   "verify": [
+    "tests/test_settings.py::test_wifi_off_without_entries_dhcp_without_ipv4"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "transports:7.3:7": {
+   "text": "| address(4)、prefix(u8)、gateway(4)、dns(4",
+   "verify": [
+    "tests/test_settings.py::test_wifi_off_without_entries_dhcp_without_ipv4",
+    "tests/test_settings.py::test_static_ipv4_and_a_change_in_use_reconnects",
+    "tests/test_settings.py::test_dhcp_keeps_the_static_values_but_does_not_use_them"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "transports:8:1": {
    "text": "| Universal Serial Bus Specification, Re",
    "excluded": "informative: a reference list naming the outside specification this document leans on and the sections that use it; its rules are traced at those sections"
   },
-  "transports:7:2": {
+  "transports:8:2": {
    "text": "| USB Class Definitions for Communicatio",
    "excluded": "informative: a reference list naming the outside specification this document leans on and the sections that use it; its rules are traced at those sections"
   },
-  "transports:7:3": {
+  "transports:8:3": {
    "text": "| Device Class Definition for HID 1.11 |",
    "excluded": "informative: a reference list naming the outside specification this document leans on and the sections that use it; its rules are traced at those sections"
   },
-  "transports:7:4": {
+  "transports:8:4": {
    "text": "| Microsoft OS 2.0 Descriptors Specifica",
    "excluded": "informative: a reference list naming the outside specification this document leans on and the sections that use it; its rules are traced at those sections"
   },
-  "transports:7:5": {
+  "transports:8:5": {
    "text": "| RFC 6762 Multicast DNS | `.local` の問い合",
    "excluded": "informative: a reference list naming the outside specification this document leans on and the sections that use it; its rules are traced at those sections"
   },
-  "transports:7:6": {
+  "transports:8:6": {
    "text": "| RFC 6763 DNS-Based Service Discovery |",
    "excluded": "informative: a reference list naming the outside specification this document leans on and the sections that use it; its rules are traced at those sections"
   }

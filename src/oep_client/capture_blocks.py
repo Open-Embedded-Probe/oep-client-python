@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
-"""Reading a capture's data formats beyond 0 (oep-if-capture §1): format 1, the logic blocks (§1.3).
+"""Reading a capture's data formats beyond 0 (oep-if-capture §1): format 1, the logic blocks (§1.3), and format 2, the
+analog blocks (§1.4).
 
 A segment of format 1 is a run of blocks of L original samples (the last one r = samples mod L). Each block gives:
 
@@ -19,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import NamedTuple
 
-from . import host as h
+from . import host as h, registry as reg
 
 try:
     import numpy as _np
@@ -292,3 +293,123 @@ def worst_bytes(R: int, event_d: list[int], block: int) -> int:
     """The most bytes one block of L samples takes (§1.3): 2 ceil(E/8) + 4 + L R / 8 + sum min(L/8, (L/D) 4)."""
     E = len(event_d)
     return 2 * ((E + 7) // 8) + 4 + block * R // 8 + sum(min(block // 8, block // d * EVENT_BYTES) for d in event_d)
+
+
+# ---- format 2, the analog blocks (§1.4) ----------------------------------------------------------------------------
+PACKED, MINMAX, SUM = (reg.FIXTURE_ANALOG.enum["analog_carriage"][k] for k in ("packed", "minmax", "sum"))
+
+
+@dataclass
+class AnalogChannel:
+    """One channel's part of a format 2 block (§1.4): `values` (packed, lossless), or per interval of D (the last one
+    partial: its points from the block's r) `mins` / `maxs` and / or `sums` (summaries)."""
+    kind: int
+    d: int
+    values: list[int] = field(default_factory=list)
+    mins: list[int] = field(default_factory=list)
+    maxs: list[int] = field(default_factory=list)
+    sums: list[int] = field(default_factory=list)
+
+    def points(self, r: int) -> list[int]:
+        """The original samples each interval covers (a sum over its points is their mean)."""
+        return [min(self.d, r - lo) for lo in range(0, r, self.d)]
+
+
+@dataclass
+class AnalogBlock:
+    """One block of a format 2 segment: samples `first` .. `first + samples - 1`, role -> its part."""
+    first: int
+    samples: int
+    channels: dict[int, AnalogChannel] = field(default_factory=dict)
+
+
+def _part_bits(r: int, kind: int, d: int, b: int) -> int:
+    if kind == PACKED:
+        return r * b
+    per = (2 * b if kind & MINMAX else 0) + (b + (d - 1).bit_length() if kind & SUM else 0)
+    return -(-r // d) * per
+
+
+def analog_block_bytes(r: int, order: list[int], carriage: dict[int, tuple[int, int]], b: int) -> int:
+    """The bytes of one format 2 block of r samples: every channel's part, each ending on a byte (§1.4)."""
+    return sum((_part_bits(r, *carriage.get(k, (PACKED, 1)), b) + 7) // 8 for k in order)
+
+
+def analog_segment_bytes(samples: int, order: list[int], carriage: dict[int, tuple[int, int]], block: int,
+                         b: int) -> int:
+    """A format 2 segment's bytes: whole blocks of L, the last of what is left (§1.4; a fixed size)."""
+    whole, rest = divmod(samples, block)
+    return (whole * analog_block_bytes(block, order, carriage, b)
+            + (analog_block_bytes(rest, order, carriage, b) if rest else 0))
+
+
+def read_analog_blocks(data: bytes, samples: int, order: list[int], carriage: dict[int, tuple[int, int]],
+                       block: int, b: int) -> list[AnalogBlock]:
+    """A format 2 segment's bytes (§1.4) -> its blocks. `order`: the layout's order, `carriage`: role -> (kind, d) as
+    configured (the others packed), `block`: the answer's L, `b`: the layout's b. Bytes left over, or too few, raise
+    ProtocolError."""
+    if len(data) != analog_segment_bytes(samples, order, carriage, block, b):
+        raise h.ProtocolError(f"format 2: {len(data)} bytes for {samples} samples "
+                              f"({analog_segment_bytes(samples, order, carriage, block, b)} expected)")
+    out, pos = [], 0
+    for first in range(0, samples, block):
+        r = min(block, samples - first)
+        blk = AnalogBlock(first, r)
+        for k in order:
+            kind, d = carriage.get(k, (PACKED, 1))
+            nbytes = (_part_bits(r, kind, d, b) + 7) // 8
+            acc, at = int.from_bytes(data[pos:pos + nbytes], "little"), 0
+            pos += nbytes
+
+            def take(bits: int) -> int:
+                nonlocal at
+                v = acc >> at & ((1 << bits) - 1)
+                at += bits
+                return v
+            c = AnalogChannel(kind, d)
+            if kind == PACKED:
+                c.values = [take(b) for _ in range(r)]
+            else:
+                for _ in range(-(-r // d)):
+                    if kind & MINMAX:
+                        c.mins.append(take(b))
+                        c.maxs.append(take(b))
+                    if kind & SUM:
+                        c.sums.append(take(b + (d - 1).bit_length()))
+            blk.channels[k] = c
+        out.append(blk)
+    return out
+
+
+# ---- format 3, the timed states (§3.8) -----------------------------------------------------------------------------
+ESCAPE = 0xFFFFFFFF                      # a delta that only moves time on: its state is no sample
+
+
+def read_state_timed(data: bytes, samples: int, w: int) -> list[tuple[int, int]]:
+    """A format 3 segment's bytes -> (ticks from start, state) for each of its `samples` samples: the first delta
+    counts from start, the others from the sample before, an escape (0xFFFFFFFF) moves time on without a sample.
+    Bytes left over, or too few, raise ProtocolError."""
+    size = 4 + (w + 7) // 8
+    out, pos, ticks = [], 0, 0
+    while len(out) < samples:
+        if pos + size > len(data):
+            raise h.ProtocolError(f"format 3: {len(out)} of {samples} samples in {len(data)} bytes")
+        delta = int.from_bytes(data[pos:pos + 4], "little")
+        ticks += delta
+        if delta != ESCAPE:
+            out.append((ticks, int.from_bytes(data[pos + 4:pos + size], "little") & ((1 << w) - 1)))
+        pos += size
+    if pos != len(data):
+        raise h.ProtocolError(f"format 3: {len(data) - pos} bytes past the segment's {samples} samples")
+    return out
+
+
+def state_timed_length(data: bytes, samples: int, w: int) -> int:
+    """The bytes `samples` samples of format 3 take at the start of `data` (escapes included)."""
+    size, pos, n = 4 + (w + 7) // 8, 0, 0
+    while n < samples:
+        if pos + size > len(data):
+            raise h.ProtocolError("format 3: the segment's bytes end inside its entries")
+        n += int.from_bytes(data[pos:pos + 4], "little") != ESCAPE
+        pos += size
+    return pos

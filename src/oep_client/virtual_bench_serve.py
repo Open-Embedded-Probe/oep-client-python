@@ -707,8 +707,8 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
         a.tcp_connections = TCP_CONNECTIONS
     if a.tcp_connections < 1:
         ap.error("--tcp-connections: 1 or more")
-    if a.unit_id is not None and not virtual_bench.UNIT_ID.fullmatch(a.unit_id):
-        ap.error(f"--unit-id {a.unit_id}: [a-z0-9-], 1 to 32 characters (core §7.5)")
+    if a.unit_id is not None and (not virtual_bench.UNIT_ID.fullmatch(a.unit_id) or a.unit_id == "any"):
+        ap.error(f"--unit-id {a.unit_id}: [a-z0-9-], 1 to 32 characters, not any (core §7.5)")
     for ip in a.announce_on:
         try:
             socket.inet_aton(ip)

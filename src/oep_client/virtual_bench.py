@@ -20,6 +20,7 @@ from dataclasses import dataclass
 
 from . import catalog, message as m, names, registry as reg
 from .catalog import CHANNEL_GROUP, FEATURES, MAX_CLOCK_HZ, MAX_LENGTH, MIN_CLOCK_HZ, ListEntry
+from .virtual_bench_capture import BLOCK_TOP
 
 CORE_FN = 0
 OP_CONFIRM, OP_LIST, OP_DESCRIBE = 0x01, 0x02, 0x03
@@ -209,7 +210,9 @@ def _analog_decl(frontends: list[tuple[int, int, int]], max_samples: int, min_hz
                   # immediate, cross up / down; every trigger_opts (arm 0, rearm 1, when 1, hysteresis) with 16 records
                   catalog.tlv(_ANAD["trigger"], struct.pack("<IIB", 0b11001 | 1 << _LINKED, max_samples - 1, 0b1111)),
                   catalog.u16(_ANAD["trigger_records"], 16),
-                  catalog.tlv(_ANAD["formats"], bytes([_FMT["test_counter"]])))
+                  catalog.tlv(_ANAD["formats"], bytes([_FMT["analog_blocks"], _FMT["test_counter"]])),
+                  # format 2: packed, minmax and sum, D up to the longest block (§1.4)
+                  catalog.tlv(_ANAD["carriage"], struct.pack("<BII", sum(_ACARRIAGE.values()), 2, BLOCK_TOP)))
     # no features: revision 1 defines no bit (query, force, subscribe / unsubscribe: every op offered, the ops tag)
 
 
@@ -226,6 +229,7 @@ _CAPM = reg.FIXTURE_LOGIC.enum["mode"]
 _FMT = reg.FIXTURE_LOGIC.enum["data_format"]
 _LINKED = reg.FIXTURE_LOGIC.enum["trigger"]["linked"]
 _CARRIAGE = reg.FIXTURE_LOGIC.enum["logic_carriage"]
+_ACARRIAGE = reg.FIXTURE_ANALOG.enum["analog_carriage"]
 
 
 def _capture_decl(modes: list[str], max_channels: int, max_samples: int, ring: int, min_hz: int,
@@ -413,6 +417,67 @@ def _spi_decl(max_length: int, max_hz: int, features: int, queue_depth: int,
             + ((catalog.u32(SPI_CS_SETUP_NS, cs_setup_ns),) if cs_setup_ns else ()))
 
 
+_I2CC_D, _SPIC_D = reg.FIXTURE_I2C_CONTROLLER.tlv["describe"], reg.FIXTURE_SPI_CONTROLLER.tlv["describe"]
+_PWM_D, _CNT_D, _DAC_D = (reg.FIXTURE_PWM.tlv["describe"], reg.FIXTURE_COUNTER.tlv["describe"],
+                          reg.FIXTURE_DAC.tlv["describe"])
+
+
+def i2c_controller_max_length(max_frame: int) -> int:
+    """The largest max_length whose write-only request (header 10 + flags 1 + n 1 + segment 4 + data) and read-only
+    answer (header 5 + result 1 + at 1 + index 2 + count 2 + data) fit max_frame (fixture §5)."""
+    request, result = reg.LIMITS["request_header_bytes"], reg.LIMITS["result_header_bytes"]
+    return min(max_frame - (request + 1 + 1 + 4), max_frame - (result + 1 + 1 + 2 + 2))
+
+
+def spi_controller_max_length(max_frame: int) -> int:
+    """The largest max_length whose one-item request (header 10 + n 1 + item 14 + tx) and answer (header 5 + 14 + rx)
+    fit max_frame (fixture §6)."""
+    request, result = reg.LIMITS["request_header_bytes"], reg.LIMITS["result_header_bytes"]
+    return min(max_frame - (request + 1 + 14), max_frame - (result + 14))
+
+
+def _i2c_controller(fn: int, channels: list[int], max_length: int, max_hz: int, max_stretch_us: int,
+                    pullups: bool = True) -> Offered:
+    """oep.fixture.i2c-controller (fixture §5): SDA / SCL on `channels`, max_length (written and read bytes a transfer),
+    max_clock_hz, features bit0 internal pull-ups, max_stretch_timeout_us (tag 0x40, required), min_clock_hz."""
+    return Offered(fn, 0, "oep.fixture.i2c-controller", _roles({1: channels, 2: channels}) + (
+        catalog.u16(MAX_LENGTH, max_length), catalog.u32(MAX_CLOCK_HZ, max_hz), catalog.u32(MIN_CLOCK_HZ, 1_000),
+        catalog.u32(FEATURES, reg.FIXTURE_I2C_CONTROLLER.enum["features"]["internal_pullups"] if pullups else 0),
+        catalog.u32(_I2CC_D["max_stretch_timeout_us"], max_stretch_us)))
+
+
+def _spi_controller(fn: int, channels: list[int], max_length: int, max_hz: int, time_step_ns: int,
+                    max_delay_ns: int, modes: int = 0x0F) -> Offered:
+    """oep.fixture.spi-controller (fixture §6): SCK / MOSI / MISO / CS on `channels`, max_length (bytes a transfer),
+    max_clock_hz, min_clock_hz, features bit0 LSB first, time_step_ns, modes, max_delay_ns (tags 0x40-0x42, required)."""
+    return Offered(fn, 0, "oep.fixture.spi-controller", _roles({r: channels for r in (1, 2, 3, 4)}) + (
+        catalog.u16(MAX_LENGTH, max_length), catalog.u32(MAX_CLOCK_HZ, max_hz), catalog.u32(MIN_CLOCK_HZ, 1_000),
+        catalog.u32(FEATURES, reg.FIXTURE_SPI_CONTROLLER.enum["features"]["lsb_first"]),
+        catalog.u32(_SPIC_D["time_step_ns"], time_step_ns), catalog.u8(_SPIC_D["modes"], modes),
+        catalog.u32(_SPIC_D["max_delay_ns"], max_delay_ns)))
+
+
+def _pwm(fn: int, channels: list[int], outputs: int, min_hz: int, max_hz: int, duty_bits: int) -> Offered:
+    """oep.fixture.pwm (fixture §7): output k (role k) on `channels`, min / max_clock_hz, channels (0x40), duty_bits (0x41)."""
+    return Offered(fn, 0, "oep.fixture.pwm", _roles({k: channels for k in range(outputs)}) + (
+        catalog.u32(MAX_CLOCK_HZ, max_hz), catalog.u32(MIN_CLOCK_HZ, min_hz),
+        catalog.u8(_PWM_D["channels"], outputs), catalog.u8(_PWM_D["duty_bits"], duty_bits)))
+
+
+def _counter(fn: int, channels: list[int], inputs: int, max_hz: int, max_gate_us: int) -> Offered:
+    """oep.fixture.counter (fixture §8): input k (role k) on `channels`, max_clock_hz, channels (0x40), max_gate_us (0x41)."""
+    return Offered(fn, 0, "oep.fixture.counter", _roles({k: channels for k in range(inputs)}) + (
+        catalog.u32(MAX_CLOCK_HZ, max_hz), catalog.u8(_CNT_D["channels"], inputs),
+        catalog.u32(_CNT_D["max_gate_us"], max_gate_us)))
+
+
+def _dac(fn: int, channels: list[int], bits: int, min_mv: int, max_mv: int) -> Offered:
+    """oep.fixture.dac (fixture §9): output k on the k-th of `channels`, channels (0x40), bits (0x41), range (0x42)."""
+    return Offered(fn, 0, "oep.fixture.dac", _roles({k: [c] for k, c in enumerate(channels)}) + (
+        catalog.u8(_DAC_D["channels"], len(channels)), catalog.u8(_DAC_D["bits"], bits),
+        catalog.tlv(_DAC_D["range"], struct.pack("<ii", min_mv, max_mv))))
+
+
 CONSOLE_SEND_QUEUE = 256      # each console stream's send queue, bytes: the probe's own size (console §2, not declared)
 
 
@@ -446,7 +511,7 @@ def _roles(assign: dict[int, list[int]]) -> tuple[bytes, ...]:
 def _core(firmware: str, model: str, unit_id: str, channels: int, extra: tuple[bytes, ...] = ()) -> Offered:
     """fn 0's declarations (core §7.5): firmware and model (free text), the required unit_id, transport (in `extra`)
     and max_op_ms, the channel count and every channel's name. fn 0 is the core: no name, never listed."""
-    assert UNIT_ID.fullmatch(unit_id), "core §7.5: unit_id grammar"
+    assert UNIT_ID.fullmatch(unit_id) and unit_id != "any", "core §7.5: unit_id grammar, never any (a host's wildcard)"
     return Offered(0, 0, CORE_NAME, (
         catalog.text(CORE_FIRMWARE, firmware), catalog.text(CORE_MODEL, model), catalog.text(CORE_UNIT_ID, unit_id),
         catalog.u16(CORE_CHANNELS, channels), catalog.u32(CORE_MAX_OP_MS, MAX_OP_MS),
@@ -492,9 +557,14 @@ def p4_x035() -> VirtualProbe:
         # own budget: a bind past it is refused unavailable, capture §4.2)
         Offered(12, 0, "oep.fixture.capture-group", _group_decl([7, 11], sourced=True),
                 inner=(("max_tracks", 2), ("budgets", ((83_333, (11,)),)))),
-        _link(13),
-        _plan(14),
-        _restart(15),
+        # the drive fixtures of the P4 firmware: controllers bit-banged on GPIOs, LEDC PWM, an edge counter (no DAC)
+        _i2c_controller(13, pins, max_length=256, max_hz=400_000, max_stretch_us=100_000),
+        _spi_controller(14, pins, max_length=256, max_hz=2_000_000, time_step_ns=100, max_delay_ns=1_000_000),
+        _pwm(15, pins, 4, 10, 10_000_000, 3),
+        _counter(16, pins, 4, 100_000, 5_000_000),
+        _link(17),
+        _plan(18),
+        _restart(19),
     ], netifs=("ethernet",), labels={2: "x035.swdio", 54: "x035.swclk"}), own_channels=own)
 
 
@@ -504,7 +574,8 @@ def esp32_v003(max_frame: int = 512) -> VirtualProbe:
     down to a word, oep-if-debug §4.5), so a host splits its block ops as it does on that probe (a 9168-byte image: 19
     write_blocks of up to 122 words, not 230 of 10). oep.probe.link with port_speed (oep-if-link §3), as that firmware.
     Its channels and the other interfaces' limits are this profile's own. `max_frame`: the same probe at another frame
-    size (esp32_v003_64: the smallest a probe may declare). The core's settings with storage and the Wi-Fi netif."""
+    size (esp32_v003_64: the smallest a probe may declare). The core's settings with storage and the Wi-Fi netif (not
+    below the network items' max_frame floor, transports §7)."""
     own = [0, 1, 2, 3, 6, 7, 8, 9, 10, 11, 12, 15]   # UART0, strapping, flash: the probe's own (SWIO 16 is the wire's)
     wired = [4, 5, 13, 14, 17, 18, 19, 21, 22, 25, 26, 27, 32, 33]
     return VirtualProbe("esp32-v003" if max_frame == 512 else f"esp32-v003-{max_frame}", max_frame, with_settings([
@@ -528,10 +599,19 @@ def esp32_v003(max_frame: int = 512) -> VirtualProbe:
             catalog.channel_group(2, [(1, 14), (2, 13), (3, 27), (4, 26)]))
             + _spi_decl(max_length=32, max_hz=3_000_000, features=0, queue_depth=4, cs_setup_ns=4000)),   # MISO in software
         # fn 9: the settings' interface before they moved into the core (core §13); its number left unused
-        _link(10, port_speed=True),
-        _plan(11),
-        _restart(12),
-    ], netifs=("wifi",), labels={16: "v003.swio", 23: "v003.nrst", 22: "v003.rx", 21: "v003.tx"}), own_channels=own)
+        # the classic ESP32 firmware's drive fixtures: controllers on GPIOs, LEDC PWM, an edge counter, the DAC on 25 / 26
+        _i2c_controller(10, wired, max_length=min(256, i2c_controller_max_length(max_frame)), max_hz=400_000,
+                        max_stretch_us=100_000),
+        _spi_controller(11, wired, max_length=min(256, spi_controller_max_length(max_frame)), max_hz=2_000_000,
+                        time_step_ns=100, max_delay_ns=1_000_000),
+        _pwm(12, wired, 4, 10, 10_000_000, 3),
+        _counter(13, wired, 4, 100_000, 5_000_000),
+        _dac(14, [25, 26], 8, 0, 3300),
+        _link(15, port_speed=True),
+        _plan(16),
+        _restart(17),
+    ], netifs=("wifi",) if max_frame >= reg.LIMITS["wifi_min_max_frame"] else (),   # transports §7: max_frame >= 82
+        labels={16: "v003.swio", 23: "v003.nrst", 22: "v003.rx", 21: "v003.tx"}), own_channels=own)
 
 
 def esp32_v003_64() -> VirtualProbe:
@@ -660,6 +740,58 @@ def with_i2c_pullups(probe: VirtualProbe) -> VirtualProbe:
         return _with(o, (catalog.u32(FEATURES, struct.unpack_from("<I", t, 3)[0] | I2C_INTERNAL_PULLUPS)
                          if t[0] == FEATURES else t for t in o.tlvs))
     return _again(probe, [decl(o) if o.name == "oep.fixture.i2c-target" else o for o in probe.offered])
+
+
+EXTERNAL_TCP_PORT = 7891              # with_capture_options' external data paths (capture §3.9): a TCP port and a UDP one
+EXTERNAL_UDP_PORT = 7892
+NAMED_FORMAT = "org.example.virtual-bench.counter"   # its named format: format 4's bytes under a name of its own
+
+
+def capture_option_decls(analog: bool, channels: list[int]) -> tuple[bytes, ...]:
+    """The optional capture declarations of capture §1 (format 0xFF, format_names), §3.8 (front end and external clock)
+    and §3.9 (external data paths) as with_capture_options adds them; `channels` the track's pins (the logic's
+    threshold group)."""
+    d = (_ANAD if analog else _CAPD)
+    ext = reg.FIXTURE_LOGIC.enum["external_kind"]
+    out = (catalog.text(d["format_names"], NAMED_FORMAT),
+           catalog.tlv(d["external_data"], struct.pack("<BBI", ext["tcp"], 0b11, 4_000) + struct.pack("<H", EXTERNAL_TCP_PORT)),
+           catalog.tlv(d["external_data"], struct.pack("<BBI", ext["udp"], 0b01, 1_000) + struct.pack("<H", EXTERNAL_UDP_PORT)))
+    if not analog:
+        # one threshold group for every channel: 0-3300 mV in 50 mV steps, presets 1650 (3.3 V CMOS) and 1400 (TTL),
+        # a hysteresis up to 200 mV in 50 mV steps; a glitch filter 10 ns - 10 us in 10 ns steps; an external clock up to
+        # 50 MHz on either or both edges, with a qualifier
+        presets = (1650, 1400)
+        return out + (
+            catalog.tlv(_CAPD["threshold"], struct.pack("<BiiIII", 0, 0, 3300, 50, 200, 50)
+                        + struct.pack(f"<B{len(presets)}i", len(presets), *presets)
+                        + struct.pack(f"<B{len(channels)}H", len(channels), *channels)),
+            catalog.tlv(_CAPD["glitch_filter"], struct.pack("<BIII", 0, 10, 10_000, 10)),
+            catalog.tlv(_CAPD["external_clock"], struct.pack("<IBB", 50_000_000, 0b111, 1)))
+    out += tuple(catalog.tlv(_ANAD["coupling"], bytes([fe, 0b111])) for fe in range(4))   # DC, AC, GND
+    out += tuple(catalog.tlv(_ANAD["offset"], struct.pack("<BiiI", fe, -1000, 1000, 10)) for fe in range(4))
+    out += tuple(catalog.tlv(_ANAD["bandwidth"], struct.pack("<BB3I", fe, 3, 0, 20_000, 2_000)) for fe in range(4))
+    out += tuple(catalog.tlv(_ANAD["impedance"], struct.pack("<BII", fe, 1_000_000, 0xFFFFFFFF)) for fe in range(4))
+    # 8 / 12 bits at the ADC's full rate, 16 bits at a quarter of it; hardware averaging 2, 4, 16
+    return out + (catalog.tlv(_ANAD["resolution"], struct.pack("<BBIBIBI", 3, 8, 83_333, 12, 83_333, 16, 20_833)),
+                  catalog.tlv(_ANAD["oversample"], struct.pack("<B3H", 3, 2, 4, 16)))
+
+
+def with_capture_options(probe: VirtualProbe) -> VirtualProbe:
+    """The profile with every optional capture feature on its logic and analog tracks: named formats (format 0xFF),
+    format 3 and the external clock, threshold and glitch filter (logic), coupling, offset, bandwidth, impedance,
+    resolution and oversample (analog), and the external data paths (TCP, UDP). VIRTUAL BENCH ONLY (no profile's
+    probe has them all)."""
+    def decl(o: Offered) -> Offered:
+        if o.name not in ("oep.fixture.logic", "oep.fixture.analog"):
+            return o
+        analog = o.name == "oep.fixture.analog"
+        d = _ANAD if analog else _CAPD
+        more = (_FMT["named"],) + (() if analog else (_FMT["state_timed"],))
+        pins = sorted({ch for t in o.tlvs if t[0] == catalog.ROLE_CHANNELS
+                       for ch in catalog.bitmap_to_channels(struct.unpack_from("<H", t, 4)[0], t[6:])})
+        kept = tuple(catalog.tlv(d["formats"], t[3:] + bytes(more)) if t[0] == d["formats"] else t for t in o.tlvs)
+        return _with(o, kept + capture_option_decls(analog, pins))
+    return _again(probe, [decl(o) for o in probe.offered])
 
 
 def core_v1() -> VirtualProbe:

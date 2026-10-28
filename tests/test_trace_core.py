@@ -4,6 +4,7 @@ and, where the rule is fn 0's, also the core-v1 profile (virtual_core.Core) - an
 core, link). A *_mutant test breaks the bench or the client the way the rule forbids and shows the same check fails."""
 
 import random
+import re
 import struct
 
 import pytest
@@ -1607,15 +1608,16 @@ def test_firmware_model_and_chip_are_text():
 
 
 def test_unit_id_is_required_its_grammar_and_the_same_on_every_transport():
-    """core §7.5: unit_id is required, 1-32 bytes of a-z 0-9 -, the same in the describe of every transport; it is
-    made from the unit alone (not the transport kind)."""
+    """core §7.5: unit_id is required, 1-32 bytes of a-z 0-9 -, never `any`, the same in the describe of every
+    transport; it is made from the unit alone (not the transport kind)."""
     ep = build()
     values = {bytes(decl(ep, "unit_id", t)[0]) for t in range(4)}
     assert len(values) == 1
     v = values.pop()
     assert vb.UNIT_ID.fullmatch(v.decode())
-    with pytest.raises(AssertionError):
-        vb._core("1", "m", "BAD_ID", 0)
+    for bad in ("BAD_ID", "any"):                                   # any: the host address's wildcard (host guide §5.3)
+        with pytest.raises(AssertionError):
+            vb._core("1", "m", bad, 0)
 
 
 def test_channels_are_numbered_from_0():
@@ -1637,6 +1639,16 @@ def test_channel_names_and_the_firmwares_initial_labels():
     names = [v for v in decl(ep, "channel_name")]
     assert [struct.unpack_from("<H", v)[0] for v in names] == list(range(ep.channels)) and all(v[2:].decode() for v in names)
     assert dict(settings.labels(host_on(ep))) == {2: "x035.swdio", 54: "x035.swclk"}
+
+
+@pytest.mark.parametrize("name", sorted(vb.PROFILES))
+def test_channel_names_have_their_grammar_and_differ(name):
+    """core §7.5: a channel's name is 1-16 bytes of A-Z a-z 0-9 _ -, and no two channels of a probe share one."""
+    ep = build(vb.PROFILES[name])
+    names_ = [v[2:].decode("ascii") for v in decl(ep, "channel_name")]
+    limit = reg.LIMITS["channel_name_max_bytes"]
+    assert all(re.fullmatch(rf"[A-Za-z0-9_-]{{1,{limit}}}", n) for n in names_), names_
+    assert len(set(names_)) == len(names_)
 
 
 def test_one_transport_entry_per_transport_with_its_kind_and_interface():

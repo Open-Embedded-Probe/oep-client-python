@@ -75,8 +75,9 @@ class Tagging:
 
 # free channels per profile: gpio, uart rx / tx (per uart), i2c sda / scl, spi sck / mosi / miso / cs, logic x2, analog
 CHANNELS = {"p4-x035": {"gpio": 30, "uart": [(31, 32), (33, 34)], "i2c": (20, 21), "spi": (26, 27, 28, 29),
-                        "logic": (36, 37), "analog": 17},
-            "esp32-v003": {"gpio": 33, "uart": [(17, 19)], "i2c": (21, 22), "spi": (14, 13, 27, 26), "logic": (25, 32)}}
+                        "logic": (36, 37), "analog": 17, "pwm": 40},
+            "esp32-v003": {"gpio": 33, "uart": [(17, 19)], "i2c": (21, 22), "spi": (14, 13, 27, 26), "logic": (25, 32),
+                           "pwm": 4, "dac": 25}}
 
 
 def bench(probe, transport=1, tag=UNKNOWN):
@@ -155,6 +156,10 @@ def drive_wire_dm_console(hst, wire_name):
     wire.detach(conn)
 
 
+DRIVE_NAMES = {"oep.fixture.i2c-controller", "oep.fixture.spi-controller", "oep.fixture.pwm", "oep.fixture.counter",
+               "oep.fixture.dac"}
+
+
 def drive_fixtures(hst, ep):
     ch = CHANNELS[ep.probe.label]
     gpio = fixture.Gpio(hst)
@@ -185,6 +190,32 @@ def drive_fixtures(hst, ep):
     spi.arm(4, b"\x01")
     spi.read_rx()
     spi.status()
+    core.plan_release(hst, [i2c.fn, spi.fn])                          # their pins for the controllers
+    names = set(ep.names.values())
+    if "oep.fixture.i2c-controller" in names:                          # fixture §5
+        ic = fixture.I2cController(hst)
+        core.plan_apply(hst, ic.assignments(*ch["i2c"]))
+        ic.configure(100_000, 1_000)
+        ic.write(0x50, b"\x00\x01")
+        ic.status()
+    if "oep.fixture.spi-controller" in names:                          # fixture §6
+        sc = fixture.SpiController(hst)
+        core.plan_apply(hst, sc.assignments(*ch["spi"]))
+        sc.configure(0, 0, 1_000_000)
+        sc.exchange(b"\x01")
+        sc.status()
+    if "oep.fixture.pwm" in names:                                     # fixture §7, §8: counted on its own pin
+        pwm, counter = fixture.Pwm(hst), fixture.Counter(hst)
+        core.plan_apply(hst, pwm.assignments(ch["pwm"]) + counter.assignments(ch["pwm"]))
+        pwm.start(0, 1_000)
+        pwm.status()
+        counter.measure(1_000)
+    if "oep.fixture.dac" in names:                                     # fixture §9
+        dac = fixture.Dac(hst)
+        core.plan_apply(hst, dac.assignments(ch["dac"]))
+        dac.set([(0, 1)])
+        dac.status()
+    core.plan_release(hst, [fn for fn, name in ep.names.items() if name in DRIVE_NAMES])   # their pins for what follows
 
 
 def drive_config(hst):

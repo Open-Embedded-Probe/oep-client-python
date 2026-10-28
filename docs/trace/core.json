@@ -1,5 +1,5 @@
 {
- "spec_commit": "cb3067c",
+ "spec_commit": "320c626",
  "units": {
   "core:0:1": {
    "text": "| 層 | 中身 | 名前 | 版 |",
@@ -10,7 +10,8 @@
    "verify": [
     "tests/test_trace_core.py::test_core_is_fn_0_has_no_name_and_is_never_listed[core-v1]",
     "tests/test_trace_core.py::test_core_is_fn_0_has_no_name_and_is_never_listed[full]",
-    "tests/test_virtual_bench_rules_2026_10_06.py::test_c39_list_from_beyond_the_matches_gives_the_total_and_count_0"
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_c39_list_from_beyond_the_matches_gives_the_total_and_count_0",
+    "tests/test_settings.py::test_describe_lists_the_items_and_their_choices"
    ],
    "mutants": [],
    "note": "fn 0 has no name and no list entry on both benches; confirm gives protocol revision 1"
@@ -96,13 +97,26 @@
    "note": "keepalive and other requests of the session restart the lease"
   },
   "core:1:11": {
-   "text": "| channel | probe のピンの番号（u16） |",
+   "text": "| channel | probe のピン。名前（チップのデータシートのピンの名",
    "verify": [
-    "tests/test_trace_core.py::test_channels_are_numbered_from_0",
-    "tests/test_trace_core.py::test_the_cause_fn_and_channel_tlvs"
+    "tests/test_trace_core.py::test_channel_names_and_the_firmwares_initial_labels",
+    "tests/test_trace_core.py::test_channel_names_have_their_grammar_and_differ[esp32-v003]",
+    "tests/test_trace_core.py::test_channel_names_have_their_grammar_and_differ[esp32-v003-64]",
+    "tests/test_trace_core.py::test_channel_names_have_their_grammar_and_differ[p4-bench]",
+    "tests/test_trace_core.py::test_channel_names_have_their_grammar_and_differ[p4-x035]",
+    "tests/test_trace_core.py::test_channel_names_have_their_grammar_and_differ[rp2350-pins]"
    ],
    "mutants": [],
-   "note": "channel numbers are u16"
+   "note": ""
+  },
+  "core:1:12": {
+   "text": "| 設定 | probe が起動を越えて保つ値。本体が取りまとめ、項目の持ち主（",
+   "verify": [
+    "tests/test_settings.py::test_describe_lists_the_items_and_their_choices",
+    "tests/test_settings.py::test_save_state_and_the_next_boot"
+   ],
+   "mutants": [],
+   "note": ""
   },
   "core:1.2:1": {
    "text": "- §3 の経路の少なくとも 1 つと、そのフレーム;",
@@ -129,8 +143,7 @@
    "text": "- fn 0 の confirm、list、describe、clock、ope",
    "verify": [
     "tests/test_trace_core.py::test_fn_0_offers_its_eight_ops_and_answers_each[core-v1]",
-    "tests/test_trace_core.py::test_fn_0_offers_its_eight_ops_and_answers_each[full]",
-    "tests/test_virtual_bench_rules_2026_10_06.py::test_fn_0_has_exactly_the_eight_core_ops_and_no_subscribe"
+    "tests/test_trace_core.py::test_fn_0_offers_its_eight_ops_and_answers_each[full]"
    ],
    "mutants": [],
    "note": "fn 0's ops tag is exactly the eight core ops and each is answered"
@@ -162,13 +175,22 @@
    "note": "channels declared; every channel not the probe's own is Hi-Z idle from boot"
   },
   "core:1.2:7": {
-   "text": "- 通知を送り出すインターフェースを持つなら、§10.3 と §10.4。",
+   "text": "- 通知を送り出すインターフェースを持つなら、§10.3 と §10.4;",
    "verify": [
     "tests/test_trace_core.py::test_every_fn_that_sends_notifications_has_subscribe_and_unsubscribe",
     "tests/test_virtual_bench_rules_2026_10_06.py::test_subscribe_is_the_emitting_interfaces_own_op"
    ],
    "mutants": [],
    "note": "notifying fns set both subscribe and unsubscribe; §10.3/§10.4 traced at their units"
+  },
+  "core:1.2:8": {
+   "text": "- 設定を持つなら、§13（save は任意）。",
+   "verify": [
+    "tests/test_settings.py::test_a_probe_without_a_store_keeps_values_until_the_next_boot",
+    "tests/test_settings.py::test_save_state_and_the_next_boot"
+   ],
+   "mutants": [],
+   "note": ""
   },
   "core:2.1:1": {
    "text": "- 真偽値の u8 は、送る側が 0（偽）か 1（真）を置き、読む側は 0 でな",
@@ -313,8 +335,7 @@
   "core:2.2:11": {
    "text": "- 応答、出来事、データ、describe で、読む側は知らない名前の拡張を読み",
    "verify": [
-    "tests/test_trace_core_names.py::test_a_reader_skips_an_unknown_named_extension_in_answers_and_describe",
-    "tests/test_spec_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[probe.config get: count separates items from response extensions]"
+    "tests/test_trace_core_names.py::test_a_reader_skips_an_unknown_named_extension_in_answers_and_describe"
    ],
    "mutants": [],
    "note": "the client skips an unknown extension in get and describe"
@@ -624,7 +645,8 @@
    "verify": [
     "tests/test_trace_core.py::test_fn_0_op_space[core-v1]",
     "tests/test_trace_core.py::test_fn_0_op_space[full]",
-    "tests/test_virtual_bench_rules_2026_10_06.py::test_c21_an_op_fn_0_does_not_define_is_unknown_operation_not_session_required"
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_c21_an_op_fn_0_does_not_define_is_unknown_operation_not_session_required",
+    "tests/test_settings.py::test_the_lock_column"
    ],
    "mutants": [],
    "note": "fn 0 ops in 0x01-0x0F / 0x10-0x1F; others unknown_operation"
@@ -1062,6 +1084,14 @@
    "note": "channel u16, repeated, read in order"
   },
   "core:4.3:18": {
+   "text": "| 0x03 | item | u8。断りの対象の、要求の中の並びの位置（0 か",
+   "verify": [
+    "tests/test_settings.py::test_a_refused_set_changes_nothing"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:4.3:19": {
    "text": "| 0x05 | fn | u16。断りの対象の fn |",
    "verify": [
     "tests/test_trace_core.py::test_the_cause_fn_and_channel_tlvs",
@@ -1747,6 +1777,32 @@
    "note": "ops in every describe; review4: ops is not a repeating tag - a second ops adds nothing"
   },
   "core:7.4:8": {
+   "text": "| 0x08 | setting | form(u8)、key_kind(u8)",
+   "verify": [
+    "tests/test_settings.py::test_describe_lists_the_items_and_their_choices",
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[esp32-v003]",
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[esp32-v003-64]",
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[p4-bench]",
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[p4-x035]",
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[rp2350-pins]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:7.4:9": {
+   "text": "| 0x09 | setting_choice | number(u8)、val",
+   "verify": [
+    "tests/test_settings.py::test_describe_lists_the_items_and_their_choices",
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[esp32-v003]",
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[esp32-v003-64]",
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[p4-bench]",
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[p4-x035]",
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[rp2350-pins]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:7.4:10": {
    "text": "- **ops の値**: base(u8) と、1 byte 以上の bitm",
    "verify": [
     "tests/test_trace_core.py::test_ops_value_form_and_the_examples"
@@ -1754,7 +1810,7 @@
    "mutants": [],
    "note": "base + 8 x n <= 256, a bitmap byte or more; outside: the fn not used"
   },
-  "core:7.4:9": {
+  "core:7.4:11": {
    "text": "- **ops** の例: op 0x10〜0x17 をすべて持つ riscv-",
    "verify": [
     "tests/test_trace_core.py::test_ops_value_form_and_the_examples"
@@ -1762,7 +1818,7 @@
    "mutants": [],
    "note": "07 02 00 10 FF and 07 02 00 10 07 decode as the example says; F9 01 invalid"
   },
-  "core:7.4:10": {
+  "core:7.4:12": {
    "text": "- どのピンにも割り当てられる機能は role_channels に候補を並べ、",
    "verify": [
     "tests/test_trace_core.py::test_a_channel_group_is_matched_whole_and_role_channels_bound_their_roles",
@@ -1774,7 +1830,7 @@
    "mutants": [],
    "note": "p4-bench's fixed groups vs rp2350's any-pin role_channels; both declared: a group whole and role_channels' candidates, a role only role_channels names bound by it alone"
   },
-  "core:7.4:11": {
+  "core:7.4:13": {
    "text": "- role_channels と channel_group は、インターフェ",
    "verify": [
     "tests/test_trace_core.py::test_a_channel_group_is_matched_whole_and_role_channels_bound_their_roles"
@@ -1820,15 +1876,23 @@
    "note": "u16; channel == channels is unsupported; core-v1 without channels"
   },
   "core:7.5:5": {
-   "text": "| 0x46 | label | channel(u16)、text。**fir",
+   "text": "| 0x44 | channel_name | channel(u16)、tex",
    "verify": [
-    "tests/test_trace_core.py::test_labels_are_the_firmwares_fixed_names",
-    "tests/test_trace_core.py::test_a_label_set_in_the_settings_is_not_in_describe"
+    "tests/test_trace_core.py::test_channel_names_and_the_firmwares_initial_labels"
    ],
    "mutants": [],
-   "note": "channel(u16) text, read by the host; a settings label never shows in describe"
+   "note": ""
   },
   "core:7.5:6": {
+   "text": "| 0x45 | netif | text。ネットワークの口の名前（§7.7 の",
+   "verify": [
+    "tests/test_settings.py::test_describe_lists_the_items_and_their_choices",
+    "tests/test_settings.py::test_the_network_op_only_with_netifs"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:7.5:7": {
    "text": "| 0x49 | transport | index(u8)、kind(u8)、",
    "verify": [
     "tests/test_trace_core.py::test_one_transport_entry_per_transport_with_its_kind_and_interface",
@@ -1837,7 +1901,7 @@
    "mutants": [],
    "note": "index kind interface, one per transport; UART bridge / TCP 0xFF"
   },
-  "core:7.5:7": {
+  "core:7.5:8": {
    "text": "| 0x4C | chip | text。probe の MCU の型番とリビジ",
    "verify": [
     "tests/test_trace_core.py::test_firmware_model_and_chip_are_text"
@@ -1845,7 +1909,7 @@
    "mutants": [],
    "note": "chip is text, optional"
   },
-  "core:7.5:8": {
+  "core:7.5:9": {
    "text": "| 0x4D | max_op_ms | u32。probe が1つの要求自身の",
    "verify": [
     "tests/test_trace_core.py::test_max_op_ms_is_required_and_in_range",
@@ -1856,7 +1920,7 @@
    "mutants": [],
    "note": "1-600000; a hold past it unsupported; the host refuses others"
   },
-  "core:7.5:9": {
+  "core:7.5:10": {
    "text": "- transport の kind: 1 UART bridge、2 USB ",
    "verify": [
     "tests/test_trace_core.py::test_one_transport_entry_per_transport_with_its_kind_and_interface"
@@ -1864,26 +1928,30 @@
    "mutants": [],
    "note": "kinds 1-6 as the registry says"
   },
-  "core:7.5:10": {
-   "text": "- **経路の index の不変性**: 経路は、同じ model の fir",
+  "core:7.5:11": {
+   "text": "- **channel の名前**: チップのデータシートがそのピンに使う名前（",
    "verify": [
-    "tests/test_trace_core.py::test_a_firmware_that_adds_a_transport_gives_it_an_unused_index",
-    "tests/test_virtual_bench_rules_2026_10_06.py::test_c41_a_uart_bridge_and_tcp_name_no_usb_interface"
+    "tests/test_trace_core.py::test_channel_names_have_their_grammar_and_differ[esp32-v003]",
+    "tests/test_trace_core.py::test_channel_names_have_their_grammar_and_differ[esp32-v003-64]",
+    "tests/test_trace_core.py::test_channel_names_have_their_grammar_and_differ[p4-bench]",
+    "tests/test_trace_core.py::test_channel_names_have_their_grammar_and_differ[p4-x035]",
+    "tests/test_trace_core.py::test_channel_names_have_their_grammar_and_differ[rp2350-pins]"
    ],
    "mutants": [],
-   "note": "an added transport takes an index not used before (firmware releases themselves are not modelled)"
+   "note": ""
   },
-  "core:7.5:11": {
+  "core:7.5:12": {
    "text": "- **unit_id の一意性**: unit_id は個体ごとに違う値にする",
    "verify": [
     "tests/test_trace_core.py::test_an_x_unit_id_keys_nothing_kept_across_sessions",
     "tests/test_trace_core.py::test_an_x_unit_id_names_no_probe_and_keeps_no_session",
-    "tests/test_review6_core_late.py::test_two_devices_with_the_same_x_serial_are_two_probes"
+    "tests/test_review6_core_late.py::test_two_devices_with_the_same_x_serial_are_two_probes",
+    "tests/test_trace_core.py::test_unit_id_is_required_its_grammar_and_the_same_on_every_transport"
    ],
    "mutants": [],
    "note": "the speed record keeps nothing under an x- unit_id; tcp:x-/usb:x- refused, kept_session keeps nothing for x-"
   },
-  "core:7.5:12": {
+  "core:7.5:13": {
    "text": "- **unit_id の不変性**: unit_id は個体の値（チップの固有",
    "verify": [
     "tests/test_trace_core.py::test_unit_id_is_required_its_grammar_and_the_same_on_every_transport",
@@ -1933,7 +2001,6 @@
    "text": "- インターフェースは、describe に名前を持つ TLV を 1 つずつ繰",
    "verify": [
     "tests/test_trace_core_names.py::test_a_named_lists_numbers_count_from_1_and_follow_the_probes_order",
-    "tests/test_config_network.py::test_dhcp_with_an_address_is_malformed_and_a_netif_past_the_list_unsupported",
     "tests/test_trace_console.py::test_describe_declares_the_mechanisms_as_a_named_list"
    ],
    "mutants": [],
@@ -1942,8 +2009,7 @@
   "core:7.7:2": {
    "text": "- 標準の名前は registry が持つ（`a-z 0-9 -`、`.` を含",
    "verify": [
-    "tests/test_trace_core_names.py::test_standard_names_have_no_dot_and_another_partys_have_one",
-    "tests/test_config_network.py::test_a_probes_own_item_by_its_name_and_form"
+    "tests/test_trace_core_names.py::test_standard_names_have_no_dot_and_another_partys_have_one"
    ],
    "mutants": [],
    "note": "standard names without a dot, own ones reverse-DNS"
@@ -1951,25 +2017,28 @@
   "core:7.7:3": {
    "text": "- 番号は同じ boot_id の間変わらない。host は名前から番号を引き、",
    "verify": [
-    "tests/test_config_network.py::test_item_numbers_follow_the_probes_list_and_the_host_finds_them_by_name"
+    "tests/test_trace_console.py::test_a_mechanism_not_declared_or_unknown_is_unsupported_0x00",
+    "tests/test_trace_console.py::test_a_probes_own_mechanism_takes_its_place_in_the_named_list",
+    "tests/test_settings.py::test_a_save_by_name_survives_moved_fns"
    ],
    "mutants": [],
-   "note": "the client looks numbers up by name and again after a reboot"
+   "note": ""
   },
   "core:7.7:4": {
    "text": "- 並びに無い番号は、その要求の定義に従って断る（ふつうは unsupporte",
    "verify": [
-    "tests/test_config_network.py::test_dhcp_with_an_address_is_malformed_and_a_netif_past_the_list_unsupported",
-    "tests/test_trace_probe_config.py::test_unset_of_a_number_past_the_list_is_unsupported",
-    "tests/test_spec_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[probe.config set: item number 7 past the settings is unsupported]"
+    "tests/test_trace_console.py::test_a_mechanism_not_declared_or_unknown_is_unsupported_0x00",
+    "tests/test_settings.py::test_a_netif_past_the_list_is_unsupported"
    ],
    "mutants": [],
-   "note": "a number past the list: unsupported"
+   "note": ""
   },
   "core:8:1": {
-   "text": "- **空きの状態**: 設定（インターフェースが定める）がそのピンの空きの状態",
+   "text": "- **空きの状態**: 設定の `channel.{}.idle`（§13.8",
    "verify": [
-    "tests/test_trace_core.py::test_the_idle_state_is_the_settings_or_hi_z"
+    "tests/test_trace_core.py::test_the_idle_state_is_the_settings_or_hi_z",
+    "tests/test_settings.py::test_an_idle_set_while_the_channel_is_in_use_applies_when_it_is_free",
+    "tests/test_settings.py::test_unset_enables_it_again_and_parks_it"
    ],
    "mutants": [],
    "note": "Hi-Z without settings; an output-high idle item drives high"
@@ -1991,7 +2060,9 @@
    "verify": [
     "tests/test_trace_core.py::test_a_probe_with_channels_declares_them_and_parks_them_idle",
     "tests/test_virtual_bench_rules_2026_10_06.py::test_t12_every_channel_not_the_probes_own_is_parked_at_boot",
-    "tests/test_trace_core.py::test_at_boot_the_saved_idles_are_applied_and_a_disabled_channel_is_left_alone"
+    "tests/test_trace_core.py::test_at_boot_the_saved_idles_are_applied_and_a_disabled_channel_is_left_alone",
+    "tests/test_settings.py::test_save_state_and_the_next_boot",
+    "tests/test_settings.py::test_a_saved_value_this_firmware_cannot_take_is_left_out"
    ],
    "mutants": [],
    "note": "every non-own channel idle from boot"
@@ -2206,8 +2277,7 @@
   "core:10.2:3": {
    "text": "- fn 0 は通知を送らない。",
    "verify": [
-    "tests/test_trace_core.py::test_fn_0_sends_no_notifications",
-    "tests/test_virtual_bench_rules_2026_10_06.py::test_fn_0_has_exactly_the_eight_core_ops_and_no_subscribe"
+    "tests/test_trace_core.py::test_fn_0_sends_no_notifications"
    ],
    "mutants": [],
    "note": "fn 0's 0x01 is confirm; no push from fn 0; host refuses to subscribe it"
@@ -2433,6 +2503,60 @@
    "mutants": [],
    "note": "fn 0 lock_state: present, answered, lock not needed"
   },
+  "core:11:9": {
+   "text": "| 0x20 | get | §13.5 | §13.5 | 不要 | 設定を持",
+   "verify": [
+    "tests/test_settings.py::test_the_lock_column",
+    "tests/test_settings.py::test_a_probe_of_initial_values_only_has_get_alone"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:11:10": {
+   "text": "| 0x21 | set | §13.5 | §13.5 | 必要 | 設定を持",
+   "verify": [
+    "tests/test_settings.py::test_the_lock_column",
+    "tests/test_settings.py::test_a_probe_of_initial_values_only_has_get_alone"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:11:11": {
+   "text": "| 0x22 | unset | §13.5 | §13.5 | 必要 | 設定",
+   "verify": [
+    "tests/test_settings.py::test_the_lock_column",
+    "tests/test_settings.py::test_a_probe_of_initial_values_only_has_get_alone"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:11:12": {
+   "text": "| 0x23 | save | §13.7 | §13.7 | 必要 | 任意（",
+   "verify": [
+    "tests/test_settings.py::test_the_lock_column",
+    "tests/test_settings.py::test_a_probe_without_a_store_keeps_values_until_the_next_boot"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:11:13": {
+   "text": "| 0x24 | state | §13.7 | §13.7 | 不要 | sa",
+   "verify": [
+    "tests/test_settings.py::test_the_lock_column",
+    "tests/test_settings.py::test_a_probe_without_a_store_keeps_values_until_the_next_boot"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:11:14": {
+   "text": "| 0x25 | network | [経路](oep-transports.j",
+   "verify": [
+    "tests/test_settings.py::test_the_lock_column",
+    "tests/test_settings.py::test_the_network_op_only_with_netifs"
+   ],
+   "mutants": [],
+   "note": ""
+  },
   "core:12:1": {
    "text": "1. **名前**: インターフェースの名前は、定義する者の逆 DNS の名前（",
    "verify": [
@@ -2532,10 +2656,14 @@
    "note": "the client follows §2.4 for unknown enum values and ignores reserved flag bits"
   },
   "core:12:13": {
+   "text": "- 設定の項目を持つなら、その名前、form、key、flags、初期値、意味の",
+   "excluded": "cannot be modelled here: it says what an interface document in oep-spec must contain, not what a host or probe does, and no registry field this repository reads carries it (the settings items an interface owns: their names, forms, keys, flags, initial values, checks and when they act)"
+  },
+  "core:12:14": {
    "text": "- 頼る外部の仕様と、その版と、使う部分（「参照する仕様」の節）。",
    "excluded": "cannot be modelled here: it says what an interface document in oep-spec must contain, not what a host or probe does, and no registry field this repository reads carries it (the referenced external specifications)"
   },
-  "core:12:14": {
+  "core:12:15": {
    "text": "3. **形の規則**: §2.3 のとおり（固定の形、足すものは TLV だけ",
    "verify": [
     "tests/test_trace_core.py::test_a_request_shorter_than_its_fixed_part_is_malformed[core-v1]",
@@ -2546,7 +2674,7 @@
    "mutants": [],
    "note": "restates §2.3: fixed forms, counted lists, critical safety arguments"
   },
-  "core:12:15": {
+  "core:12:16": {
    "text": "4. **失敗**: 受け付けなかったものは rejected、受け付けて失敗し",
    "verify": [
     "tests/test_trace_core.py::test_executed_and_failed_is_completed_failed_not_rejected",
@@ -2555,7 +2683,7 @@
    "mutants": [],
    "note": "not accepted: rejected; run and failed: completed failed"
   },
-  "core:12:16": {
+  "core:12:17": {
    "text": "5. **ロックなしの op は状態を変えない**（§6.3）。",
    "verify": [
     "tests/test_trace_core.py::test_a_lock_free_op_changes_no_state"
@@ -2563,7 +2691,7 @@
    "mutants": [],
    "note": "every lock-free op sent with session 0 leaves lock, plan, pins, subscriptions"
   },
-  "core:12:17": {
+  "core:12:18": {
    "text": "6. **版**: §2.8。",
    "verify": [
     "tests/test_trace_core.py::test_the_host_does_not_use_an_interface_revision_it_does_not_know",
@@ -2572,7 +2700,7 @@
    "mutants": [],
    "note": "restates §2.8"
   },
-  "core:12:18": {
+  "core:12:19": {
    "text": "7. **ほかの者の名前のインターフェースに、番号（op、tag、enum の値",
    "verify": [
     "tests/test_trace_core.py::test_the_bench_adds_nothing_to_the_projects_interfaces"
@@ -2580,7 +2708,7 @@
    "mutants": [],
    "note": "the bench's oep. fns offer only registry ops; its own experiment is under its own name"
   },
-  "core:12:19": {
+  "core:12:20": {
    "text": "- 名前つきの拡張 TLV（§2.2、tag 0x7F）: 要求、応答、出来事、",
    "verify": [
     "tests/test_trace_core_names.py::test_a_reader_skips_an_unknown_named_extension_in_answers_and_describe",
@@ -2590,18 +2718,15 @@
    "mutants": [],
    "note": "another party adds by a named extension"
   },
-  "core:12:20": {
+  "core:12:21": {
    "text": "- 名前の並び（§7.7）: インターフェースが名前で宣言する選択肢に、自分の名",
    "verify": [
-    "tests/test_config_network.py::test_a_probes_own_item_by_its_name_and_form",
-    "tests/test_config_network.py::test_own_items_of_every_form[3-7-\\x07\\x00\\x00\\x00]",
-    "tests/test_config_network.py::test_own_items_of_every_form[5-True-\\x01]",
-    "tests/test_config_network.py::test_own_items_of_every_form[4-10.1.2.3-\\n\\x01\\x02\\x03]"
+    "tests/test_trace_console.py::test_a_probes_own_mechanism_takes_its_place_in_the_named_list"
    ],
    "mutants": [],
-   "note": "another party adds an own item to the settings list"
+   "note": ""
   },
-  "core:12:21": {
+  "core:12:22": {
    "text": "- 自分の名前のインターフェース: 新しい機能（別の fn として出す）。",
    "verify": [
     "tests/test_conformance_resources.py::test_resource_contracts_pass_independent_minimal_extension"
@@ -2609,7 +2734,7 @@
    "mutants": [],
    "note": "another party adds its own interface (a separate fn)"
   },
-  "core:12:22": {
+  "core:12:23": {
    "text": "8. **特定のチップ向けの手順は、汎用のインターフェースに入れない。** チッ",
    "verify": [
     "tests/test_trace_core.py::test_the_family_an_interface_is_for_is_in_the_registry",
@@ -2682,19 +2807,693 @@
    "mutants": [],
    "note": "an unknown cause shown raw"
   },
-  "core:13:1": {
+  "core:13.1:1": {
+   "text": "- **カテゴリ**: 設定は持ち主ごとのカテゴリに分かれる。カテゴリは本体（f",
+   "verify": [
+    "tests/test_settings.py::test_describe_lists_the_items_and_their_choices",
+    "tests/test_settings.py::test_a_save_by_name_survives_moved_fns"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.1:2": {
+   "text": "- **項目**: 持ち主は自分のカテゴリにだけ項目を定め、名前を付ける。ほかの",
+   "excluded": "cannot be modelled here: it says what an interface document in oep-spec must contain, not what a host or probe does, and no registry field this repository reads carries it (who may define items in a category)"
+  },
+  "core:13.1:3": {
+   "text": "- **項目の名前**: `a-z 0-9 -` の label を `.` で",
+   "verify": [
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[esp32-v003]",
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[esp32-v003-64]",
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[p4-bench]",
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[p4-x035]",
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[rp2350-pins]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.1:4": {
+   "text": "- **値**: 値は（カテゴリ、項目、key）ごとに 0 か 1 つ。1 つの",
+   "verify": [
+    "tests/test_settings.py::test_values_round_trip_with_the_generation"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.1:5": {
+   "text": "- **名前の意味は変えない**: 同じカテゴリの同じ名前の項目は、firmwa",
+   "verify": [
+    "tests/test_settings.py::test_a_save_by_name_survives_moved_fns"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.1:6": {
+   "text": "- **持ち主が決めるもの**: 項目の名前、形、key の種類と範囲、flag",
+   "verify": [
+    "tests/test_settings.py::test_forms_and_numbers_malformed_or_unsupported",
+    "tests/test_settings.py::test_a_refused_set_changes_nothing",
+    "tests/test_settings.py::test_output_idle_on_an_input_only_channel_or_a_missing_pull_is_unsupported"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.1:7": {
+   "text": "- 持ち主は値をメモリに持って使う。持ち主は §13.5 の操作によらずに値を変",
+   "verify": [
+    "tests/test_settings.py::test_an_idle_set_while_the_channel_is_in_use_applies_when_it_is_free",
+    "tests/test_settings.py::test_values_round_trip_with_the_generation"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.2:1": {
+   "text": "| 0x08 | setting（共通） | form(u8)、key_kind",
+   "verify": [
+    "tests/test_settings.py::test_describe_lists_the_items_and_their_choices"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.2:2": {
+   "text": "| 0x09 | setting_choice（共通） | number(u8)",
+   "verify": [
+    "tests/test_settings.py::test_describe_lists_the_items_and_their_choices"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.2:3": {
+   "text": "- 1 つの fn に同じ名前の setting を 2 回置かない。項目番号は",
+   "verify": [
+    "tests/test_settings.py::test_describe_lists_the_items_and_their_choices",
+    "tests/test_settings.py::test_a_save_by_name_survives_moved_fns"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.2:4": {
+   "text": "- form、key_kind は §13.3。keys は key_kind ",
+   "verify": [
+    "tests/test_settings.py::test_forms_and_numbers_malformed_or_unsupported",
+    "tests/test_settings.py::test_the_passphrase_is_a_secret"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.2:5": {
+   "text": "- max_len は、その項目の値 1 つの get の応答と set の要求",
+   "verify": [
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[esp32-v003]",
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[esp32-v003-64]",
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[p4-bench]",
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[p4-x035]",
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[rp2350-pins]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.2:6": {
+   "text": "- setting の値は 6 + 名前の長さで、名前が 48 byte でも ",
+   "verify": [
+    "tests/test_settings.py::test_get_is_paged_at_a_small_frame",
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[esp32-v003]",
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[esp32-v003-64]",
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[p4-bench]",
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[p4-x035]",
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[rp2350-pins]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.2:7": {
+   "text": "- setting_choice: number はその fn の項目番号、va",
+   "verify": [
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[esp32-v003]",
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[esp32-v003-64]",
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[p4-bench]",
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[p4-x035]",
+    "tests/test_settings.py::test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar[rp2350-pins]",
+    "tests/test_settings.py::test_describe_lists_the_items_and_their_choices"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.3:1": {
+   "text": "| form | 名前 | wire の data | 書き出し（JSON） |",
+   "excluded": "a table's heading row (form / 名前 / wire の data / 書き出し), not a rule"
+  },
+  "core:13.3:2": {
+   "text": "| 1 | bytes | 0〜max_len byte | 小文字の 16 進",
+   "verify": [
+    "tests/test_settings.py::test_forms_and_numbers_malformed_or_unsupported",
+    "tests/test_settings.py::test_settings_file_export_vectors[export: every value, numbers to names]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.3:3": {
+   "text": "| 2 | text | §2.1 の text、1〜max_len byte ",
+   "verify": [
+    "tests/test_settings.py::test_forms_and_numbers_malformed_or_unsupported",
+    "tests/test_settings.py::test_settings_file_export_vectors[export: every value, numbers to names]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.3:4": {
+   "text": "| 3 | u32 | u32 | 数 |",
+   "verify": [
+    "tests/test_settings.py::test_forms_and_numbers_malformed_or_unsupported",
+    "tests/test_settings.py::test_settings_file_export_vectors[export: every value, numbers to names]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.3:5": {
+   "text": "| 4 | ipv4 | 4 byte、`a.b.c.d` を a から | `",
+   "verify": [
+    "tests/test_settings.py::test_forms_and_numbers_malformed_or_unsupported",
+    "tests/test_settings.py::test_settings_file_export_vectors[export: every value, numbers to names]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.3:6": {
+   "text": "| 5 | bool | u8（0 か 1） | 真偽 |",
+   "verify": [
+    "tests/test_settings.py::test_forms_and_numbers_malformed_or_unsupported",
+    "tests/test_settings.py::test_settings_file_export_vectors[export: every value, numbers to names]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.3:7": {
+   "text": "| 6 | enum | u8。setting_choice の value の",
+   "verify": [
+    "tests/test_settings.py::test_forms_and_numbers_malformed_or_unsupported",
+    "tests/test_settings.py::test_settings_file_export_vectors[export: every value, numbers to names]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.3:8": {
+   "text": "| 7 | channel | u16。channel の番号 | channe",
+   "verify": [
+    "tests/test_settings.py::test_forms_and_numbers_malformed_or_unsupported",
+    "tests/test_settings.py::test_settings_file_export_vectors[export: every value, numbers to names]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.3:9": {
+   "text": "| 8 | transport | u8。経路の index | 経路の名前（下",
+   "verify": [
+    "tests/test_settings.py::test_forms_and_numbers_malformed_or_unsupported",
+    "tests/test_settings.py::test_settings_file_export_vectors[export: every value, numbers to names]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.3:10": {
+   "text": "| 9 | fn | u16。list に載る fn | `\"名前/instan",
+   "verify": [
+    "tests/test_settings.py::test_forms_and_numbers_malformed_or_unsupported",
+    "tests/test_settings.py::test_settings_file_export_vectors[export: every value, numbers to names]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.3:11": {
+   "text": "| key_kind | 名前 | wire の key（u16） | 書き出し",
+   "excluded": "a table's heading row (key_kind / 名前 / wire の key / 書き出しの名前), not a rule"
+  },
+  "core:13.3:12": {
+   "text": "| 0 | none | 0 | — （名前に `{}` を置かない） |",
+   "verify": [
+    "tests/test_settings.py::test_settings_file_export_vectors[export: every value, numbers to names]",
+    "tests/test_settings.py::test_settings_file_import_vectors[import into a probe with other numbers]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.3:13": {
+   "text": "| 1 | channel | channel の番号 | channel の名",
+   "verify": [
+    "tests/test_settings.py::test_settings_file_export_vectors[export: every value, numbers to names]",
+    "tests/test_settings.py::test_settings_file_import_vectors[import into a probe with other numbers]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.3:14": {
+   "text": "| 2 | index | 0〜keys − 1 | 10 進の数（`0`、`1",
+   "verify": [
+    "tests/test_settings.py::test_settings_file_export_vectors[export: every value, numbers to names]",
+    "tests/test_settings.py::test_settings_file_import_vectors[import into a probe with other numbers]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.3:15": {
+   "text": "| 3 | transport | 経路の index | 経路の名前 |",
+   "verify": [
+    "tests/test_settings.py::test_settings_file_export_vectors[export: every value, numbers to names]",
+    "tests/test_settings.py::test_settings_file_import_vectors[import into a probe with other numbers]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.3:16": {
+   "text": "| 4 | netif | fn 0 の describe の netif の並",
+   "verify": [
+    "tests/test_settings.py::test_settings_file_export_vectors[export: every value, numbers to names]",
+    "tests/test_settings.py::test_settings_file_import_vectors[import into a probe with other numbers]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.3:17": {
+   "text": "- **wire は起動の間だけの番号、保存と書き出しは名前**: channe",
+   "verify": [
+    "tests/test_settings.py::test_a_save_by_name_survives_moved_fns",
+    "tests/test_settings.py::test_export_and_import_through_another_probe"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.3:18": {
+   "text": "- **経路の名前**: kind の短い名前（1 `bridge`、2 `cd",
+   "verify": [
+    "tests/test_settings.py::test_a_save_by_name_survives_moved_fns",
+    "tests/test_settings.py::test_settings_file_export_vectors[export: every value, numbers to names]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.3:19": {
+   "text": "- **形の検証**: data の長さが form と合わなければ malfo",
+   "verify": [
+    "tests/test_settings.py::test_forms_and_numbers_malformed_or_unsupported",
+    "tests/test_settings.py::test_a_text_value_is_checked_for_its_length_only"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.4:1": {
+   "text": "- 持ち主は、項目の key ごとに初期値（firmware が用意する値）を持",
+   "verify": [
+    "tests/test_settings.py::test_initial_values_are_values_like_any_other"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.4:2": {
+   "text": "- 本体は、保存の無い起動（保存を持たない probe では毎回の起動、保存を持",
+   "verify": [
+    "tests/test_settings.py::test_initial_values_are_values_like_any_other"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.4:3": {
+   "text": "- 保存を使った起動では、初期値を置かない（保存が空でも、保存に無い項目にも置か",
+   "verify": [
+    "tests/test_settings.py::test_initial_values_are_values_like_any_other"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.4:4": {
+   "text": "- 初期値に戻す op は無い。host は値を unset して、改めて se",
+   "verify": [
+    "tests/test_settings.py::test_export_and_import_through_another_probe",
+    "tests/test_settings.py::test_a_probe_of_initial_values_only_has_get_alone"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.4:5": {
+   "text": "- 利用者に変えてほしくない値を持つ probe（治具など）は、保存を持たない構",
+   "excluded": "advice to probe makers (a jig whose values must not change keeps no store), no rule a host or probe can be checked against"
+  },
+  "core:13.5:1": {
+   "text": "| 0x20 | get | first(u16)、[TLV] | more(u",
+   "verify": [
+    "tests/test_settings.py::test_values_round_trip_with_the_generation",
+    "tests/test_settings.py::test_get_is_paged_at_a_small_frame"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.5:2": {
+   "text": "| 0x21 | set | count(u8)、count × 値、[TLV]",
+   "verify": [
+    "tests/test_settings.py::test_values_round_trip_with_the_generation",
+    "tests/test_settings.py::test_count_0_is_a_no_op_and_a_critical_tail_is_refused_before_anything"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.5:3": {
+   "text": "| 0x22 | unset | count(u8)、count × (fn(u",
+   "verify": [
+    "tests/test_settings.py::test_values_round_trip_with_the_generation",
+    "tests/test_settings.py::test_unset_enables_it_again_and_parks_it"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.5:4": {
+   "text": "| 0x23 | save | [TLV] | generation(u32)、",
+   "verify": [
+    "tests/test_settings.py::test_save_state_and_the_next_boot",
+    "tests/test_settings.py::test_a_failed_save[old-after0]",
+    "tests/test_settings.py::test_a_failed_save[none-after1]",
+    "tests/test_settings.py::test_a_failed_save[unreadable-after2]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.5:5": {
+   "text": "| 0x24 | state | [TLV] | storage_state(u",
+   "verify": [
+    "tests/test_settings.py::test_save_state_and_the_next_boot",
+    "tests/test_settings.py::test_a_failed_save[old-after0]",
+    "tests/test_settings.py::test_a_failed_save[none-after1]",
+    "tests/test_settings.py::test_a_failed_save[unreadable-after2]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.5:6": {
+   "text": "- set と unset を持たない probe の値は、初期値（§13.4）",
+   "verify": [
+    "tests/test_settings.py::test_a_probe_of_initial_values_only_has_get_alone"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.5:7": {
+   "text": "- fn は項目の持ち主の fn（本体は 0）、number はその fn の項",
+   "verify": [
+    "tests/test_settings.py::test_forms_and_numbers_malformed_or_unsupported"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.5:8": {
+   "text": "- **get** は、値を持つすべての（fn、number、key）を、fn、",
+   "verify": [
+    "tests/test_settings.py::test_values_round_trip_with_the_generation",
+    "tests/test_settings.py::test_get_is_paged_at_a_small_frame"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.5:9": {
+   "text": "- **set** は（fn、number、key）ごとに値を置き換え、送らない",
+   "verify": [
+    "tests/test_settings.py::test_values_round_trip_with_the_generation"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.5:10": {
+   "text": "- **まとめて受けるか、何もしない**: probe は、set と unse",
+   "verify": [
+    "tests/test_settings.py::test_a_refused_set_changes_nothing"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.5:11": {
+   "text": "- **generation** は内容の digest ではなく、同じ boo",
+   "verify": [
+    "tests/test_settings.py::test_values_round_trip_with_the_generation",
+    "tests/test_settings.py::test_generation_exhausted_refuses_a_change"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.5:12": {
+   "text": "- **secret**: flags の secret の値は書くだけである。",
+   "verify": [
+    "tests/test_settings.py::test_the_passphrase_is_a_secret"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.5:13": {
+   "text": "- **フレームの大きさ**: 値 1 つの get の応答は 18 + len",
+   "verify": [
+    "tests/test_settings.py::test_a_get_of_one_value_is_18_bytes_and_its_length"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.5:14": {
+   "text": "- 要求の末尾の [TLV] は §2.3 のとおりで、値の data には掛か",
+   "verify": [
+    "tests/test_settings.py::test_count_0_is_a_no_op_and_a_critical_tail_is_refused_before_anything"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.6:1": {
+   "text": "- 本体は、set と unset のそれぞれの値について、その持ち主に変更の可",
+   "verify": [
+    "tests/test_settings.py::test_disabling_a_channel_in_use_is_pin_in_use",
+    "tests/test_settings.py::test_a_refused_set_changes_nothing"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.6:2": {
+   "text": "- 本体は認証を定めない（§0）。設定の可否も §4.3 の任意の方針判定と同じ",
+   "verify": [
+    "tests/test_settings.py::test_the_lock_column"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.6:3": {
+   "text": "- get と state は §4.3 の方針判定のほかでは断らない。secr",
+   "verify": [
+    "tests/test_settings.py::test_the_lock_column",
+    "tests/test_settings.py::test_the_passphrase_is_a_secret"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.7:1": {
+   "text": "- **名前で持つ**: 保存は値を、カテゴリ（本体か、インターフェースの名前と",
+   "verify": [
+    "tests/test_settings.py::test_a_save_by_name_survives_moved_fns"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.7:2": {
+   "text": "- **save** は明示の操作で、今の値をすべて書く。同じ内容が保存済みなら",
+   "verify": [
+    "tests/test_settings.py::test_save_state_and_the_next_boot",
+    "tests/test_settings.py::test_a_save_of_the_same_contents_is_not_written_again"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.7:3": {
+   "text": "- **電源断**: 書き込みのどの時点で電源が落ちても、更新の前の完全な保存か",
+   "verify": [
+    "tests/test_settings.py::test_a_failed_save[old-after0]",
+    "tests/test_settings.py::test_a_failed_save[none-after1]",
+    "tests/test_settings.py::test_a_failed_save[unreadable-after2]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.7:4": {
+   "text": "- **起動**: 持ち主が項目を宣言した後、本体は保存を読み、宣言された項目に",
+   "verify": [
+    "tests/test_settings.py::test_a_saved_value_this_firmware_cannot_take_is_left_out",
+    "tests/test_settings.py::test_a_save_by_name_survives_moved_fns"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.7:5": {
+   "text": "- **起動の順**: 本体の channel の項目（§13.8）を、どのイン",
+   "verify": [
+    "tests/test_settings.py::test_save_state_and_the_next_boot",
+    "tests/test_settings.py::test_a_saved_value_this_firmware_cannot_take_is_left_out"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.7:6": {
+   "text": "- **消す**: 保存を消す op は無い。host は全部の値を unset",
+   "verify": [
+    "tests/test_settings.py::test_unset_all_then_save_empties_the_storage"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.7:7": {
+   "text": "- 保存を持たない probe も、get、set、unset をメモリの上で持",
+   "verify": [
+    "tests/test_settings.py::test_a_probe_without_a_store_keeps_values_until_the_next_boot"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.7:8": {
+   "text": "| storage_state | 0 保存が無い、1 保存をすべて使えた、また",
+   "verify": [
+    "tests/test_settings.py::test_save_state_and_the_next_boot",
+    "tests/test_settings.py::test_a_failed_save[old-after0]",
+    "tests/test_settings.py::test_a_failed_save[none-after1]",
+    "tests/test_settings.py::test_a_failed_save[unreadable-after2]",
+    "tests/test_settings.py::test_a_saved_value_this_firmware_cannot_take_is_left_out"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.7:9": {
+   "text": "| saved_generation | storage_state 1 なら、",
+   "verify": [
+    "tests/test_settings.py::test_save_state_and_the_next_boot",
+    "tests/test_settings.py::test_a_failed_save[old-after0]",
+    "tests/test_settings.py::test_a_failed_save[none-after1]",
+    "tests/test_settings.py::test_a_failed_save[unreadable-after2]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.7:10": {
+   "text": "| reason | 0 なし、1 保存の形か完全性、2 使えない値（宣言の無い",
+   "verify": [
+    "tests/test_settings.py::test_a_saved_value_this_firmware_cannot_take_is_left_out",
+    "tests/test_settings.py::test_a_failed_save[old-after0]",
+    "tests/test_settings.py::test_a_failed_save[none-after1]",
+    "tests/test_settings.py::test_a_failed_save[unreadable-after2]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.7:11": {
+   "text": "- save が成功したら（内容が同じで書き直さなかったときも）storage_",
+   "verify": [
+    "tests/test_settings.py::test_save_state_and_the_next_boot",
+    "tests/test_settings.py::test_a_save_of_the_same_contents_is_not_written_again"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.7:12": {
+   "text": "- 受けた save で書き込みか検証を終えられなければ completed f",
+   "verify": [
+    "tests/test_settings.py::test_a_failed_save[old-after0]",
+    "tests/test_settings.py::test_a_failed_save[none-after1]",
+    "tests/test_settings.py::test_a_failed_save[unreadable-after2]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.8:1": {
+   "text": "| `channel.{}.label` | text（1〜32） | chan",
+   "verify": [
+    "tests/test_settings.py::test_values_round_trip_with_the_generation",
+    "tests/test_settings.py::test_labels_are_unique_but_for_case_and_kept_as_written"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.8:2": {
+   "text": "| `channel.{}.idle` | enum | channel | 空",
+   "verify": [
+    "tests/test_settings.py::test_an_idle_set_while_the_channel_is_in_use_applies_when_it_is_free",
+    "tests/test_settings.py::test_output_idle_on_an_input_only_channel_or_a_missing_pull_is_unsupported"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.8:3": {
+   "text": "| `channel.{}.disable` | bool | channel ",
+   "verify": [
+    "tests/test_settings.py::test_a_plan_naming_a_disabled_channel_is_held_by_settings",
+    "tests/test_settings.py::test_gpio_on_a_disabled_channel"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.8:4": {
+   "text": "- **label は probe の中で一意**: 変更の後の設定で、2 つの",
+   "verify": [
+    "tests/test_settings.py::test_labels_are_unique_but_for_case_and_kept_as_written"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.8:5": {
+   "text": "- probe が自分で使う channel は、channel の項目を持たな",
+   "verify": [
+    "tests/test_settings.py::test_a_refused_set_changes_nothing",
+    "tests/test_trace_core.py::test_channel_names_and_the_firmwares_initial_labels"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.8:6": {
+   "text": "- **disable** は、起動時と解いたときの空きの状態より先に効く。宣言",
+   "verify": [
+    "tests/test_settings.py::test_a_plan_naming_a_disabled_channel_is_held_by_settings",
+    "tests/test_settings.py::test_an_attach_or_a_scan_naming_a_disabled_channel",
+    "tests/test_settings.py::test_gpio_on_a_disabled_channel",
+    "tests/test_settings.py::test_save_state_and_the_next_boot"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.8:7": {
+   "text": "- **idle** の変更は、空きの channel ではただちに、使用中の ",
+   "verify": [
+    "tests/test_settings.py::test_an_idle_set_while_the_channel_is_in_use_applies_when_it_is_free"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.8:8": {
+   "text": "- ネットワークの経路の項目（Wi-Fi のつなぎ先、IPv4 の決め方）と、そ",
+   "verify": [
+    "tests/test_settings.py::test_wifi_off_without_entries_dhcp_without_ipv4",
+    "tests/test_settings.py::test_the_network_op_only_with_netifs"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:13.8:9": {
+   "text": "- インターフェースの項目は、それぞれの文書が定める。",
+   "verify": [
+    "tests/test_settings.py::test_describe_lists_the_items_and_their_choices",
+    "tests/test_settings.py::test_export_and_import_through_another_probe"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "core:14:1": {
    "text": "- [はじめに](getting-started.ja.md): いちばん小さい",
    "excluded": "informative: §13 lists the non-normative guides (a reference list; they add no rules)"
   },
-  "core:13:2": {
+  "core:14:2": {
    "text": "- [host 開発ガイド](host-development-guide.ja",
    "excluded": "informative: §13 lists the non-normative guides (a reference list; they add no rules)"
   },
-  "core:13:3": {
+  "core:14:3": {
    "text": "- [適合](conformance.ja.md): probe と host ",
    "excluded": "informative: §13 lists the non-normative guides (a reference list; they add no rules)"
   },
-  "core:13:4": {
+  "core:14:4": {
    "text": "- [安全とセキュリティ](security.ja.md)、[用語集](glos",
    "excluded": "informative: §13 lists the non-normative guides (a reference list; they add no rules)"
   }

@@ -1,6 +1,43 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Capture data format 2, the analog blocks (oep-if-capture §1.4): `AnalogCapture.configure(carriage={role: (kind,
+  D)})` (kind a bit set of `capture_blocks.PACKED` / `MINMAX` / `SUM`), `analog_blocks()` reading a segment into its
+  blocks (`capture_blocks.read_analog_blocks`, checked against oep-spec's shared vectors), `Config.segment_bytes` of the
+  fixed-size blocks. The virtual bench's analog declares format 2 and makes it in every mode, the trigger judged on the
+  original samples.
+- (JA) キャプチャのデータの形式 2、アナログのブロック（oep-if-capture §1.4）: `AnalogCapture.configure(carriage={role: (kind, D)})`
+  （kind は `capture_blocks.PACKED` / `MINMAX` / `SUM` のビット集合）、区画をブロックに読む `analog_blocks()`
+  （`capture_blocks.read_analog_blocks`、oep-spec の共有ベクタで確かめた）、大きさの決まったブロックの `Config.segment_bytes`。仮想ベンチの
+  アナログは形式 2 を宣言し、どのモードでも作る。トリガは元のサンプルで判定する。
+- (EN) The capture's optional features in the virtual bench, declared by `virtual_bench.with_capture_options(probe)`:
+  named formats (format 0xFF, format_names), the front end of §3.8 (threshold, glitch filter - the data and the trigger
+  after it -, external clock with a qualifier and format 3's timed states, coupling, offset in the scale's zero,
+  bandwidth, impedance, resolution and oversample setting b) and the external data paths of §3.9 (TCP with mux 0 / 1,
+  UDP packets, the OEPX mark, write_pos, read refused, the overflow check against the path's capacity, a path that goes
+  stopping its tracks in error). A probe without a declaration does not have the feature (its TLVs unknown). Client:
+  `configure(format_name=..., options={...})` sends them (critical, overflow plain), `Config.used` / `timebase` /
+  `format_name` / `external_clock` read the answer, `state_timed()` reads format 3.
+- (JA) キャプチャの任意の機能を仮想ベンチに足した。`virtual_bench.with_capture_options(probe)` で宣言する: 名前付きの形式（format 0xFF、
+  format_names）、§3.8 の前段（threshold、グリッチフィルタ - データとトリガの両方がフィルタの後 -、qualifier 付きの外部クロックと形式 3 の
+  時刻つきのステート、coupling、scale の zero に入る offset、bandwidth、impedance、b を決める resolution と oversample）、§3.9 の外部の
+  経路（TCP の mux 0 / 1、UDP のパケット、OEPX の印、write_pos、read の断り、経路の帯域に対する overflow の確かめ、切れた経路はトラックを
+  エラーで止める）。宣言の無い probe はその機能を持たない（TLV は知らないもの）。クライアント: `configure(format_name=..., options={...})`
+  で送る（critical、overflow は印なし）。応答は `Config.used` / `timebase` / `format_name` / `external_clock`、形式 3 は `state_timed()` で読む。
+- (EN) The virtual bench models fixture §5-§9 (`virtual_fixture_drive`): the I2C and SPI controllers, PWM, the edge
+  counter and the DAC on p4-x035 and esp32-v003, with their refusals, results, times and plan rules. Found against the
+  spec and fixed: esp32-v003-64 declared the Wi-Fi items below their max_frame floor; a gateway outside the prefix got an
+  address; unit_id `any` was taken; a save of the same contents was written again; the controllers' max_length did not
+  fit a 64-byte frame.
+- (JA) 仮想ベンチが fixture §5〜§9 をモデルにした（`virtual_fixture_drive`）: I2C と SPI のコントローラ、PWM、エッジのカウンタ、DAC を
+  p4-x035 と esp32-v003 に。断り、結果、時間、plan の規則も。仕様と照らして見つけて直したもの: esp32-v003-64 が max_frame の下限より下で
+  Wi-Fi の項目を宣言していた。prefix の外の gateway でアドレスを得ていた。unit_id `any` を受けていた。同じ内容の save を書き直していた。
+  コントローラの max_length が 64 byte の frame に収まらなかった。
+- (EN) docs/trace follows oep-spec 02c08c9 for every document: each unit traced to the tests that prove it or excluded
+  with its reason; the parts of capture §4.4 the virtual bench does not model yet (pulse, pattern, analog_pulse, serial,
+  trig_in / trig_out) are excluded as such.
+- (JA) docs/trace をすべての文書で oep-spec 02c08c9 に追従させた。どの単位も、証明する試験か、理由つきの除外を持つ。仮想ベンチがまだ
+  モデルにしていない capture §4.4 の部分（pulse、pattern、analog_pulse、serial、trig_in / trig_out）は、そう書いて除外した。
 - (EN) The independent conformance checkers follow oep-spec 02c08c9 (they were pinned to a09fa45's text): the reviewed
   document hashes moved after reading the changes. fn 0's required ops are the eight core ops, get with settings, state
   with save, network with a netif (core §11) - the checkers had taken every registry core op as required. The Host request

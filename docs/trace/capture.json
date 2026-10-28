@@ -1,5 +1,5 @@
 {
- "spec_commit": "cb3067c",
+ "spec_commit": "320c626",
  "units": {
   "capture:pre:1": {
    "text": "| `oep.fixture.logic` | 1 | ロジック（1 トラック）",
@@ -24,6 +24,81 @@
    ],
    "mutants": [],
    "note": "oep.fixture.capture-group is revision 1 in the registry and offered at revision 1 by the bench"
+  },
+  "capture:1:1": {
+   "text": "- probe は、host が configure の format で求めた",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_a_named_format_is_used_only_when_asked_by_its_name",
+    "tests/test_virtual_bench_capture_formats.py::test_format_4_counts_the_stream_positions[1]",
+    "tests/test_virtual_bench_capture_formats.py::test_format_4_counts_the_stream_positions[3]",
+    "tests/test_virtual_bench_capture_format_2.py::test_one_shot_blocks_hold_each_channels_part_in_the_layouts_order"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:1:2": {
+   "text": "- host は、知っている形式だけを読む。",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_a_named_format_is_used_only_when_asked_by_its_name",
+    "tests/test_virtual_bench_capture_formats.py::test_format_4_counts_the_stream_positions[1]",
+    "tests/test_virtual_bench_capture_formats.py::test_format_4_counts_the_stream_positions[3]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:1:3": {
+   "text": "- **形式によらないもの**: 区画、position（その形式のバイト列での",
+   "verify": [
+    "tests/test_virtual_bench_capture_format_2.py::test_a_trigger_is_judged_on_the_original_samples",
+    "tests/test_virtual_bench_capture_formats.py::test_format_1_one_shot_raw_events_and_a_required_fallback"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:1:4": {
+   "text": "- **試験の並び（形式 4）**: 経路の実際の速さを測るための形式。ピンを読",
+   "verify": [
+    "tests/test_virtual_bench_capture_formats.py::test_format_4_counts_the_stream_positions[1]",
+    "tests/test_virtual_bench_capture_formats.py::test_format_4_counts_the_stream_positions[3]",
+    "tests/test_virtual_bench_capture_options.py::test_a_named_format_is_used_only_when_asked_by_its_name",
+    "tests/test_virtual_bench_capture_options.py::test_tcp_carries_the_mark_and_the_data_and_read_is_refused"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:1:5": {
+   "text": "- **確かさ**: 形式とチャネルの運び方ごとに、可逆（値と時刻が確か）か要約",
+   "verify": [
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[raw and events mixed: a raw channel and a D 4 events channel-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[raw and events mixed: a raw channel and a D 4 events channel-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 1 events past L / 8 bytes: fallback required-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 1 events past L / 8 bytes: fallback required-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 2 events past L / 8 bytes: fallback for D > 1-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 2 events past L / 8 bytes: fallback for D > 1-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level across contiguous segments: the change at the boundary is counted in the next segment-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level across contiguous segments: the change at the boundary is counted in the next segment-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level after a gap is the segment's first sample: no change counted at the boundary-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level after a gap is the segment's first sample: no change counted at the boundary-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a partial last block (r 8) and a partial last tick (D 16)-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a partial last block (r 8) and a partial last tick (D 16)-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a count saturates at 127 (D 256)-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a count saturates at 127 (D 256)-True]",
+    "tests/test_virtual_bench_capture_formats.py::test_format_1_one_shot_raw_events_and_a_required_fallback",
+    "tests/test_virtual_bench_capture_format_2.py::test_the_shared_vectors_are_made_and_read_back[packed 10 bit, no frame]",
+    "tests/test_virtual_bench_capture_format_2.py::test_the_shared_vectors_are_made_and_read_back[minmax and sum together, D 16, a partial interval]",
+    "tests/test_virtual_bench_capture_format_2.py::test_one_shot_blocks_hold_each_channels_part_in_the_layouts_order"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:1:6": {
+   "text": "- **最悪の帯域**は configure の応答から start の前に計算",
+   "verify": [
+    "tests/test_capture_blocks.py::test_worst_bytes_matches_the_spec_example",
+    "tests/test_virtual_bench_capture_options.py::test_a_path_too_narrow_is_refused_unless_overflow_1"
+   ],
+   "mutants": [],
+   "note": ""
   },
   "capture:1.1:1": {
    "text": "| `w` | 1〜128 の整数 | 1 サンプルのビット数。probe が選",
@@ -409,7 +484,314 @@
    "mutants": [],
    "note": "the example's s/o/b read the value whatever the other bits hold"
   },
-  "capture:1.2:16": {
+  "capture:1.3:1": {
+   "text": "| 部分 | 長さ | 中身 |",
+   "excluded": "a table's heading row: the rows below carry its rules"
+  },
+  "capture:1.3:2": {
+   "text": "| fallback | ceil(E / 8) byte | ビット e が ",
+   "verify": [
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[raw and events mixed: a raw channel and a D 4 events channel-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[raw and events mixed: a raw channel and a D 4 events channel-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 1 events past L / 8 bytes: fallback required-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 1 events past L / 8 bytes: fallback required-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 2 events past L / 8 bytes: fallback for D > 1-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 2 events past L / 8 bytes: fallback for D > 1-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level across contiguous segments: the change at the boundary is counted in the next segment-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level across contiguous segments: the change at the boundary is counted in the next segment-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level after a gap is the segment's first sample: no change counted at the boundary-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level after a gap is the segment's first sample: no change counted at the boundary-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a partial last block (r 8) and a partial last tick (D 16)-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a partial last block (r 8) and a partial last tick (D 16)-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a count saturates at 127 (D 256)-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a count saturates at 127 (D 256)-True]",
+    "tests/test_virtual_bench_capture_formats.py::test_format_1_one_shot_raw_events_and_a_required_fallback"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:1.3:3": {
+   "text": "| start_level | ceil(E / 8) byte | ビット e",
+   "verify": [
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[raw and events mixed: a raw channel and a D 4 events channel-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[raw and events mixed: a raw channel and a D 4 events channel-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 1 events past L / 8 bytes: fallback required-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 1 events past L / 8 bytes: fallback required-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 2 events past L / 8 bytes: fallback for D > 1-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 2 events past L / 8 bytes: fallback for D > 1-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level across contiguous segments: the change at the boundary is counted in the next segment-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level across contiguous segments: the change at the boundary is counted in the next segment-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level after a gap is the segment's first sample: no change counted at the boundary-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level after a gap is the segment's first sample: no change counted at the boundary-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a partial last block (r 8) and a partial last tick (D 16)-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a partial last block (r 8) and a partial last tick (D 16)-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a count saturates at 127 (D 256)-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a count saturates at 127 (D 256)-True]",
+    "tests/test_virtual_bench_capture_formats.py::test_format_1_one_shot_raw_events_and_a_required_fallback"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:1.3:4": {
+   "text": "| n | u32 | 出来事の数 |",
+   "verify": [
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[raw and events mixed: a raw channel and a D 4 events channel-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[raw and events mixed: a raw channel and a D 4 events channel-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 1 events past L / 8 bytes: fallback required-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 1 events past L / 8 bytes: fallback required-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 2 events past L / 8 bytes: fallback for D > 1-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 2 events past L / 8 bytes: fallback for D > 1-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level across contiguous segments: the change at the boundary is counted in the next segment-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level across contiguous segments: the change at the boundary is counted in the next segment-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level after a gap is the segment's first sample: no change counted at the boundary-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level after a gap is the segment's first sample: no change counted at the boundary-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a partial last block (r 8) and a partial last tick (D 16)-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a partial last block (r 8) and a partial last tick (D 16)-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a count saturates at 127 (D 256)-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a count saturates at 127 (D 256)-True]",
+    "tests/test_virtual_bench_capture_formats.py::test_format_1_one_shot_raw_events_and_a_required_fallback"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:1.3:5": {
+   "text": "| raw の部分 | ceil(r · w_b / 8) byte | サンプ",
+   "verify": [
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[raw and events mixed: a raw channel and a D 4 events channel-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[raw and events mixed: a raw channel and a D 4 events channel-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 1 events past L / 8 bytes: fallback required-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 1 events past L / 8 bytes: fallback required-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 2 events past L / 8 bytes: fallback for D > 1-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 2 events past L / 8 bytes: fallback for D > 1-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level across contiguous segments: the change at the boundary is counted in the next segment-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level across contiguous segments: the change at the boundary is counted in the next segment-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level after a gap is the segment's first sample: no change counted at the boundary-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level after a gap is the segment's first sample: no change counted at the boundary-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a partial last block (r 8) and a partial last tick (D 16)-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a partial last block (r 8) and a partial last tick (D 16)-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a count saturates at 127 (D 256)-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a count saturates at 127 (D 256)-True]",
+    "tests/test_virtual_bench_capture_formats.py::test_format_1_one_shot_raw_events_and_a_required_fallback"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:1.3:6": {
+   "text": "| 出来事 | n × 4 byte | tick(u16)、ch(u8: e)",
+   "verify": [
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[raw and events mixed: a raw channel and a D 4 events channel-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[raw and events mixed: a raw channel and a D 4 events channel-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 1 events past L / 8 bytes: fallback required-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 1 events past L / 8 bytes: fallback required-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 2 events past L / 8 bytes: fallback for D > 1-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 2 events past L / 8 bytes: fallback for D > 1-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level across contiguous segments: the change at the boundary is counted in the next segment-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level across contiguous segments: the change at the boundary is counted in the next segment-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level after a gap is the segment's first sample: no change counted at the boundary-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level after a gap is the segment's first sample: no change counted at the boundary-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a partial last block (r 8) and a partial last tick (D 16)-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a partial last block (r 8) and a partial last tick (D 16)-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a count saturates at 127 (D 256)-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a count saturates at 127 (D 256)-True]",
+    "tests/test_virtual_bench_capture_formats.py::test_format_1_one_shot_raw_events_and_a_required_fallback"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:1.3:7": {
+   "text": "- 形式 1 の応答の layout は w = R、C = R、pos = 0",
+   "verify": [
+    "tests/test_virtual_bench_capture_formats.py::test_format_1_with_every_channel_events_has_w_and_c_0",
+    "tests/test_virtual_bench_capture_formats.py::test_format_1_one_shot_raw_events_and_a_required_fallback"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:1.3:8": {
+   "text": "- **start_level**: 直前のサンプルが同じ世代にあり、隙間なく続",
+   "verify": [
+    "tests/test_virtual_bench_capture_formats.py::test_format_1_repeat_start_level_follows_the_segment_before",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[raw and events mixed: a raw channel and a D 4 events channel-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[raw and events mixed: a raw channel and a D 4 events channel-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 1 events past L / 8 bytes: fallback required-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 1 events past L / 8 bytes: fallback required-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 2 events past L / 8 bytes: fallback for D > 1-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 2 events past L / 8 bytes: fallback for D > 1-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level across contiguous segments: the change at the boundary is counted in the next segment-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level across contiguous segments: the change at the boundary is counted in the next segment-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level after a gap is the segment's first sample: no change counted at the boundary-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level after a gap is the segment's first sample: no change counted at the boundary-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a partial last block (r 8) and a partial last tick (D 16)-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a partial last block (r 8) and a partial last tick (D 16)-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a count saturates at 127 (D 256)-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a count saturates at 127 (D 256)-True]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:1.3:9": {
+   "text": "- **刻み**: チャネル e の刻み t はブロックの元のサンプル `[t ",
+   "verify": [
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[raw and events mixed: a raw channel and a D 4 events channel-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[raw and events mixed: a raw channel and a D 4 events channel-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 1 events past L / 8 bytes: fallback required-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 1 events past L / 8 bytes: fallback required-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 2 events past L / 8 bytes: fallback for D > 1-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 2 events past L / 8 bytes: fallback for D > 1-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level across contiguous segments: the change at the boundary is counted in the next segment-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level across contiguous segments: the change at the boundary is counted in the next segment-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level after a gap is the segment's first sample: no change counted at the boundary-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level after a gap is the segment's first sample: no change counted at the boundary-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a partial last block (r 8) and a partial last tick (D 16)-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a partial last block (r 8) and a partial last tick (D 16)-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a count saturates at 127 (D 256)-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a count saturates at 127 (D 256)-True]",
+    "tests/test_virtual_bench_capture_formats.py::test_format_1_one_shot_raw_events_and_a_required_fallback"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:1.3:10": {
+   "text": "- **出来事**: その刻みの中で、レベルが 1 回以上変わったときだけ 1 ",
+   "verify": [
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[raw and events mixed: a raw channel and a D 4 events channel-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[raw and events mixed: a raw channel and a D 4 events channel-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 1 events past L / 8 bytes: fallback required-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 1 events past L / 8 bytes: fallback required-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 2 events past L / 8 bytes: fallback for D > 1-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 2 events past L / 8 bytes: fallback for D > 1-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level across contiguous segments: the change at the boundary is counted in the next segment-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level across contiguous segments: the change at the boundary is counted in the next segment-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level after a gap is the segment's first sample: no change counted at the boundary-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level after a gap is the segment's first sample: no change counted at the boundary-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a partial last block (r 8) and a partial last tick (D 16)-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a partial last block (r 8) and a partial last tick (D 16)-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a count saturates at 127 (D 256)-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a count saturates at 127 (D 256)-True]",
+    "tests/test_virtual_bench_capture_formats.py::test_format_1_one_shot_raw_events_and_a_required_fallback"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:1.3:11": {
+   "text": "- **fallback**: そのチャネルの、このブロックの出来事が L / ",
+   "verify": [
+    "tests/test_virtual_bench_capture_formats.py::test_format_1_one_shot_raw_events_and_a_required_fallback",
+    "tests/test_virtual_bench_capture_formats.py::test_logic_waves_quiet_and_uart_lines_carry_few_events"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:1.3:12": {
+   "text": "- **確かさ**: D = 1 のチャネルは可逆。D > 1 のチャネルは、変",
+   "verify": [
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[raw and events mixed: a raw channel and a D 4 events channel-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[raw and events mixed: a raw channel and a D 4 events channel-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 1 events past L / 8 bytes: fallback required-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 1 events past L / 8 bytes: fallback required-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 2 events past L / 8 bytes: fallback for D > 1-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[D 2 events past L / 8 bytes: fallback for D > 1-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level across contiguous segments: the change at the boundary is counted in the next segment-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level across contiguous segments: the change at the boundary is counted in the next segment-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level after a gap is the segment's first sample: no change counted at the boundary-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[start_level after a gap is the segment's first sample: no change counted at the boundary-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a partial last block (r 8) and a partial last tick (D 16)-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a partial last block (r 8) and a partial last tick (D 16)-True]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a count saturates at 127 (D 256)-False]",
+    "tests/test_capture_blocks.py::test_logic_blocks_read_back[a count saturates at 127 (D 256)-True]",
+    "tests/test_virtual_bench_capture_formats.py::test_format_1_one_shot_raw_events_and_a_required_fallback"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:1.3:13": {
+   "text": "- **最悪の帯域**（byte / ブロック）: `2·ceil(E/8) +",
+   "verify": [
+    "tests/test_capture_blocks.py::test_worst_bytes_matches_the_spec_example"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:1.3:14": {
+   "text": "- **遅れ**: probe は出来事の数 n を先頭に置くので、1 ブロック",
+   "verify": [
+    "tests/test_virtual_bench_capture_formats.py::test_format_1_streaming_blocks_per_segment_and_a_short_end"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:1.3:15": {
+   "text": "- ESP32-P4 のように出来事をソフトで作る probe は、32 bit",
+   "excluded": "advice for a probe that makes its events in software (an ESP32-P4's way to keep up); no rule on the wire"
+  },
+  "capture:1.4:1": {
+   "text": "| 運び方 | チャネルの部分の中身（ビットで詰める、§1 のビットの定義） |",
+   "excluded": "a table's heading row: the rows below carry its rules"
+  },
+  "capture:1.4:2": {
+   "text": "| packed | r 個の値（layout の b ビットずつ、枠なし） |",
+   "verify": [
+    "tests/test_virtual_bench_capture_format_2.py::test_the_shared_vectors_are_made_and_read_back[packed 10 bit, no frame]",
+    "tests/test_virtual_bench_capture_format_2.py::test_the_shared_vectors_are_made_and_read_back[minmax and sum together, D 16, a partial interval]",
+    "tests/test_virtual_bench_capture_format_2.py::test_one_shot_blocks_hold_each_channels_part_in_the_layouts_order"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:1.4:3": {
+   "text": "| minmax | 区間ごとに min、max（b ビットずつ） | 要約: ",
+   "verify": [
+    "tests/test_virtual_bench_capture_format_2.py::test_the_shared_vectors_are_made_and_read_back[packed 10 bit, no frame]",
+    "tests/test_virtual_bench_capture_format_2.py::test_the_shared_vectors_are_made_and_read_back[minmax and sum together, D 16, a partial interval]",
+    "tests/test_virtual_bench_capture_format_2.py::test_one_shot_blocks_hold_each_channels_part_in_the_layouts_order"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:1.4:4": {
+   "text": "| sum | 区間ごとに元の値の和（b + ceil(log2 D) ビット）",
+   "verify": [
+    "tests/test_virtual_bench_capture_format_2.py::test_the_shared_vectors_are_made_and_read_back[packed 10 bit, no frame]",
+    "tests/test_virtual_bench_capture_format_2.py::test_the_shared_vectors_are_made_and_read_back[minmax and sum together, D 16, a partial interval]",
+    "tests/test_virtual_bench_capture_format_2.py::test_one_shot_blocks_hold_each_channels_part_in_the_layouts_order"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:1.4:5": {
+   "text": "| minmax と sum | 区間ごとに min、max、sum の順 | ",
+   "verify": [
+    "tests/test_virtual_bench_capture_format_2.py::test_the_shared_vectors_are_made_and_read_back[packed 10 bit, no frame]",
+    "tests/test_virtual_bench_capture_format_2.py::test_the_shared_vectors_are_made_and_read_back[minmax and sum together, D 16, a partial interval]",
+    "tests/test_virtual_bench_capture_format_2.py::test_one_shot_blocks_hold_each_channels_part_in_the_layouts_order"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:1.4:6": {
+   "text": "- 値は §1.2 の規則 1 の値（offset binary を含む）、規則",
+   "verify": [
+    "tests/test_virtual_bench_capture_format_2.py::test_one_shot_blocks_hold_each_channels_part_in_the_layouts_order",
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_set_b[8-1-8-16]",
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_set_b[16-1-16-16]",
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_set_b[12-4-13-16]",
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_set_b[16-16-18-32]",
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_bound_the_rate"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:1.4:7": {
+   "text": "- **最悪の帯域**は固定の大きさ: 各チャネルの部分の byte 数の和（例",
+   "verify": [
+    "tests/test_virtual_bench_capture_format_2.py::test_one_shot_blocks_hold_each_channels_part_in_the_layouts_order",
+    "tests/test_virtual_bench_capture_format_2.py::test_repeat_and_streaming_begin_their_blocks_at_each_segments_sample_0",
+    "tests/test_virtual_bench_capture_options.py::test_a_path_too_narrow_is_refused_unless_overflow_1"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:1.4:8": {
    "text": "- ロジックのplanは出力idleのchannelも受け付け、駆動を変えずに観",
    "verify": [
     "tests/test_trace_capture.py::test_logic_plan_on_an_output_idle_channel_listens_without_driving"
@@ -417,7 +799,7 @@
    "mutants": [],
    "note": "a logic plan on an output-idle channel is taken and the pin keeps its idle drive through a capture"
   },
-  "capture:1.2:17": {
+  "capture:1.4:9": {
    "text": "- アナログのチャネルを、ほかの fn の plan（ロジックのキャプチャを含む",
    "verify": [
     "tests/test_virtual_bench_capture.py::test_an_analog_pin_is_shared_with_nothing",
@@ -427,7 +809,7 @@
    "mutants": [],
    "note": "analog and logic / gpio on one pin refused unavailable whichever comes second, also in one request; review3: analog plan vs a debug attach on one pin, refused whichever comes second"
   },
-  "capture:1.2:18": {
+  "capture:1.4:10": {
    "text": "- **plan を取ってもピンの電気的な状態は変わらない**（core §8）",
    "verify": [
     "tests/test_trace_capture.py::test_logic_capture_never_changes_a_driven_pin",
@@ -445,7 +827,7 @@
    ],
    "note": "plan and configure change no pin; logic never; the analog pad leaves idle at start; review2: the pin as before the plan through analog plan/configure/completion, a pull idle kept by logic"
   },
-  "capture:1.2:19": {
+  "capture:1.4:11": {
    "text": "- アナログの取得が止まるとpadを空きの状態へ戻す（stop、完了、state",
    "verify": [
     "tests/test_trace_capture.py::test_analog_pad_leaves_idle_only_while_it_acquires",
@@ -455,7 +837,7 @@
    "mutants": [],
    "note": "pad back to idle at completion, stop, state 5 and error, plan kept; analog again on resuming from 5"
   },
-  "capture:1.2:20": {
+  "capture:1.4:12": {
    "text": "- idle が出力（mode 3 / 4）の channel へのアナログの ",
    "verify": [
     "tests/test_trace_capture.py::test_analog_plan_on_an_output_idle_channel_is_unavailable_cause_5",
@@ -501,7 +883,7 @@
    "note": "streaming: contiguous bytes pushed while subscribed"
   },
   "capture:2.1:4": {
-   "text": "- triggerは最初の区画の取得を確定する条件である。非即時なら、start",
+   "text": "- triggerは区画の取得を確定する条件である。非即時なら、start後から",
    "verify": [
     "tests/test_virtual_bench_capture_trigger_modes.py::test_known_waveform_has_one_initial_trigger_and_correct_retained_history[0-2-False]",
     "tests/test_virtual_bench_capture_trigger_modes.py::test_known_waveform_has_one_initial_trigger_and_correct_retained_history[0-2-True]",
@@ -524,6 +906,25 @@
    "note": "the trigger gates the first segment only (one triggered, later segments trigger_index none), pretrigger kept from start"
   },
   "capture:2.1:5": {
+   "text": "- **rearm 1 のリピート**: 区画が終わると、次の区画のトリガを、そ",
+   "verify": [
+    "tests/test_virtual_bench_capture_formats.py::test_rearm_repeat_each_segment_its_own_trigger_and_records",
+    "tests/test_virtual_bench_capture_formats.py::test_rearm_repeat_status_says_it_waits_between_segments"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:2.1:6": {
+   "text": "- **when 1** はアームのたびに効く（rearm 1 のリピートでは区",
+   "verify": [
+    "tests/test_virtual_bench_capture_formats.py::test_when_1_counts_at_every_arming_of_a_rearming_repeat",
+    "tests/test_virtual_bench_capture_formats.py::test_level_when_0_needs_a_false_sample_and_when_1_does_not",
+    "tests/test_virtual_bench_capture_formats.py::test_rearm_streaming_records_every_event_without_cutting"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:2.1:7": {
    "text": "- probeはstart後にだけ取得し、start前の先回り取得を行わない。",
    "verify": [
     "tests/test_trace_capture.py::test_no_sample_is_taken_before_start[False]",
@@ -538,7 +939,7 @@
    "mutants": [],
    "note": "nothing before start: first sample at start, no pretrigger from before it"
   },
-  "capture:2.1:6": {
+  "capture:2.1:8": {
    "text": "1. 送る余地が無いとき、probe は**新しい**区画を丸ごと捨てる（すでに",
    "verify": [
     "tests/test_trace_capture.py::test_streaming_without_room_drops_and_the_position_jumps"
@@ -546,7 +947,7 @@
    "mutants": [],
    "note": "no room (subscription gone): capture goes on, the dropped bytes make the next frame's position jump, status flags bit0"
   },
-  "capture:2.1:7": {
+  "capture:2.1:9": {
    "text": "2. stopの後も、probeは停止前に取った未送信データを送信対象にする。残",
    "verify": [
     "tests/test_trace_capture.py::test_after_stop_the_rest_goes_without_waiting_for_the_batching",
@@ -559,7 +960,7 @@
    "mutants": [],
    "note": "after stop the rest goes regardless of min_bytes/max_delay; coverage() tells reached vs complete; error: write_pos rule; review3: an error end sends the batched rest up to write_pos"
   },
-  "capture:2.1:8": {
+  "capture:2.1:10": {
    "text": "3. ストリーミングでは区画の出来事を送らない（stopped は送る）。",
    "verify": [
     "tests/test_trace_capture.py::test_streaming_sends_while_the_lock_holder_subscribes",
@@ -569,7 +970,7 @@
    "mutants": [],
    "note": "streaming sends no segment events, stopped yes"
   },
-  "capture:2.1:9": {
+  "capture:2.1:11": {
    "text": "4. 通知で送ったデータはreadで読めないことがある。要求位置の後にも読めるデ",
    "verify": [
     "tests/test_trace_capture.py::test_streaming_read_of_pushed_data_points_at_write_pos_with_gap",
@@ -679,13 +1080,14 @@
    "note": "trigger_index of the trigger's sample, 0xFFFFFFFF without one"
   },
   "capture:2.2:10": {
-   "text": "| flags | bit0 前の区画との間が空いた（リピートで空き区画がなかっ",
+   "text": "| flags | bit0 前の区画の直後から続いていない（理由によらない: ",
    "verify": [
     "tests/test_trace_capture.py::test_segment_fields_position_samples_times_trigger_flags_generation",
     "tests/test_trace_capture.py::test_repeat_follows_on_without_gaps_into_free_segments_only",
     "tests/test_virtual_bench_capture.py::test_slipped_segments_say_so",
     "tests/test_review5_capture.py::test_an_early_trigger_segment_is_short_without_bit1[1]",
-    "tests/test_review5_capture.py::test_an_early_trigger_segment_is_short_without_bit1[2]"
+    "tests/test_review5_capture.py::test_an_early_trigger_segment_is_short_without_bit1[2]",
+    "tests/test_virtual_bench_capture_formats.py::test_rearm_repeat_each_segment_its_own_trigger_and_records"
    ],
    "mutants": [
     "tests/test_conformance_logic.py::test_side_effect_faults_detected[no_gap-REPEAT]",
@@ -717,7 +1119,7 @@
    "note": "repeat segments follow on directly (positions, times, counter) unless bit0"
   },
   "capture:2.2:13": {
-   "text": "- **区画の隙間と、区画の中の落とし**を、落とした理由で分ける:",
+   "text": "- **区画の隙間と、区画の中の落とし**を、失ったサンプルがすでに区画に入って",
    "verify": [
     "tests/test_trace_capture.py::test_a_drop_inside_a_segment_is_an_error_not_a_gap[1-False]",
     "tests/test_trace_capture.py::test_a_drop_inside_a_segment_is_an_error_not_a_gap[1-True]",
@@ -729,36 +1131,25 @@
    "note": "a gap (bit0) vs a drop inside a segment (error) are told apart"
   },
   "capture:2.2:14": {
-   "text": "- **隙間**（flags bit0）: 置き場（リピートの空き区画、ストリー",
+   "text": "- **隙間**（flags bit0）: probe が、失ったサンプルを**",
    "verify": [
     "tests/test_trace_capture.py::test_repeat_follows_on_without_gaps_into_free_segments_only",
-    "tests/test_trace_capture.py::test_release_frees_finished_segments_up_to_serial_inclusive",
-    "tests/test_trace_capture.py::test_streaming_without_room_drops_and_the_position_jumps"
+    "tests/test_trace_capture.py::test_streaming_without_room_drops_and_the_position_jumps",
+    "tests/test_virtual_bench_capture_formats.py::test_format_1_streaming_drops_a_segment_whole_while_unsubscribed"
    ],
-   "mutants": [
-    "tests/test_conformance_logic.py::test_side_effect_faults_detected[no_gap-REPEAT]"
-   ],
-   "note": "no room: whole segments not taken, the next has bit0 and capture goes on"
+   "mutants": [],
+   "note": ""
   },
   "capture:2.2:15": {
-   "text": "- **区画の中の落とし**（エラー）: それ以外の理由（取り込みのキューやリン",
+   "text": "- **区画の中の落とし**（エラー）: すでに区画に入れたサンプルを失ったとき",
    "verify": [
     "tests/test_trace_capture.py::test_a_drop_inside_a_segment_is_an_error_not_a_gap[1-False]",
     "tests/test_trace_capture.py::test_a_drop_inside_a_segment_is_an_error_not_a_gap[1-True]",
     "tests/test_trace_capture.py::test_a_drop_inside_a_segment_is_an_error_not_a_gap[2-False]",
-    "tests/test_trace_capture.py::test_a_drop_inside_a_segment_is_an_error_not_a_gap[2-True]",
-    "tests/test_virtual_bench_capture_lifetime.py::test_error_preserves_committed_data_and_restart_clears_flags[1-False]",
-    "tests/test_virtual_bench_capture_lifetime.py::test_error_preserves_committed_data_and_restart_clears_flags[1-True]",
-    "tests/test_virtual_bench_capture_lifetime.py::test_error_preserves_committed_data_and_restart_clears_flags[2-False]",
-    "tests/test_virtual_bench_capture_lifetime.py::test_error_preserves_committed_data_and_restart_clears_flags[2-True]",
-    "tests/test_virtual_bench_capture_lifetime.py::test_error_preserves_committed_data_and_restart_clears_flags[3-False]",
-    "tests/test_virtual_bench_capture_lifetime.py::test_error_preserves_committed_data_and_restart_clears_flags[3-True]"
+    "tests/test_trace_capture.py::test_a_drop_inside_a_segment_is_an_error_not_a_gap[2-True]"
    ],
-   "mutants": [
-    "tests/test_conformance_logic.py::test_side_effect_faults_detected[discard_committed-ERROR]",
-    "tests/test_conformance_logic.py::test_side_effect_faults_detected[error_retains_partial-ERROR]"
-   ],
-   "note": "an in-segment drop: no record/event, state 6, stopped 3, error 1/2, flags bit0, write_pos at its start"
+   "mutants": [],
+   "note": ""
   },
   "capture:2.2:16": {
    "text": "- trigger待ちのpretrigger ringは公開streamではない",
@@ -1434,7 +1825,7 @@
    "note": "rate required, 0 malformed, per channel for analog"
   },
   "capture:3.3:3": {
-   "text": "| 0x03 | samples | u32（1 区画のサンプル数。1 以上）",
+   "text": "| 0x03 | samples | u32（1 区画のサンプル数。1 以上） ",
    "verify": [
     "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-mode-False-configure]",
     "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-mode-False-query]",
@@ -1511,7 +1902,7 @@
    "note": "samples required in modes 1/2, 0 malformed, never in mode 3"
   },
   "capture:3.3:4": {
-   "text": "| 0x04 | segments | u32（リピートの区画の数。1 以上）",
+   "text": "| 0x04 | segments | u32（リピートの区画の数。1 以上） ",
    "verify": [
     "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-mode-False-configure]",
     "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-mode-False-query]",
@@ -1716,6 +2107,72 @@
    "note": "frontend per channel, repeated, two for one role malformed"
   },
   "capture:3.3:8": {
+   "text": "| 0x08 | format | u8: データの形式（§1、registry",
+   "verify": [
+    "tests/test_virtual_bench_capture_formats.py::test_format_1_contract",
+    "tests/test_virtual_bench_capture_format_2.py::test_what_it_cannot_do_is_refused_with_the_tag_as_received",
+    "tests/test_virtual_bench_capture_options.py::test_a_named_format_is_used_only_when_asked_by_its_name"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.3:9": {
+   "text": "| 0x10 | format_name | 名前（text、1〜64 byte",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_a_named_format_is_used_only_when_asked_by_its_name"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.3:10": {
+   "text": "| 0x11 | data_path | path(u8: 0 OEP の通知と",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_tcp_carries_the_mark_and_the_data_and_read_is_refused",
+    "tests/test_virtual_bench_capture_options.py::test_a_path_too_narrow_is_refused_unless_overflow_1"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.3:11": {
+   "text": "| 0x09 | carriage | role(u8)、kind(u8)、d(",
+   "verify": [
+    "tests/test_virtual_bench_capture_formats.py::test_format_1_contract",
+    "tests/test_virtual_bench_capture_format_2.py::test_carriages_the_definition_excludes_are_malformed[\\x89\\x06\\x00\\x00\\x00\\x04\\x00\\x00\\x00-a kind with no bit]",
+    "tests/test_virtual_bench_capture_format_2.py::test_carriages_the_definition_excludes_are_malformed[\\x89\\x06\\x00\\x00\\x03\\x04\\x00\\x00\\x00-packed with another]",
+    "tests/test_virtual_bench_capture_format_2.py::test_carriages_the_definition_excludes_are_malformed[\\x89\\x06\\x00\\x00\\x02\\x00\\x00\\x00\\x00-d 0]",
+    "tests/test_virtual_bench_capture_format_2.py::test_carriages_the_definition_excludes_are_malformed[\\x89\\x06\\x00\\x00\\x02\\x04\\x00\\x00\\x00\\x89\\x06\\x00\\x00\\x04\\x04\\x00\\x00\\x00-a role twice]",
+    "tests/test_virtual_bench_capture_format_2.py::test_what_it_cannot_do_is_refused_with_the_tag_as_received"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.3:12": {
+   "text": "| 0x0A | trigger_opts | arm(u8: 0 すぐ、1 プ",
+   "verify": [
+    "tests/test_virtual_bench_capture_formats.py::test_arm_1_waits_for_the_pretrigger_and_arm_0_does_not",
+    "tests/test_virtual_bench_capture_formats.py::test_trigger_opts_beyond_the_declared_are_refused"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.3:13": {
+   "text": "| 0x0B | block_max | u32: ブロックの長さ L の上限（",
+   "verify": [
+    "tests/test_virtual_bench_capture_formats.py::test_format_1_one_shot_raw_events_and_a_required_fallback",
+    "tests/test_virtual_bench_capture_format_2.py::test_what_it_cannot_do_is_refused_with_the_tag_as_received"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.3:14": {
+   "text": "| 0x12 | overflow | u8: 0 外部の経路の帯域（descr",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_a_path_too_narrow_is_refused_unless_overflow_1"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.3:15": {
    "text": "- **契約**（configure と query で同じ）: 必須の TLV",
    "verify": [
     "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-mode-False-configure]",
@@ -1804,7 +2261,7 @@
    ],
    "note": "the contract's malformed / unsupported (tag as received) / cause 6 cases, configure and query, nothing changed; review3: mode 2 pretrigger vs samples; mode 3 bounded by max_pretrigger only; type 0 sent as 0, 0"
   },
-  "capture:3.3:9": {
+  "capture:3.3:16": {
    "text": "- **critical の bit**: この表の TLV は、その対象の p",
    "verify": [
     "tests/test_trace_capture.py::test_the_critical_bit_on_the_tables_tlvs_changes_nothing[False]",
@@ -1813,7 +2270,7 @@
    "mutants": [],
    "note": "the table's TLVs: same answer with bit 7, client sends without it, refusal echoes the tag as received"
   },
-  "capture:3.3:10": {
+  "capture:3.3:17": {
    "text": "- **挙げていない断り**: この節が挙げる断りは全部ではない。probe は",
    "verify": [
     "tests/test_trace_capture.py::test_values_it_cannot_handle_are_unsupported_with_their_tag",
@@ -1823,7 +2280,7 @@
    "mutants": [],
    "note": "a value it cannot handle (frontend 9) unsupported with its tag; capacity rounded not refused"
   },
-  "capture:3.3:11": {
+  "capture:3.3:18": {
    "text": "- **断りが 2 つ以上当たるとき**（例: mode 1 で samples",
    "verify": [
     "tests/test_trace_capture.py::test_two_refusals_answer_one_of_them",
@@ -1833,7 +2290,7 @@
    "mutants": [],
    "note": "two refusals apply: one of them answers"
   },
-  "capture:3.3:12": {
+  "capture:3.3:19": {
    "text": "- **問い合わせは別の操作（0x18）**。configure の TLV の",
    "verify": [
     "tests/test_trace_capture.py::test_query_is_its_own_lock_free_op_that_changes_nothing",
@@ -1871,8 +2328,8 @@
    ],
    "note": "query 0x18 lock-free, in every state, changes nothing; configure needs the lock"
   },
-  "capture:3.3:13": {
-   "text": "- trigger の type: 0 即時（省略時）、1 レベル（value ",
+  "capture:3.3:20": {
+   "text": "- trigger の type（トラックのトリガは最小に保つ）: 0 即時（省",
    "verify": [
     "tests/test_trace_capture.py::test_trigger_types_per_interface[False]",
     "tests/test_trace_capture.py::test_trigger_types_per_interface[True]",
@@ -1891,12 +2348,50 @@
     "tests/test_review4_capture.py::test_logic_trigger_value_left_undefined_is_unsupported[trigger0]",
     "tests/test_review4_capture.py::test_logic_trigger_value_left_undefined_is_unsupported[trigger1]",
     "tests/test_review4_capture.py::test_logic_trigger_value_left_undefined_is_unsupported[trigger2]",
-    "tests/test_review4_capture.py::test_analog_threshold_past_the_value_bits_is_unsupported"
+    "tests/test_review4_capture.py::test_analog_threshold_past_the_value_bits_is_unsupported",
+    "tests/test_virtual_bench_capture_trigger_source.py::test_refusals"
    ],
    "mutants": [],
    "note": "types 1-2 logic, 3-4 analog, others unsupported; edge values 0/1/2; review3: analog cross up / down on the o/b value"
   },
-  "capture:3.3:14": {
+  "capture:3.3:21": {
+   "text": "- **アーム**: trigger_opts の arm 1（既定）では、pr",
+   "verify": [
+    "tests/test_virtual_bench_capture_formats.py::test_arm_1_waits_for_the_pretrigger_and_arm_0_does_not"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.3:22": {
+   "text": "- **トリガは元のサンプルで判定する**: 形式 1 / 2 で縮約するチャネ",
+   "verify": [
+    "tests/test_virtual_bench_capture_format_2.py::test_a_trigger_is_judged_on_the_original_samples",
+    "tests/test_virtual_bench_capture_options.py::test_the_glitch_filter_hides_short_pulses_from_the_data_and_the_trigger"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.3:23": {
+   "text": "- **carriage**（形式 1 / 2）: d = 0、ロジックの ra",
+   "verify": [
+    "tests/test_virtual_bench_capture_formats.py::test_format_1_contract",
+    "tests/test_virtual_bench_capture_format_2.py::test_carriages_the_definition_excludes_are_malformed[\\x89\\x06\\x00\\x00\\x00\\x04\\x00\\x00\\x00-a kind with no bit]",
+    "tests/test_virtual_bench_capture_format_2.py::test_carriages_the_definition_excludes_are_malformed[\\x89\\x06\\x00\\x00\\x03\\x04\\x00\\x00\\x00-packed with another]",
+    "tests/test_virtual_bench_capture_format_2.py::test_carriages_the_definition_excludes_are_malformed[\\x89\\x06\\x00\\x00\\x02\\x00\\x00\\x00\\x00-d 0]",
+    "tests/test_virtual_bench_capture_format_2.py::test_carriages_the_definition_excludes_are_malformed[\\x89\\x06\\x00\\x00\\x02\\x04\\x00\\x00\\x00\\x89\\x06\\x00\\x00\\x04\\x04\\x00\\x00\\x00-a role twice]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.3:24": {
+   "text": "- linked の trigger は、出来事の元を持つ組（§4.4）に束ねた",
+   "verify": [
+    "tests/test_virtual_bench_capture_trigger_source.py::test_refusals"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.3:25": {
    "text": "- **samplesは区画のsample総数**（pretriggerを含む）",
    "verify": [
     "tests/test_trace_capture.py::test_samples_count_the_pretrigger_and_an_early_trigger_shortens",
@@ -1912,7 +2407,7 @@
    "mutants": [],
    "note": "samples include the pretrigger; early trigger short with smaller index; force's index and triggered; immediate no triggered; review5: the early-trigger short segment carries no flags bit1 (stop only)"
   },
-  "capture:3.3:15": {
+  "capture:3.3:26": {
    "text": "- **rate**: 宣言したrate_rangeの中で、その役割/モード/設",
    "verify": [
     "tests/test_trace_capture.py::test_rate_is_the_nearest_kept_within_the_range[1000-1000]",
@@ -1928,7 +2423,7 @@
    "mutants": [],
    "note": "nearest kept rate, out of range unsupported (rate), analog's lower top rounded into; review3: no rate in range kept for 4 roles -> unsupported (rate), exact path fixed; equal distance either"
   },
-  "capture:3.3:16": {
+  "capture:3.3:27": {
    "text": "- probe が持てる量を超える samples は、その上限に切り下げ、応答",
    "verify": [
     "tests/test_trace_capture.py::test_samples_and_segments_are_rounded_down_to_what_it_holds",
@@ -1938,7 +2433,7 @@
    "mutants": [],
    "note": "samples past max_samples rounded down, actual_samples says; review3: rounding for capacity only (repeat w 3 keeps 10 samples; bench fixed)"
   },
-  "capture:3.3:17": {
+  "capture:3.3:28": {
    "text": "- mode 2のsegmentsも、実際のsamplesと役割数で持てる上限へ",
    "verify": [
     "tests/test_trace_capture.py::test_samples_and_segments_are_rounded_down_to_what_it_holds",
@@ -1950,7 +2445,7 @@
    ],
    "note": "mode 2 segments rounded down to the ring, left out >= 1, rounding is no refusal"
   },
-  "capture:3.3:18": {
+  "capture:3.3:29": {
    "text": "| 0x01 | actual_rate | num(u32)、den(u32)",
    "verify": [
     "tests/test_trace_capture.py::test_configure_answer_rows[1-False]",
@@ -1965,7 +2460,7 @@
    ],
    "note": "actual_rate num/den >= 1 always"
   },
-  "capture:3.3:19": {
+  "capture:3.3:30": {
    "text": "| 0x02 | layout | ロジック: w(u8)、C(u8)、pos[",
    "verify": [
     "tests/test_trace_capture.py::test_configure_answer_rows[1-False]",
@@ -1981,7 +2476,7 @@
    ],
    "note": "layout logic w C pos[C] / analog s o b C order[C]"
   },
-  "capture:3.3:20": {
+  "capture:3.3:31": {
    "text": "| 0x03 | actual_samples | u32 | 両方 |",
    "verify": [
     "tests/test_trace_capture.py::test_configure_answer_rows[1-False]",
@@ -1997,7 +2492,7 @@
    ],
    "note": "actual_samples in modes 1/2 only"
   },
-  "capture:3.3:21": {
+  "capture:3.3:32": {
    "text": "| 0x04 | actual_segments | u32 | 両方 |",
    "verify": [
     "tests/test_trace_capture.py::test_configure_answer_rows[1-False]",
@@ -2012,7 +2507,7 @@
    ],
    "note": "actual_segments in mode 2 only"
   },
-  "capture:3.3:22": {
+  "capture:3.3:33": {
    "text": "| 0x05 | scale | role(u8)、zero(i32、値)、sc",
    "verify": [
     "tests/test_trace_capture.py::test_configure_answer_rows[1-False]",
@@ -2030,7 +2525,7 @@
    ],
    "note": "scale role zero(i32) scale_nv(i32) per planned role"
   },
-  "capture:3.3:23": {
+  "capture:3.3:34": {
    "text": "| 0x06 | skew | role(u8)、skew_ns(u32)。チャ",
    "verify": [
     "tests/test_trace_capture.py::test_configure_answer_rows[1-False]",
@@ -2045,7 +2540,7 @@
    ],
    "note": "skew role u32 per channel, 0 left out"
   },
-  "capture:3.3:24": {
+  "capture:3.3:35": {
    "text": "| 0x07 | frontend_used | role(u8)、fronte",
    "verify": [
     "tests/test_trace_capture.py::test_configure_answer_rows[1-False]",
@@ -2061,7 +2556,7 @@
    ],
    "note": "frontend_used role frontend per channel"
   },
-  "capture:3.3:25": {
+  "capture:3.3:36": {
    "text": "| 0x08 | reference | source(u8、enum `ref",
    "verify": [
     "tests/test_trace_capture.py::test_configure_answer_rows[1-False]",
@@ -2074,6 +2569,64 @@
    ],
    "mutants": [],
    "note": "reference source(enum) mv how(enum)"
+  },
+  "capture:3.3:37": {
+   "text": "| 0x09 | format | u8: 使うデータの形式（§1）。0 以外で",
+   "verify": [
+    "tests/test_virtual_bench_capture_formats.py::test_format_1_one_shot_raw_events_and_a_required_fallback",
+    "tests/test_virtual_bench_capture_options.py::test_a_named_format_is_used_only_when_asked_by_its_name"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.3:38": {
+   "text": "| 0x0A | block | L(u32)。形式 1 / 2 のブロックの元",
+   "verify": [
+    "tests/test_virtual_bench_capture_formats.py::test_format_1_one_shot_raw_events_and_a_required_fallback",
+    "tests/test_virtual_bench_capture_format_2.py::test_one_shot_blocks_hold_each_channels_part_in_the_layouts_order"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.3:39": {
+   "text": "| 0x0E | format_name | 使う名前付きの形式の名前（form",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_a_named_format_is_used_only_when_asked_by_its_name"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.3:40": {
+   "text": "| 0x14 | stream_buffer | u32: ストリーミングで、送",
+   "verify": [
+    "tests/test_virtual_bench_capture_formats.py::test_streaming_answer_says_its_stream_buffer"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.3:41": {
+   "text": "| 0x15 | judge_latency_ns | u32: このトラックが",
+   "verify": [
+    "tests/test_capture_blocks.py::test_configure_answer_judge_latency"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.3:42": {
+   "text": "- **stream_buffer**（任意、mode 3 でだけ返す）: pr",
+   "verify": [
+    "tests/test_virtual_bench_capture_formats.py::test_streaming_answer_says_its_stream_buffer"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.3:43": {
+   "text": "- **judge_latency_ns**（任意。§4.4 の出来事の元を持つ",
+   "verify": [
+    "tests/test_capture_blocks.py::test_configure_answer_judge_latency"
+   ],
+   "mutants": [],
+   "note": ""
   },
   "capture:3.4:1": {
    "text": "| 出来事 kind 0x01 segment | 区画が終わった（ワンショット",
@@ -2116,7 +2669,8 @@
    "text": "| 出来事 kind 0x03 triggered | トリガが立った | se",
    "verify": [
     "tests/test_trace_capture.py::test_triggered_event_serial_index_time_generation[False]",
-    "tests/test_trace_capture.py::test_triggered_event_serial_index_time_generation[True]"
+    "tests/test_trace_capture.py::test_triggered_event_serial_index_time_generation[True]",
+    "tests/test_virtual_bench_capture_formats.py::test_rearm_streaming_records_every_event_without_cutting"
    ],
    "mutants": [
     "tests/test_virtual_bench_capture_notifications.py::test_notification_corruption_is_detected[extra_trigger-False]"
@@ -2215,15 +2769,10 @@
    "verify": [
     "tests/test_trace_capture.py::test_describe_declarations[oep.fixture.logic]",
     "tests/test_trace_capture.py::test_describe_declarations[oep.fixture.analog]",
-    "tests/test_trace_capture.py::test_trigger_types_per_interface[False]",
-    "tests/test_trace_capture.py::test_trigger_types_per_interface[True]",
-    "tests/test_trace_capture.py::test_review_max_pretrigger_is_the_declared_bound[oep.fixture.logic]",
-    "tests/test_trace_capture.py::test_review_max_pretrigger_is_the_declared_bound[oep.fixture.analog]"
+    "tests/test_virtual_bench_capture_formats.py::test_trigger_opts_beyond_the_declared_are_refused"
    ],
-   "mutants": [
-    "tests/test_conformance_capture_metadata.py::test_metadata_defects[14-69-None]"
-   ],
-   "note": "trigger types u32 with type 0, max_pretrigger"
+   "mutants": [],
+   "note": ""
   },
   "capture:3.5:7": {
    "text": "| 0x44 | frontend | frontend(u8: 番号)、ran",
@@ -2238,6 +2787,40 @@
    "note": "analog frontend rows number, min, max mV"
   },
   "capture:3.5:8": {
+   "text": "| 0x45 | formats | u8 の列: 0 のほかに使えるデータの形",
+   "verify": [
+    "tests/test_virtual_bench_capture_format_2.py::test_what_it_cannot_do_is_refused_with_the_tag_as_received",
+    "tests/test_virtual_bench_capture_options.py::test_a_named_format_is_used_only_when_asked_by_its_name"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.5:9": {
+   "text": "| 0x46 | carriage | kinds(u8: kind のビット集",
+   "verify": [
+    "tests/test_virtual_bench_capture_format_2.py::test_what_it_cannot_do_is_refused_with_the_tag_as_received"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.5:10": {
+   "text": "| 0x4A | format_names | 名前（text）。使える名前付き",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_a_named_format_is_used_only_when_asked_by_its_name"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.5:11": {
+   "text": "| 0x4B | external_data | kind(u8)、muxes(",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_a_path_too_narrow_is_refused_unless_overflow_1",
+    "tests/test_virtual_bench_capture_options.py::test_udp_packets_carry_their_position_and_streaming_needs_no_subscription"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.5:12": {
    "text": "- 必須の宣言はops、1つ以上のmode、rate_range、channel",
    "verify": [
     "tests/test_trace_capture.py::test_describe_declarations[oep.fixture.logic]",
@@ -2251,7 +2834,7 @@
    ],
    "note": "ops, modes, rate_range, channels, trigger, role_channels and analog frontends present"
   },
-  "capture:3.5:9": {
+  "capture:3.5:13": {
    "text": "- modeは少なくとも1つ宣言する。1/2/3を全部宣言する必要はなく、対応す",
    "verify": [
     "tests/test_trace_capture.py::test_a_probe_declares_only_the_modes_it_has",
@@ -2264,13 +2847,74 @@
    ],
    "note": "only the offered modes declared; another mode unsupported (mode); review2: max_segments 0 outside mode 2 (describe_declarations)"
   },
-  "capture:3.5:10": {
+  "capture:3.5:14": {
    "text": "- **宣言は目安、configure の応答が正。** 宣言に出ていない組み合",
    "verify": [
     "tests/test_trace_capture.py::test_the_configure_answer_is_what_holds_not_the_declaration"
    ],
    "mutants": [],
    "note": "a declared rate comes back as the configuration's kept rate"
+  },
+  "capture:3.6:1": {
+   "text": "| 足すもの | 宣言 | 知らない側 |",
+   "excluded": "a table's heading row: the rows below carry its rules"
+  },
+  "capture:3.6:2": {
+   "text": "| 前段・取り方の設定 | describe の TLV | host は知らな",
+   "verify": [
+    "tests/test_virtual_bench_capture_formats.py::test_format_1_contract",
+    "tests/test_trace_capture.py::test_the_critical_bit_on_the_tables_tlvs_changes_nothing[False]",
+    "tests/test_trace_capture.py::test_the_critical_bit_on_the_tables_tlvs_changes_nothing[True]",
+    "tests/test_virtual_bench_capture_options.py::test_a_named_format_is_used_only_when_asked_by_its_name"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.6:3": {
+   "text": "| データの並び | describe の formats、registry `",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_a_named_format_is_used_only_when_asked_by_its_name",
+    "tests/test_virtual_bench_capture_formats.py::test_format_4_counts_the_stream_positions[1]",
+    "tests/test_virtual_bench_capture_formats.py::test_format_4_counts_the_stream_positions[3]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.6:4": {
+   "text": "| トリガの種類 | describe の trigger の types のビ",
+   "verify": [
+    "tests/test_trace_capture.py::test_trigger_types_per_interface[False]",
+    "tests/test_trace_capture.py::test_trigger_types_per_interface[True]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.6:5": {
+   "text": "| トリガの式の条件の type、serial の protocol | cap",
+   "verify": [
+    "tests/test_virtual_bench_capture_trigger_source.py::test_refusals",
+    "tests/test_capture_blocks.py::test_group_trigger_caps"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.6:6": {
+   "text": "| 組の機能 | capture-group の features のビット |",
+   "verify": [
+    "tests/test_capture_blocks.py::test_group_trigger_caps",
+    "tests/test_trace_capture.py::test_group_describe_tracks"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.6:7": {
+   "text": "| 応答や区画・出来事の情報 | 応答の TLV | host は知らない TL",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_a_host_skips_answer_tlvs_it_does_not_know",
+    "tests/test_capture_blocks.py::test_configure_answer_judge_latency"
+   ],
+   "mutants": [],
+   "note": ""
   },
   "capture:3.7:1": {
    "text": "| 0x01 | factory | frontend(u8)、scheme_l",
@@ -2312,8 +2956,399 @@
    "mutants": [],
    "note": "frontend ranges in describe, chosen ones in frontend_used, reference in configure's answer"
   },
+  "capture:3.8:1": {
+   "text": "| 置き場 | tag | 名前 | 値 | 対象 |",
+   "excluded": "a table's heading row: the rows below carry its rules"
+  },
+  "capture:3.8:2": {
+   "text": "| describe | 0x47 | threshold | group(u8",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_the_threshold_takes_the_nearest_value_it_can_and_says_so"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.8:3": {
+   "text": "| configure | 0x0C | threshold | group(u",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_the_threshold_takes_the_nearest_value_it_can_and_says_so"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.8:4": {
+   "text": "| 応答 | 0x0B | threshold_used | group(u8)",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_the_threshold_takes_the_nearest_value_it_can_and_says_so"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.8:5": {
+   "text": "| describe | 0x48 | coupling | frontend(",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_coupling_and_offset_and_the_scale_they_give"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.8:6": {
+   "text": "| describe | 0x49 | offset | frontend(u8",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_coupling_and_offset_and_the_scale_they_give"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.8:7": {
+   "text": "| configure | 0x0D | coupling | role(u8)",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_coupling_and_offset_and_the_scale_they_give"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.8:8": {
+   "text": "| configure | 0x0E | offset | role(u8)、m",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_coupling_and_offset_and_the_scale_they_give"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.8:9": {
+   "text": "| 応答 | 0x0C | coupling_used | role(u8)、k",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_coupling_and_offset_and_the_scale_they_give"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.8:10": {
+   "text": "| 応答 | 0x0D | offset_used | role(u8)、mv(",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_coupling_and_offset_and_the_scale_they_give"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.8:11": {
+   "text": "| configure | 0x0F | clock | role(u8)、ed",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_the_clock_line_is_no_channel_and_samples_count_its_edges",
+    "tests/test_virtual_bench_capture_options.py::test_a_qualifier_keeps_the_edges_its_line_allows"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.8:12": {
+   "text": "| describe | 0x4C | external_clock | max",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_the_clock_line_is_no_channel_and_samples_count_its_edges",
+    "tests/test_virtual_bench_capture_options.py::test_a_qualifier_keeps_the_edges_its_line_allows"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.8:13": {
+   "text": "| 応答 | 0x0F | timebase | num(u32)、den(u3",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_format_3_times_each_sample_in_timebase_ticks[rising-100000]",
+    "tests/test_virtual_bench_capture_options.py::test_format_3_times_each_sample_in_timebase_ticks[falling-50000]",
+    "tests/test_virtual_bench_capture_options.py::test_format_3_times_each_sample_in_timebase_ticks[both-50000]",
+    "tests/test_virtual_bench_capture_options.py::test_format_3_escapes_a_clock_that_stops_for_long"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.8:14": {
+   "text": "| describe | 0x4D | glitch_filter | grou",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_the_glitch_filter_hides_short_pulses_from_the_data_and_the_trigger"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.8:15": {
+   "text": "| configure | 0x13 | glitch_filter | gro",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_the_glitch_filter_hides_short_pulses_from_the_data_and_the_trigger"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.8:16": {
+   "text": "| 応答 | 0x10 | glitch_used | group(u8)、ns",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_the_glitch_filter_hides_short_pulses_from_the_data_and_the_trigger"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.8:17": {
+   "text": "| describe | 0x4E | bandwidth | frontend",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_bandwidth_takes_the_nearest_limit"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.8:18": {
+   "text": "| configure | 0x14 | bandwidth | role(u8",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_bandwidth_takes_the_nearest_limit"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.8:19": {
+   "text": "| 応答 | 0x11 | bandwidth_used | role(u8)、",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_bandwidth_takes_the_nearest_limit"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.8:20": {
+   "text": "| describe | 0x4F | impedance | frontend",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_impedance_is_declared_only"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.8:21": {
+   "text": "| describe | 0x50 | resolution | n(u8)、n",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_set_b[8-1-8-16]",
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_set_b[16-1-16-16]",
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_set_b[12-4-13-16]",
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_set_b[16-16-18-32]",
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_bound_the_rate"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.8:22": {
+   "text": "| configure | 0x15 | resolution | bits(u",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_set_b[8-1-8-16]",
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_set_b[16-1-16-16]",
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_set_b[12-4-13-16]",
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_set_b[16-16-18-32]",
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_bound_the_rate"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.8:23": {
+   "text": "| describe | 0x51 | oversample | n(u8)、n",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_set_b[8-1-8-16]",
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_set_b[16-1-16-16]",
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_set_b[12-4-13-16]",
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_set_b[16-16-18-32]",
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_bound_the_rate"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.8:24": {
+   "text": "| configure | 0x16 | oversample | ratio(",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_set_b[8-1-8-16]",
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_set_b[16-1-16-16]",
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_set_b[12-4-13-16]",
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_set_b[16-16-18-32]",
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_bound_the_rate"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.8:25": {
+   "text": "| 応答 | 0x12 | resolution_used | bits(u8)",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_set_b[8-1-8-16]",
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_set_b[16-1-16-16]",
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_set_b[12-4-13-16]",
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_set_b[16-16-18-32]",
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_bound_the_rate"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.8:26": {
+   "text": "| 応答 | 0x13 | oversample_used | ratio(u1",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_set_b[8-1-8-16]",
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_set_b[16-1-16-16]",
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_set_b[12-4-13-16]",
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_set_b[16-16-18-32]",
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_bound_the_rate"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.8:27": {
+   "text": "- しきい値: probe は mv に最も近い使える値（step か pres",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_the_threshold_takes_the_nearest_value_it_can_and_says_so"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.8:28": {
+   "text": "- グリッチフィルタは、取ったデータとトリガの判定の両方に効く（フィルタの後の値",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_the_glitch_filter_hides_short_pulses_from_the_data_and_the_trigger"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.8:29": {
+   "text": "- 分解能とオーバーサンプリング: 応答の layout の b がその結果（オ",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_set_b[8-1-8-16]",
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_set_b[16-1-16-16]",
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_set_b[12-4-13-16]",
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_set_b[16-16-18-32]",
+    "tests/test_virtual_bench_capture_options.py::test_resolution_and_oversample_bound_the_rate"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.8:30": {
+   "text": "- 結合とオフセット: scale の 1 次式（§1.2 規則 4）は、off",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_coupling_and_offset_and_the_scale_they_give"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.8:31": {
+   "text": "- 外部クロック（clock、ステートの取得）: サンプルは clock の役割",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_the_clock_line_is_no_channel_and_samples_count_its_edges",
+    "tests/test_virtual_bench_capture_options.py::test_a_qualifier_keeps_the_edges_its_line_allows"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.8:32": {
+   "text": "- **形式 3（時刻つきのステート、ロジック、可逆）**: サンプルごとに d",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_format_3_times_each_sample_in_timebase_ticks[rising-100000]",
+    "tests/test_virtual_bench_capture_options.py::test_format_3_times_each_sample_in_timebase_ticks[falling-50000]",
+    "tests/test_virtual_bench_capture_options.py::test_format_3_times_each_sample_in_timebase_ticks[both-50000]",
+    "tests/test_virtual_bench_capture_options.py::test_format_3_escapes_a_clock_that_stops_for_long"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.9:1": {
+   "text": "- configure の data_path（critical）で選ぶ: pa",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_tcp_carries_the_mark_and_the_data_and_read_is_refused",
+    "tests/test_virtual_bench_capture_options.py::test_a_path_too_narrow_is_refused_unless_overflow_1"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.9:2": {
+   "text": "- **mux 0**: その経路はこのトラックだけが使う。**mux 1**:",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_tcp_mux_1_puts_each_tracks_bytes_in_chunks_of_its_fn"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.9:3": {
+   "text": "- data_path 1 のトラックは、OEP のデータの通知を出さず、rea",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_tcp_carries_the_mark_and_the_data_and_read_is_refused",
+    "tests/test_virtual_bench_capture_options.py::test_udp_packets_carry_their_position_and_streaming_needs_no_subscription"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.9:4": {
+   "text": "- **世代の始まりの印**: start の後、probe は経路に**最初に",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_the_mark_is_the_shared_vectors",
+    "tests/test_virtual_bench_capture_options.py::test_tcp_carries_the_mark_and_the_data_and_read_is_refused"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.9:5": {
+   "text": "- **世代の終わり**: 制御の経路と外部の経路の到着順は保証されないので、境",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_tcp_carries_the_mark_and_the_data_and_read_is_refused",
+    "tests/test_virtual_bench_capture_options.py::test_udp_packets_carry_their_position_and_streaming_needs_no_subscription"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.9:6": {
+   "text": "- **落とし**: 経路（bulk、TCP）そのものは落とさない。probe ",
+   "excluded": "the virtual bench's paths take every byte at once, so it never overflows inside; §2.2's gap and dropped rules, which this row points to, are traced there"
+  },
+  "capture:3.9:7": {
+   "text": "- **落ちうる経路**（kind 3 UDP、kind 4 USB の iso",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_udp_packets_carry_their_position_and_streaming_needs_no_subscription"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.9:8": {
+   "text": "- **経路が切れたら**（USB の切断、TCP の切断）、そのトラックはエラ",
+   "verify": [
+    "tests/test_virtual_bench_capture_options.py::test_a_path_that_goes_stops_the_capture_in_error"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.9:9": {
+   "text": "- 費用: 1 世代に 16 byte。データごとの見出しは無い。",
+   "excluded": "a cost note (16 bytes a generation): nothing to check beyond the mark, traced in §3.9's mark row"
+  },
+  "capture:3.10:1": {
+   "text": "| 0x1B | triggers | generation(u32)、from",
+   "verify": [
+    "tests/test_virtual_bench_capture_formats.py::test_rearm_repeat_each_segment_its_own_trigger_and_records",
+    "tests/test_virtual_bench_capture_formats.py::test_rearm_streaming_records_every_event_without_cutting"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.10:2": {
+   "text": "- 記録: serial(u32: 世代の中で 0 から)、sample(u64",
+   "verify": [
+    "tests/test_virtual_bench_capture_formats.py::test_rearm_repeat_each_segment_its_own_trigger_and_records",
+    "tests/test_virtual_bench_capture_formats.py::test_rearm_streaming_records_every_event_without_cutting"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.10:3": {
+   "text": "- 持つ記録の数は describe の trigger_records（0x5",
+   "verify": [
+    "tests/test_virtual_bench_capture_formats.py::test_trigger_records_keep_the_newest_and_an_old_serial_reads_from_the_oldest_kept"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:3.10:4": {
+   "text": "- 出来事 triggered は、serial と sample を持つ（§3",
+   "verify": [
+    "tests/test_virtual_bench_capture_formats.py::test_rearm_streaming_records_every_event_without_cutting"
+   ],
+   "mutants": [],
+   "note": ""
+  },
   "capture:4.1:1": {
-   "text": "| 0x1A | bind | n(u8)、n × fn(u16)、[TLV]",
+   "text": "| 0x1A | bind | n(u8)、n × fn(u16)、[TLV] ",
    "verify": [
     "tests/test_trace_capture.py::test_group_operation_rows[bind-True]",
     "tests/test_trace_capture.py::test_group_operation_rows[start-True]",
@@ -2356,6 +3391,14 @@
    "note": "group stop: op number, lock, form"
   },
   "capture:4.1:4": {
+   "text": "| 0x13 | force | [TLV] | —（出来事を待っていれば、今す",
+   "verify": [
+    "tests/test_virtual_bench_capture_trigger_source.py::test_force_makes_the_event_now"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:4.1:5": {
    "text": "| 0x14 | status | [TLV] | state(u8)、star",
    "verify": [
     "tests/test_trace_capture.py::test_group_operation_rows[bind-True]",
@@ -2370,7 +3413,7 @@
    ],
    "note": "group status: op number, lock, form"
   },
-  "capture:4.1:5": {
+  "capture:4.1:6": {
    "text": "| 0x01 | subscribe | core §10.3 | — | 必要",
    "verify": [
     "tests/test_trace_capture.py::test_group_operation_rows[bind-True]",
@@ -2384,7 +3427,7 @@
    "mutants": [],
    "note": "group subscribe: op number, lock, form"
   },
-  "capture:4.1:6": {
+  "capture:4.1:7": {
    "text": "| 0x02 | unsubscribe | core §10.3 | — | ",
    "verify": [
     "tests/test_trace_capture.py::test_group_operation_rows[bind-True]",
@@ -2397,7 +3440,7 @@
    "mutants": [],
    "note": "group unsubscribe: op number, lock, form"
   },
-  "capture:4.1:7": {
+  "capture:4.1:8": {
    "text": "- bindは設定済みのlogic/analogのfnを束ねる。全trackは同",
    "verify": [
     "tests/test_trace_capture.py::test_group_bind_rules",
@@ -2405,7 +3448,8 @@
     "tests/test_virtual_bench_capture.py::test_a_bind_short_of_resources_is_unavailable_limit_naming_the_fn",
     "tests/test_trace_capture.py::test_review2_bind_refuses_a_track_not_in_1_4_6",
     "tests/test_trace_capture.py::test_review3_a_track_bound_in_another_group_is_cause_4",
-    "tests/test_review7_request_validation.py::test_group_checker_takes_unknown_function_for_a_bind_naming_no_fn"
+    "tests/test_review7_request_validation.py::test_group_checker_takes_unknown_function_for_a_bind_naming_no_fn",
+    "tests/test_virtual_bench_capture_trigger_source.py::test_one_edge_starts_every_track_at_its_nearest_sample"
    ],
    "mutants": [
     "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[dup_accepted-BIND-DUP]",
@@ -2418,7 +3462,7 @@
    ],
    "note": "bind: configured immediate tracks of one mode in 1/4/6; same list no-op; refusals before changes; review2: a track in state 0 or 5 is cause 6, nothing bound; review3: a track bound in another group is cause 4 with its fn"
   },
-  "capture:4.1:8": {
+  "capture:4.1:9": {
    "text": "- n=0は束ねを解く。取得中の組（state 3）ではunavailable ",
    "verify": [
     "tests/test_trace_capture.py::test_group_unbind",
@@ -2432,7 +3476,7 @@
    ],
    "note": "n=0 unbinds, cause 6 while capturing, no-op unbound; bound track ops cause 4, reads usable; review2: the session end unbinds"
   },
-  "capture:4.1:9": {
+  "capture:4.1:10": {
    "text": "- bindは、同じ経路のstart成功応答（18+6×n byte）がfram",
    "verify": [
     "tests/test_trace_capture.py::test_group_bind_checks_the_start_answer_fits_the_frame",
@@ -2443,7 +3487,11 @@
    ],
    "note": "bind refuses (unsupported 0x00) when 18+6n does not fit; review5: the bench compares the 18+6n-byte start answer message with max_frame (not max_frame - 5)"
   },
-  "capture:4.1:10": {
+  "capture:4.1:11": {
+   "text": "- 組の fn は、trig_in / trig_out（§4.4）を使うときだ",
+   "excluded": "not modelled by the virtual bench yet (trig_in / trig_out, so the group has no plan roles): its §4.4 trigger source has level, edge, cross, above / below and timer only"
+  },
+  "capture:4.1:12": {
    "text": "- startは束ねがあり、全trackがstate 1/4/6のときだけ受け付",
    "verify": [
     "tests/test_trace_capture.py::test_group_start_only_from_1_4_6_and_atomic",
@@ -2456,7 +3504,7 @@
    ],
    "note": "start only bound with tracks 1/4/6, else cause 6 with nothing changed; review2: generation exhausted (group or track) cause 2, streaming track unsubscribed cause 6, nothing changed"
   },
-  "capture:4.1:11": {
+  "capture:4.1:13": {
    "text": "- 初期化/取得の失敗でtrackがstate 6になれば組も6とし、ほかのtr",
    "verify": [
     "tests/test_trace_capture.py::test_group_error_stops_the_others_and_a_failed_start",
@@ -2470,7 +3518,7 @@
    ],
    "note": "a track's error makes the group 6 and stops the others; failed start's fixed form and states; review2: a finished track keeps its data, a capturing one gets stopped reason 1 and a short segment; review3: a failed group start makes the group 6; review5: the client takes the generations of a failed group start"
   },
-  "capture:4.1:12": {
+  "capture:4.1:14": {
    "text": "- stopは全trackへ適用し、短い区画とpadは各trackの規則に従う。",
    "verify": [
     "tests/test_trace_capture.py::test_group_stop_and_status_state",
@@ -2485,12 +3533,13 @@
    ],
    "note": "stop every track with short segments; unbound stop no-op, start cause 6; review3: the analog pad back to idle after the group stop"
   },
-  "capture:4.1:13": {
+  "capture:4.1:15": {
    "text": "- statusのstate: 束ねなし0、どれかが6なら6、開始後に全部4なら",
    "verify": [
     "tests/test_trace_capture.py::test_group_stop_and_status_state",
     "tests/test_trace_capture.py::test_group_error_stops_the_others_and_a_failed_start",
-    "tests/test_trace_capture.py::test_review2_group_status_counts_paused_as_3_and_needs_a_start_for_4"
+    "tests/test_trace_capture.py::test_review2_group_status_counts_paused_as_3_and_needs_a_start_for_4",
+    "tests/test_virtual_bench_capture_trigger_source.py::test_one_edge_starts_every_track_at_its_nearest_sample"
    ],
    "mutants": [
     "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[premature_done-START]",
@@ -2498,6 +3547,218 @@
     "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[reset_bind_generation-REBIND-GEN]"
    ],
    "note": "status state 0/6/4/3/1 from the tracks; group generation survives rebinding; review2: all 4 before a group start is 1, all paused is 3, bind keeps track generations"
+  },
+  "capture:4.4:1": {
+   "text": "| 0x01 | trigger_source | stages(u8: 1 以",
+   "verify": [
+    "tests/test_virtual_bench_capture_trigger_source.py::test_one_edge_starts_every_track_at_its_nearest_sample",
+    "tests/test_virtual_bench_capture_trigger_source.py::test_two_stages_cross_track_and_the_group_event",
+    "tests/test_virtual_bench_capture_trigger_source.py::test_refusals"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:4.4:2": {
+   "text": "| 0x02 | stage | stage(u8)、count(u32: その",
+   "verify": [
+    "tests/test_virtual_bench_capture_trigger_source.py::test_two_stages_cross_track_and_the_group_event",
+    "tests/test_virtual_bench_capture_trigger_source.py::test_should_come_stage_holds_when_its_edge_does_not_come"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:4.4:3": {
+   "text": "| 0x03 | cond | stage(u8)、part(u8: 0 条件の",
+   "verify": [
+    "tests/test_virtual_bench_capture_trigger_source.py::test_one_edge_starts_every_track_at_its_nearest_sample",
+    "tests/test_virtual_bench_capture_trigger_source.py::test_two_stages_cross_track_and_the_group_event",
+    "tests/test_virtual_bench_capture_trigger_source.py::test_refusals"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:4.4:4": {
+   "text": "| 0x04 | trigger_out | role(u8: この組の pla",
+   "excluded": "not modelled by the virtual bench yet (trigger_out): its §4.4 trigger source has level, edge, cross, above / below and timer only"
+  },
+  "capture:4.4:5": {
+   "text": "| type | 名前 | 引数 | 元 | 性質 |",
+   "excluded": "a table's heading row: the rows below carry its rules"
+  },
+  "capture:4.4:6": {
+   "text": "| 1 | level | level(u8)、when(u8: 0 偽から真に",
+   "verify": [
+    "tests/test_virtual_bench_capture_trigger_source.py::test_a_stage_entered_with_its_level_already_true_follows_when[0]",
+    "tests/test_virtual_bench_capture_trigger_source.py::test_a_stage_entered_with_its_level_already_true_follows_when[1]",
+    "tests/test_virtual_bench_capture_trigger_source.py::test_two_stages_cross_track_and_the_group_event"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:4.4:7": {
+   "text": "| 2 | edge | edge(u8: 0 立ち上がり、1 立ち下がり、2 ",
+   "verify": [
+    "tests/test_virtual_bench_capture_trigger_source.py::test_one_edge_starts_every_track_at_its_nearest_sample"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:4.4:8": {
+   "text": "| 3 | cross_up | value(u32: その役割の ADC の値",
+   "verify": [
+    "tests/test_virtual_bench_capture_trigger_source.py::test_analog_conditions_hold_where_the_wave_does_it[<lambda>-32]",
+    "tests/test_virtual_bench_capture_trigger_source.py::test_analog_conditions_hold_where_the_wave_does_it[<lambda>-64_0]",
+    "tests/test_virtual_bench_capture_trigger_source.py::test_analog_conditions_hold_where_the_wave_does_it[<lambda>-64_1]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:4.4:9": {
+   "text": "| 4 | cross_down | value(u32)、hysteresis",
+   "verify": [
+    "tests/test_virtual_bench_capture_trigger_source.py::test_analog_conditions_hold_where_the_wave_does_it[<lambda>-32]",
+    "tests/test_virtual_bench_capture_trigger_source.py::test_analog_conditions_hold_where_the_wave_does_it[<lambda>-64_0]",
+    "tests/test_virtual_bench_capture_trigger_source.py::test_analog_conditions_hold_where_the_wave_does_it[<lambda>-64_1]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:4.4:10": {
+   "text": "| 5 | pulse | level(u8)、cond(u8: 0 長い、1 ",
+   "excluded": "not modelled by the virtual bench yet (pulse): its §4.4 trigger source has level, edge, cross, above / below and timer only"
+  },
+  "capture:4.4:11": {
+   "text": "| 6 | pattern | n(u8)、mask(n byte)、value",
+   "excluded": "not modelled by the virtual bench yet (pattern): its §4.4 trigger source has level, edge, cross, above / below and timer only"
+  },
+  "capture:4.4:12": {
+   "text": "| 7 | above | value(u32)、hysteresis(u32)",
+   "verify": [
+    "tests/test_virtual_bench_capture_trigger_source.py::test_analog_conditions_hold_where_the_wave_does_it[<lambda>-32]",
+    "tests/test_virtual_bench_capture_trigger_source.py::test_analog_conditions_hold_where_the_wave_does_it[<lambda>-64_0]",
+    "tests/test_virtual_bench_capture_trigger_source.py::test_analog_conditions_hold_where_the_wave_does_it[<lambda>-64_1]",
+    "tests/test_virtual_bench_capture_trigger_source.py::test_above_with_when_1_holds_at_the_arming_and_a_timer_counts_from_the_stage"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:4.4:13": {
+   "text": "| 8 | below | value(u32)、hysteresis(u32)",
+   "verify": [
+    "tests/test_virtual_bench_capture_trigger_source.py::test_two_stages_cross_track_and_the_group_event"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:4.4:14": {
+   "text": "| 9 | analog_pulse | value(u32)、hysteres",
+   "excluded": "not modelled by the virtual bench yet (analog_pulse): its §4.4 trigger source has level, edge, cross, above / below and timer only"
+  },
+  "capture:4.4:15": {
+   "text": "| 10 | timer | ns(u64: 段に入ってから) | — | 瞬間",
+   "verify": [
+    "tests/test_virtual_bench_capture_trigger_source.py::test_above_with_when_1_holds_at_the_arming_and_a_timer_counts_from_the_stage"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:4.4:16": {
+   "text": "| 11 | serial | protocol(u8: 1 uart、2 i2",
+   "excluded": "not modelled by the virtual bench yet (serial): its §4.4 trigger source has level, edge, cross, above / below and timer only"
+  },
+  "capture:4.4:17": {
+   "text": "- serial の役割: uart は role = RX。i2c は rol",
+   "excluded": "not modelled by the virtual bench yet (serial): its §4.4 trigger source has level, edge, cross, above / below and timer only"
+  },
+  "capture:4.4:18": {
+   "text": "- **評価**: 状態の条件は最後の値を保ち、瞬間の条件はその瞬間だけ立つ。*",
+   "verify": [
+    "tests/test_virtual_bench_capture_trigger_source.py::test_two_stages_cross_track_and_the_group_event",
+    "tests/test_virtual_bench_capture_trigger_source.py::test_refusals"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:4.4:19": {
+   "text": "- **段の入り口**: 段に入った時点で、その段の状態の条件がすでに真のときの",
+   "verify": [
+    "tests/test_virtual_bench_capture_trigger_source.py::test_a_stage_entered_with_its_level_already_true_follows_when[0]",
+    "tests/test_virtual_bench_capture_trigger_source.py::test_a_stage_entered_with_its_level_already_true_follows_when[1]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:4.4:20": {
+   "text": "- **段の進み方**: 段が成り立ったサンプルでは次の段を判定せず、次のサンプ",
+   "verify": [
+    "tests/test_virtual_bench_capture_trigger_source.py::test_two_stages_cross_track_and_the_group_event",
+    "tests/test_virtual_bench_capture_trigger_source.py::test_above_with_when_1_holds_at_the_arming_and_a_timer_counts_from_the_stage"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:4.4:21": {
+   "text": "- **アーム**: arm 1 では、全トラックの pretrigger が溜",
+   "verify": [
+    "tests/test_virtual_bench_capture_trigger_source.py::test_one_edge_starts_every_track_at_its_nearest_sample",
+    "tests/test_virtual_bench_capture_trigger_source.py::test_above_with_when_1_holds_at_the_arming_and_a_timer_counts_from_the_stage"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:4.4:22": {
+   "text": "- **宣言**（capture-group の describe）: 0x41",
+   "verify": [
+    "tests/test_capture_blocks.py::test_group_trigger_caps",
+    "tests/test_virtual_bench_capture_trigger_source.py::test_refusals"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:4.4:23": {
+   "text": "- **束ねたトラック**の trigger はすべて type 7（linke",
+   "verify": [
+    "tests/test_virtual_bench_capture_trigger_source.py::test_refusals"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:4.4:24": {
+   "text": "- **start** で全トラックが取得（pretrigger のリングを含む",
+   "verify": [
+    "tests/test_virtual_bench_capture_trigger_source.py::test_one_edge_starts_every_track_at_its_nearest_sample"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:4.4:25": {
+   "text": "- **各トラックの trigger_index**: 出来事の時刻に最も近い、",
+   "verify": [
+    "tests/test_virtual_bench_capture_trigger_source.py::test_one_edge_starts_every_track_at_its_nearest_sample"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:4.4:26": {
+   "text": "- **出来事の時刻**: trigger_ns（probe の時計での推定値）",
+   "verify": [
+    "tests/test_virtual_bench_capture_trigger_source.py::test_one_edge_starts_every_track_at_its_nearest_sample",
+    "tests/test_virtual_bench_capture_trigger_source.py::test_two_stages_cross_track_and_the_group_event"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:4.4:27": {
+   "text": "- **出来事** kind 0x03 triggered: trigger_f",
+   "verify": [
+    "tests/test_virtual_bench_capture_trigger_source.py::test_two_stages_cross_track_and_the_group_event"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "capture:4.4:28": {
+   "text": "- **費用**: 式は bind で 1 回（例: 3 段 × 2 項 × 2",
+   "excluded": "a cost note (the expression's bytes at bind, the status TLV and one event): nothing to check"
   }
  }
 }

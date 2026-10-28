@@ -425,3 +425,12 @@ def test_a_target_op_uses_the_connection_it_names_never_the_last_attached(bench)
     assert second.halted and not first.halted
     riscv.RiscvDm(hst, conn).halt()
     assert first.halted and second.halted
+
+
+@pytest.mark.parametrize("name", sorted(virtual_bench.PROFILES))
+def test_one_target_interface_and_one_console_a_name(name):
+    """common §2: the oep.target.* interfaces that use connections and oep.target.console are one a name in a probe -
+    list shows no second instance of them."""
+    ep = endpoint.Endpoint(virtual_bench.PROFILES[name](), lambda: 0)
+    names = [n for n in ep.names.values() if n.startswith("oep.target.")]
+    assert len(names) == len(set(names)), names

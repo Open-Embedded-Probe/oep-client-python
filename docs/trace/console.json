@@ -1,5 +1,5 @@
 {
- "spec_commit": "cb3067c",
+ "spec_commit": "320c626",
  "units": {
   "console:pre:1": {
    "text": "| `oep.target.console` | 1 | target のコンソ",
@@ -162,7 +162,7 @@
    "note": "describe 0x40 mechanisms n(u8) n x mechanism(u8), n >= 1, no duplicate, always; a fn offering write declares mechanism 1 or 2 (checker)"
   },
   "console:1:11": {
-   "text": "- 標準の方式の名前は `sdi`、`dmdata`、`dmseq`（§3）。**名前が方式を正確に決める**（版を持た",
+   "text": "- 標準の方式の名前は `sdi`、`dmdata`、`dmseq`（§3）。*",
    "verify": [
     "tests/test_trace_console.py::test_a_mechanism_not_declared_or_unknown_is_unsupported_0x00",
     "tests/test_interfaces.py::test_console_open_makes_a_stream_and_reads_by_position",
@@ -425,6 +425,111 @@
     "tests/test_conformance_dependencies.py::test_dependency_mutants_fail[clear_tx]"
    ],
    "note": "the queue goes with the stream (write to a closed one no_resource); clear drops the read buffer only"
+  },
+  "console:2.1:1": {
+   "text": "| `passthrough.{}.wire` | fn | transport",
+   "verify": [
+    "tests/test_passthrough.py::test_a_console_value_it_cannot_take_is_refused[port]",
+    "tests/test_passthrough.py::test_a_console_value_it_cannot_take_is_refused[wire]",
+    "tests/test_passthrough.py::test_a_console_value_it_cannot_take_is_refused[speed0]",
+    "tests/test_passthrough.py::test_a_console_value_it_cannot_take_is_refused[mechanism]",
+    "tests/test_passthrough.py::test_the_targets_console_goes_out_while_no_session_uses_it"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "console:2.1:2": {
+   "text": "| `passthrough.{}.swdio` | channel | tra",
+   "verify": [
+    "tests/test_passthrough.py::test_the_targets_console_goes_out_while_no_session_uses_it",
+    "tests/test_passthrough.py::test_a_pair_the_wire_does_not_allow_is_refused"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "console:2.1:3": {
+   "text": "| `passthrough.{}.swclk` | channel | tra",
+   "verify": [
+    "tests/test_passthrough.py::test_after_a_line_loss_rvswd_waits_for_the_condition_to_start_again",
+    "tests/test_passthrough.py::test_the_targets_console_goes_out_while_no_session_uses_it"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "console:2.1:4": {
+   "text": "| `passthrough.{}.max-speed` | u32 | tra",
+   "verify": [
+    "tests/test_passthrough.py::test_a_console_value_it_cannot_take_is_refused[port]",
+    "tests/test_passthrough.py::test_a_console_value_it_cannot_take_is_refused[wire]",
+    "tests/test_passthrough.py::test_a_console_value_it_cannot_take_is_refused[speed0]",
+    "tests/test_passthrough.py::test_a_console_value_it_cannot_take_is_refused[mechanism]"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "console:2.1:5": {
+   "text": "| `passthrough.{}.mechanism` | text（1〜48",
+   "verify": [
+    "tests/test_passthrough.py::test_a_console_value_it_cannot_take_is_refused[port]",
+    "tests/test_passthrough.py::test_a_console_value_it_cannot_take_is_refused[wire]",
+    "tests/test_passthrough.py::test_a_console_value_it_cannot_take_is_refused[speed0]",
+    "tests/test_passthrough.py::test_a_console_value_it_cannot_take_is_refused[mechanism]",
+    "tests/test_passthrough.py::test_the_targets_console_goes_out_while_no_session_uses_it"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "console:2.1:6": {
+   "text": "- key は [fixture](oep-if-fixture.ja.md) ",
+   "verify": [
+    "tests/test_passthrough.py::test_one_pass_through_per_port",
+    "tests/test_settings.py::test_a_save_by_name_survives_moved_fns"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "console:2.1:7": {
+   "text": "- wire、swdio、mechanism（rvswd では swclk も）",
+   "verify": [
+    "tests/test_passthrough.py::test_not_every_value_there_is_no_pass_through",
+    "tests/test_passthrough.py::test_a_pair_the_wire_does_not_allow_is_refused"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "console:2.1:8": {
+   "text": "- **素通しの条件**: その口からセッションの要求が来ていない、セッションの",
+   "verify": [
+    "tests/test_passthrough.py::test_the_targets_console_goes_out_while_no_session_uses_it",
+    "tests/test_passthrough.py::test_a_session_on_the_port_closes_it_and_it_comes_back_after"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "console:2.1:9": {
+   "text": "- 条件が成り立たなくなったら、probe はその接続を target に触れず",
+   "verify": [
+    "tests/test_passthrough.py::test_a_session_on_the_port_closes_it_and_it_comes_back_after"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "console:2.1:10": {
+   "text": "- 素通しの接続とコンソールは OEP の資源ではない: connections",
+   "verify": [
+    "tests/test_passthrough.py::test_the_targets_console_goes_out_while_no_session_uses_it"
+   ],
+   "mutants": [],
+   "note": ""
+  },
+  "console:2.1:11": {
+   "text": "- 線切れ（debug §2）では、probe はその接続を閉じ、上の試し直しの",
+   "verify": [
+    "tests/test_passthrough.py::test_after_a_line_loss_rvswd_waits_for_the_condition_to_start_again",
+    "tests/test_passthrough.py::test_swio_tries_again_until_the_target_answers"
+   ],
+   "mutants": [],
+   "note": ""
   },
   "console:3:1": {
    "text": "- probe は、**その connection の riscv-dm の要求",

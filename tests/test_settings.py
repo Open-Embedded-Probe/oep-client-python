@@ -4,13 +4,15 @@ generation, the channel items' effects on plans, wires and pins, the network, th
 
 import json
 import pathlib
+import re
 import struct
 
 import pytest
 
-from oep_client import __main__ as cli, core, endpoint, fixture, riscv, settings, virtual_bench, host as h, message as m
+from oep_client import __main__ as cli, core, endpoint, fixture, riscv, settings, virtual_bench, host as h, message as m, registry as reg
 
 CORE = settings.CORE_CATEGORY
+OVERHEAD = reg.LIMITS["setting_get_overhead_bytes"]   # one value's get answer beyond its data (core §13.5)
 _UNA = h.Unavailable
 
 
@@ -156,6 +158,75 @@ def test_generation_exhausted_refuses_a_change():
     assert st.set([]) == 0xFFFFFFFF
 
 
+@pytest.mark.parametrize("name", sorted(virtual_bench.PROFILES))
+def test_every_item_fits_the_smallest_frame_and_is_named_by_the_grammar(name):
+    """core §13.1: an item's name is a-z 0-9 - labels joined by '.', `{}` where a key goes; §13.2: max_len keeps one
+    value's get answer and set request inside the probe's max_frame (max_frame - 18); setting_choice names 1-16 bytes."""
+    profile = virtual_bench.PROFILES[name]()
+    ep = endpoint.Endpoint(profile, Clock())
+    hst = h.Host(lambda b: ep.handle(b, 0))
+    hst.open(3000)
+    cat = settings.Settings(hst).catalog()
+    label = r"[a-z0-9]([a-z0-9-]*[a-z0-9])?"
+    for items in cat.items.values():
+        for it in items:
+            assert re.fullmatch(rf"({label}|\{{\}})(\.({label}|\{{\}}))*", it.name), it.name
+            assert ("{}" in it.name) == (it.key_kind != "none"), it.name
+            assert it.max_len <= profile.max_frame - OVERHEAD, (it.name, it.max_len)
+            assert all(re.fullmatch(r"[a-z0-9-]{1,16}", c) for c in it.choices.values()), it.name
+            if it.fn == 0 and it.name.split(".")[0] in ("wifi", "ipv4"):           # transports §7's items
+                assert profile.max_frame >= reg.LIMITS["wifi_min_max_frame"], it.name
+
+
+def test_a_get_of_one_value_is_18_bytes_and_its_length():
+    """core §13.5: one value's get answer is 18 + len bytes (header 5, more 1, generation 4, count 1, the value's 7)."""
+    ep, hst, st = open_bench()
+    st.unset_all()
+    st.set_named(CORE, {label(20): "DUT TX"})
+    frames = []
+    hst2 = h.Host(lambda b: frames.append(ep.handle(b, 1)) or frames[-1])
+    hst2.request(0, settings.OP["get"], struct.pack("<H", 0), locked=False)
+    assert len(frames[-1]) == OVERHEAD + len(b"DUT TX")
+
+
+def test_a_text_value_is_checked_for_its_length_only():
+    """core §13.3: text is checked for its length alone - bytes that are not UTF-8 or are controls are kept as sent."""
+    ep, hst, st = open_bench()
+    n = ep.setting_number("channel.{}.label")
+    st.set([(0, n, 20, b"\xff\x01a")])
+    (v,) = [v for v in st.get()[1] if (v.number, v.key) == (n, 20)]
+    assert v.data == b"\xff\x01a"
+
+
+def test_a_save_of_the_same_contents_is_not_written_again():
+    """core §13.7: save writes the values now; the same contents saved already are not written again (state still 1)."""
+    ep, hst, st = open_bench()
+    st.set_named(CORE, {label(20): "A"})
+    st.save()
+    writes = ep.storage_writes
+    st.save()
+    assert ep.storage_writes == writes and st.state().storage == "applied"
+    st.set_named(CORE, {label(20): "B"})
+    st.save()
+    assert ep.storage_writes == writes + 1
+
+
+def test_a_probe_without_a_store_keeps_values_until_the_next_boot():
+    """core §13.7: a probe without a store may still have get / set / unset in memory (no save / state); its values go
+    at a restart, back to the initial values."""
+    profile = lambda: virtual_bench.VirtualProbe("no-store", 1024, virtual_bench.with_settings(
+        [o for o in virtual_bench.p4_bench().offered if o.fn != 0] + [virtual_bench._core(
+            "3.0.0", "esp32p4", "30eda0e3b003", 55, virtual_bench._transports([(virtual_bench.TRANSPORT["vendor_bulk"], 0)]))],
+        storage=False, labels={20: "dut.swdio"}), own_channels=[24, 25])
+    ep, hst, st = open_bench(profile)
+    assert st.changeable() and not st.offers("save") and not st.offers("state")
+    st.set_named(CORE, {label(20): "moved", label(21): "new"})
+    ep.reboot(0x4323)
+    hst2 = h.Host(lambda b: ep.handle(b, 1))
+    hst2.open(3000)
+    assert {n: v for c, n, v in settings.Settings(hst2).show()} == {label(20): "dut.swdio"}
+
+
 # ---- initial values (core §13.4) ---------------------------------------------------------------------------------
 
 def test_initial_values_are_values_like_any_other():
@@ -238,6 +309,17 @@ def test_an_attach_or_a_scan_naming_a_disabled_channel():
     assert _cause(e) == ("held_by_settings", [5])
     conn, _ = wire.attach(pins=(2, 3))                                        # another pair: as before
     assert conn in ep.conns
+
+
+def test_an_attach_reset_on_a_disabled_channel():
+    """core §13.8, debug §3: the reset line an attach names is held by the settings when disabled (cause 5)."""
+    ep = endpoint.Endpoint(virtual_bench.esp32_v003(), Clock())
+    hst = h.Host(lambda b: ep.handle(b, 0))
+    hst.open(3000)
+    settings.Settings(hst).set_named(CORE, {disable(23): True})
+    with pytest.raises(h.Rejected) as e:
+        riscv.Wire(hst, "oep.wire.swio").attach_under_reset(23)
+    assert _cause(e) == ("held_by_settings", [23])
 
 
 def test_gpio_on_a_disabled_channel():
@@ -427,6 +509,71 @@ def test_static_ipv4_and_a_change_in_use_reconnects():
     st.unset_named(CORE, ["ipv4.wifi.address"])                             # static without an address: none
     row = st.network().netifs[0]
     assert row.state == "waiting" and row.reason == "no_address"
+
+
+def test_a_netif_past_the_list_is_unsupported():
+    """core §7.7: a netif key is its place in fn 0's netif list (from 1); 0 or one past the list is refused unsupported."""
+    ep = endpoint.Endpoint(virtual_bench.esp32_v003(), Clock())
+    hst = h.Host(lambda b: ep.handle(b, 0))
+    hst.open(3000)
+    st = settings.Settings(hst)
+    number = ep.setting_number("ipv4.{}.mode")
+    for key in (0, len(st.catalog().netif) + 1):
+        with pytest.raises(h.Unsupported):
+            st.set([(0, number, key, b"\x00")])
+    st.set([(0, number, 1, b"\x00")])
+
+
+def v003_settings():
+    ep = endpoint.Endpoint(virtual_bench.esp32_v003(), Clock())
+    hst = h.Host(lambda b: ep.handle(b, 0))
+    hst.open(3000)
+    return ep, settings.Settings(hst)
+
+
+def test_an_ssid_is_1_to_32_bytes():
+    """transports §7.1: wifi.{}.ssid is text of 1-32 bytes; another length is malformed (core §13.3)."""
+    ep, st = v003_settings()
+    for bad in ("", "x" * (reg.LIMITS["wifi_ssid_max_bytes"] + 1)):
+        with pytest.raises(h.Rejected) as e:
+            st.set_named(CORE, {"wifi.0.ssid": bad})
+        assert e.value.result.detail == m.MALFORMED
+    st.set_named(CORE, {"wifi.0.ssid": "x" * reg.LIMITS["wifi_ssid_max_bytes"]})
+
+
+def test_a_passphrase_without_an_ssid_is_not_used():
+    """transports §7.1: an entry's passphrase without its ssid is not used - with no ssid at all, Wi-Fi stays off."""
+    ep, st = v003_settings()
+    st.set_named(CORE, {"wifi.1.passphrase": "password1"})
+    assert st.network().netifs[0].state == "off"
+
+
+def test_the_entries_are_tried_in_key_order_and_the_first_that_connects_is_used():
+    """transports §7.1: entries with an ssid are tried from the lowest key; the first to get an address is used."""
+    ep, st = v003_settings()
+    st.set_named(CORE, {"wifi.0.ssid": "elsewhere", "wifi.1.ssid": "lab", "wifi.1.passphrase": "password1",
+                        "wifi.2.ssid": "lab", "wifi.2.passphrase": "password1"})
+    assert (st.network().netifs[0].state, st.network().netifs[0].entry) == ("up", 1)
+
+
+def test_dhcp_keeps_the_static_values_but_does_not_use_them():
+    """transports §7.2: in dhcp the address, prefix, gateway and dns values stay but are not used."""
+    ep, st = v003_settings()
+    st.set_named(CORE, {"wifi.0.ssid": "lab", "wifi.0.passphrase": "password1", "ipv4.wifi.address": "10.9.8.7",
+                        "ipv4.wifi.prefix": 8})
+    assert st.network().netifs[0].address == "192.168.1.23/24"
+    assert user(st)[(CORE, "ipv4.wifi.address")] == "10.9.8.7"
+
+
+def test_a_gateway_outside_the_prefix_gets_no_address():
+    """transports §7.2: static with a gateway outside the address's prefix: the netif gets no address (state 3, reason 3)."""
+    ep, st = v003_settings()
+    st.set_named(CORE, {"wifi.0.ssid": "lab", "wifi.0.passphrase": "password1", "ipv4.wifi.mode": "static",
+                        "ipv4.wifi.address": "192.168.1.50", "ipv4.wifi.prefix": 24, "ipv4.wifi.gateway": "192.168.2.1"})
+    row = st.network().netifs[0]
+    assert (row.state, row.reason) == ("waiting", "no_address")
+    st.set_named(CORE, {"ipv4.wifi.gateway": "192.168.1.1"})
+    assert st.network().netifs[0].state == "up"
 
 
 def test_the_network_op_only_with_netifs():

@@ -1,5 +1,5 @@
 {
- "spec_commit": "cb3067c",
+ "spec_commit": "320c626",
  "units": {
   "common:1.1:1": {
    "text": "- ストリームの各バイトに位置（u64、一周しない）を振る。資源として番号を持つ",
@@ -381,6 +381,18 @@
     "tests/test_conformance_arm_adi.py::test_arm_checker_detects_independent_faults[resource_kind-RESOURCE]"
    ],
    "note": "target op names its connection explicitly; another wire's connection / wrong kind: unavailable 6; none or closed: no_resource; with two live connections the named one is used, not the last attached"
+  },
+  "common:2:5": {
+   "text": "- connection を使う `oep.target.*` と `oep.t",
+   "verify": [
+    "tests/test_trace_common.py::test_one_target_interface_and_one_console_a_name[esp32-v003]",
+    "tests/test_trace_common.py::test_one_target_interface_and_one_console_a_name[esp32-v003-64]",
+    "tests/test_trace_common.py::test_one_target_interface_and_one_console_a_name[p4-bench]",
+    "tests/test_trace_common.py::test_one_target_interface_and_one_console_a_name[p4-x035]",
+    "tests/test_trace_common.py::test_one_target_interface_and_one_console_a_name[rp2350-pins]"
+   ],
+   "mutants": [],
+   "note": ""
   },
   "common:3:1": {
    "text": "| 0 | ok | 最後まで進んだ |",

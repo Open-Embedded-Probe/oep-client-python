@@ -11,7 +11,8 @@ from oep_client import capture, catalog, core, endpoint, fixture, host as h, mes
 PLAN = reg.PROBE_PLAN
 APPLY, RELEASE = PLAN.op["plan_apply"], PLAN.op["plan_release"]
 ASSIGN = PLAN.tlv["plan_apply"]["role_assignment"]
-GPIO, UART, LOGIC, SPI, PLAN_FN = 4, 5, 6, 8, 11
+GPIO, UART, LOGIC, SPI = 4, 5, 6, 8
+PLAN_FN = next(o.fn for o in virtual_bench.esp32_v003().offered if o.name == virtual_bench.PLAN)
 CAUSE = reg.CORE.tlv["unavailable_payload"]["cause"]
 
 

@@ -6,6 +6,8 @@ import pytest
 
 from oep_client import catalog, dump, virtual_bench, names
 
+RESTART_FN = next(o.fn for o in virtual_bench.p4_x035().offered if o.name == virtual_bench.RESTART)
+
 
 # ---- names ---------------------------------------------------------------
 
@@ -79,7 +81,7 @@ def test_the_core_is_never_listed_and_dump_shows_it_first():
     """fn 0 has no name and list never returns it (core §0, §7.2): dump describes it first as the core."""
     probe = virtual_bench.esp32_v003()
     total, entries = catalog.unpack_list_result(probe.call(0, 0x02, catalog.pack_list_request(0)))
-    assert total == 11 and all(e.fn != 0 for e in entries)
+    assert total == len(probe.offered) - 1 and all(e.fn != 0 for e in entries)   # every fn but fn 0
     caps = dump.collect(probe.call)
     first = caps.offers[0].entry
     assert (first.fn, first.name, first.revision) == (0, "", 1)
@@ -113,9 +115,10 @@ def test_description_keeps_what_it_does_not_know():
 def test_p4_follows_the_agreed_names():
     caps = dump.collect(virtual_bench.p4_x035().call)
     by_name = {o.entry.name: o for o in caps.offers}
-    assert len(caps.offers) == 15                    # fn 0 and 14 listed: link, plan and restart the last three
+    n = len(virtual_bench.p4_x035().offered)
+    assert len(caps.offers) == n                     # fn 0 and the listed: link, plan and restart the last three
     assert [o.entry.name for o in caps.offers[-3:]] == ["oep.probe.link", "oep.probe.plan", "oep.probe.restart"]
-    assert caps.requests["list"] == 1 and caps.requests["describe"] == 15
+    assert caps.requests["list"] == 1 and caps.requests["describe"] == n
     link_ops = virtual_bench.reg.PROBE_LINK.op
     assert by_name["oep.probe.link"].description.ops == {link_ops["source"], link_ops["sink"]}   # no UART bridge here
     assert by_name["oep.fixture.logic"].description.ops >= {0x01, 0x02}     # it sends notifications (core §10.3)
@@ -153,7 +156,9 @@ def test_filters():
     fixture = dump.collect(probe.call, "oep.fixture")
     assert fixture.offers[0].entry.fn == 0                          # the core first, whatever the prefix
     assert {o.entry.name for o in fixture.offers[1:]} == {"oep.fixture.gpio", "oep.fixture.uart", "oep.fixture.logic",
-                                                    "oep.fixture.i2c-target", "oep.fixture.spi-target"}
+                                                    "oep.fixture.i2c-target", "oep.fixture.spi-target",
+                                                    "oep.fixture.i2c-controller", "oep.fixture.spi-controller",
+                                                    "oep.fixture.pwm", "oep.fixture.counter", "oep.fixture.dac"}
     one = dump.collect(probe.call, "oep.fixture.spi-target", exact=True)
     assert [o.entry.name for o in one.offers[1:]] == ["oep.fixture.spi-target"]
     assert one.offers[1].description.groups[2][0] == (1, 14)
@@ -180,8 +185,8 @@ def test_restart_without_restart_max_ms_is_named_missing():
                                                   tuple(t for t in o.tlvs if not (o.name == virtual_bench.RESTART
                                                                                   and t[0] == virtual_bench.RESTART_MAX_MS_TAG)))
                                      for o in full.offered], fill_ops=False)
-    assert dump.collect(bare.call).missing == ["describe of fn 15 (oep.probe.restart): restart_max_ms"]
-    assert dump.required_of(bare.call) == ["describe of fn 15 (oep.probe.restart): restart_max_ms"]
+    assert dump.collect(bare.call).missing == [f"describe of fn {RESTART_FN} (oep.probe.restart): restart_max_ms"]
+    assert dump.required_of(bare.call) == [f"describe of fn {RESTART_FN} (oep.probe.restart): restart_max_ms"]
     assert dump.required_of(full.call) == []
 
 
@@ -229,6 +234,7 @@ def test_text_and_json_outputs():
     assert "instance 0" in text and "oep.fixture.i2c-target" in text
     assert "preloaded tx" not in text and "clock stretching" not in text   # one form (fixture §3); stretch is an op
     assert "ops: configure, read_rx, preload_tx, status, stretch" in text
-    assert "14 interfaces in 1 list and 15 describe requests" in text
+    n = len(virtual_bench.p4_x035().offered)
+    assert f"{n - 1} interfaces in 1 list and {n} describe requests" in text
     data = json.loads(dump.to_json(caps))
-    assert data["max_frame"] == 1024 and len(data["interfaces"]) == 15
+    assert data["max_frame"] == 1024 and len(data["interfaces"]) == n

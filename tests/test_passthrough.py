@@ -92,6 +92,26 @@ def test_a_disabled_rx_is_held_by_settings(bench):
     assert e.value.cause == "held_by_settings"            # cause 5
 
 
+def test_without_baud_and_format_it_runs_at_115200_8n1(bench):
+    ep, s, lk, hst = bench
+    core.take(hst, 10000)
+    st = settings.Settings(hst)
+    st.set_named(UART, {f"passthrough.{PORT}.rx": f"GPIO{RX}"})
+    assert ep.passthrough_line(0) == (ep.PASSTHROUGH_BAUD, ep.PASSTHROUGH_FORMAT)
+    st.set_named(UART, {f"passthrough.{PORT}.baud": 9600})
+    assert ep.passthrough_line(0)[0] == 9600
+
+
+def test_an_rx_with_an_output_idle_is_held_by_settings(bench):
+    ep, s, lk, hst = bench
+    core.take(hst, 10000)
+    st = settings.Settings(hst)
+    st.set_named(settings.CORE_CATEGORY, {f"channel.GPIO{RX}.idle": "high"})
+    with pytest.raises(h.Unavailable) as e:
+        st.set_named(UART, uart_values())
+    assert e.value.cause == "held_by_settings"            # cause 5
+
+
 def test_the_client_sets_reads_and_unsets_it(bench):
     ep, s, lk, hst = bench
     core.take(hst, 10000)
