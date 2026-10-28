@@ -1,7 +1,7 @@
 # Host待受けループの期限開始点
 
 SPEC checkoutを明示し、`HostDeadlineChecks(SampleHostDeadlineAdapter(), spec=path).run()`を実行する。
-core §4.4/7.5、transports §3/6の本文SHA（oep-spec a09fa45）と待ちの数値を照合し、OEP固有のconfig仕様には依存しない。
+core §4.4/7.5、transports §3/6の本文SHA（oep-spec 02c08c9）と待ちの数値を照合し、OEP固有のconfig仕様には依存しない。
 private設備を探索しない。既存SerialLink._send/_exchange_once/_recv_forとLengthFrames.recvを、
 予定したbyte列を返すScheduledStreamと仮想時計で通す。OSの口や実時計のsleepを使わない。
 
@@ -10,7 +10,7 @@ fn1/op16、引数wait_ms(u32)、空の成功payloadをこのfixtureの拡張と�
 時間の意味はこのfixtureで定義し、OEP標準interfaceの操作を追加するものではない。
 fixtureのop16は要求全体の短い処理上限を定めない。
 
-待ちの下限はoep-spec a09fa45のcore §4.4に従い、「要求全体の処理上限＋1秒＋転送時間」。
+待ちの下限はcore §4.4に従い、「要求全体の処理上限＋1秒＋転送時間」。
 処理上限はmax_op_msで、引数の待ち時間だけを上限に使わない（旧本文の「引数時間＋1秒」からの変更）。
 fn 0のconfirm/list/describe/clock/keepalive/lock_stateはmin(max_op_ms, core_quick_op_max_ms=1000)、
 max_op_msを取得する前は1000 ms（下限2秒と転送時間）。registryのcore_quick_op_max_msとmax_op_ms_maxも照合する。

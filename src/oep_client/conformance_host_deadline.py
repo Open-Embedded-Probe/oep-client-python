@@ -1,6 +1,6 @@
 """Wait floor (whole-request processing bound + host_wait_add_ms + transfer) and its start point.
 
-The floor is core §4.4 at a09fa45: the processing bound is max_op_ms unless the operation defines a shorter
+The floor is core §4.4: the processing bound is max_op_ms unless the operation defines a shorter
 whole-request bound; never the argument time alone. fn 0 quick operations use min(max_op_ms, core_quick_op_max_ms),
 and core_quick_op_max_ms while max_op_ms is still unknown. The wait starts at write completion or at the
 completion of the preceding response."""
@@ -9,8 +9,8 @@ from pathlib import Path
 from .conformance import require,spec_identity
 
 
-REVIEWED={'docs/oep-core.ja.md':'4c5dcdcc779c5ba0ee85060a33b2b629deddad3e8f8f1a22e18bdeea9d471bdc',
-          'docs/oep-transports.ja.md':'17f863aeb335bdf5b06a3bd94451b32361af6c7513866a2d987daa99e83b719d'}
+REVIEWED={'docs/oep-core.ja.md':'d63f99f1809146ad41f1643526c81417b366d7a9d85af3845daee6654a229a14',
+          'docs/oep-transports.ja.md':'2117de20712f7dfad6c81e247cf1b0b206ccf7528fcdf70702cbfce1c17dbadc'}
 QUICK_MS=1000  # core_quick_op_max_ms
 
 

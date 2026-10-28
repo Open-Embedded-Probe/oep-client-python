@@ -15,7 +15,7 @@ class WriterLeaseChecks(CutChecks):
             req=self.dmi_request(sid,parent,[b'\x01\x05'] if rejected else [self.write_reg(4,42)])
             self.a.accept(req)
             try:
-                # core §6.1 (a09fa45): the lease restarts when the answer is generated (rejected ones too); waiting
+                # core §6.1: the lease restarts when the answer is generated (rejected ones too); waiting
                 # for the writer and the write's completion change nothing after that
                 held=self.a.state();require(held['deadline']==held['now_ms']+1000 and held['holder']==sid and parent in held['connections'],'lease did not restart at response generation, or ownership lost')
                 self.a.advance(300);require(self.a.state()['deadline']==held['deadline'],'writer wait paused or renewed lease');frame=self.c.exchange(req);sent=self.a.state()

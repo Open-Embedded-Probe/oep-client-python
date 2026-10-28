@@ -23,7 +23,7 @@ readはu64位置を返し、既に解放した位置ならgap、未取得の未�
 保持するのは最大2区画で、次serialとの差はu32の1/4未満である。任意の保持容量や保持幅全域の証明にはしない。
 この共通の区画手順を他のcapture拡張へ移す際は、明示adapter・独立のsample/packing oracleを用意する。
 単体34件：正常1、観測故障22、実model/Core故障7、制御不足2、本文guard2。
-レビュー済み本文SHAはa09fa45のcapture/commonに合わせた。
+レビュー済み本文SHAはoep-spec 02c08c9のcapture/commonに合わせた。
 初期fixtureのconstructor、analog feed入口、frame容量を修正した。現在のモデル本体/Core/productionは変更していない。
 mark保持、streaming/groupとの通知交錯、任意capacity、物理sampling、production Host統合は残る。
 full_conformance=false。

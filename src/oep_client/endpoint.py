@@ -3,10 +3,10 @@
 This is the spec side's "working spec": ch32rv, the JS client, this client and the probe firmware are checked against
 it. It wraps a `virtual_bench.VirtualProbe` (the static declarations, and what the probe keeps to itself: `own_channels`,
 `Offered.inner`) and does what oep-spec docs/oep-core.ja.md, docs/oep-transports.ja.md and interfaces/*.ja.md
-define (oep-spec a09fa45):
+define:
 
-- the core (fn 0) has no name and is never listed (core §0, §7.2); its ops are exactly the eight mandatory ones:
-  confirm, list, describe, clock, open, end, keepalive, lock_state (core §1.2, §12). list takes first(u16) alone and
+- the core (fn 0) has no name and is never listed (core §0, §7.2); its ops are the eight mandatory ones - confirm,
+  list, describe, clock, open, end, keepalive, lock_state (core §1.2, §11) - and the settings' (core §13). list takes first(u16) alone and
   pages every interface (core §7.2); describe answers declarations only (§7.3). clock (core §7.6) answers boot_id and
   uptime_ns, read while handling the request - lock-free, and with session_id 0 it touches no session, lock or lease
 - one request header of 10 bytes with session_id (0 = no session; core §4.1), TLVs as tag(u8) len(u16) value (§2.2),
@@ -99,7 +99,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Hashable
 
 from . import catalog, virtual_bench, virtual_bench_capture, message as m, registry as reg
-from . import registry as current_reg     # TRANSITIONAL: the common stream marks of the interfaces that follow a09fa45
+from . import registry as current_reg     # TRANSITIONAL: the common stream marks
 
 TOY_WRITE, TOY_READ = 0x10, 0x11                    # 0x01 / 0x02: subscribe / unsubscribe in every op space
 OK, WAIT, LINE, FAULT, TIMEOUT, STATE = (reg.STATUS[k] for k in ("ok", "wait", "line", "fault", "timeout", "state"))

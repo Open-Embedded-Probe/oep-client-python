@@ -1,6 +1,20 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) The independent conformance checkers follow oep-spec 02c08c9 (they were pinned to a09fa45's text): the reviewed
+  document hashes moved after reading the changes. fn 0's required ops are the eight core ops, get with settings, state
+  with save, network with a netif (core §11) - the checkers had taken every registry core op as required. The Host request
+  policy (HostRequestChecks and its sample encoder) keeps its policy by TLV name and takes the numbers from the selected
+  registry (the wire and capture TLVs were renumbered); it covers the capture TLVs added since (critical: format,
+  format_name, data_path, carriage, trigger_opts and the §3.8 front-end ones). The core response oracle knows item, setting,
+  setting_choice, channel_name and netif, and no longer label. The capture configure sends block_max without the critical
+  bit (§3.3's table).
+- (JA) 独立した適合の検査器を oep-spec 02c08c9 に追従させた（a09fa45 の本文に固定されていた）。変更を読んでからレビュー済みの本文の
+  hash を上げた。fn 0 の必須の op は core の 8 つと、設定があれば get、save があれば state、netif があれば network（core §11）。検査器は
+  registry の core の op をすべて必須と見ていた。Host の要求の方針（HostRequestChecks と見本の encoder）は TLV の名前で方針を持ち、番号は
+  選んだ registry から引く（wire と capture の TLV は番号が振り直された）。その後に増えた capture の TLV も扱う（critical: format、format_name、
+  data_path、carriage、trigger_opts と §3.8 の前段）。core の応答の答え合わせは item、setting、setting_choice、channel_name、netif を知り、
+  label は外した。capture の configure は block_max を critical なしで送る（§3.3 の表）。
 - (EN) `fixture.Pwm`, `fixture.Counter`, `fixture.Dac` (oep-spec 02c08c9, fixture §7-§9): `Pwm.set` / `start` / `stop` /
   `status` (`PwmOutput`: the frequency as num / den and the duty made), `Counter.measure` (`Count`: the window and the edges a
   role, `hz()`), `Dac.set` / `status` / `value_for_mv`. dump knows all three. tests/hw: `pwm_counter` - a PWM on a free

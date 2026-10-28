@@ -1,6 +1,6 @@
 # 有限保持の通知出力：代表fixture
 
-`tests/test_conformance_notification_output.py`は、core §10.3/§10.4（a09fa45）を確認する限定したraw fixtureである。
+`tests/test_conformance_notification_output.py`は、core §10.3/§10.4を確認する限定したraw fixtureである。
 公開の汎用通知検査APIや、本番virtual profileを実装したものではない。
 独自の`io.example.notice`にsubscribe/unsubscribeと固定58byte payloadのkind1イベントを定義し、通知の共通部分をOEP固有操作から分けて検査する。
 

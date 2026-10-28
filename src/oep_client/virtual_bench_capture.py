@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-"""oep.fixture.logic / oep.fixture.analog / oep.fixture.capture-group in the virtual bench (oep-spec a09fa45
+"""oep.fixture.logic / oep.fixture.analog / oep.fixture.capture-group in the virtual bench (oep-spec
 interfaces/oep-if-capture.ja.md, revision 1).
 
 What it captures is known in advance, so a receiver can check it (sample i counted from the track's start, across

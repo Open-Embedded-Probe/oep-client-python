@@ -8,7 +8,7 @@ import struct
 from .conformance import ops, require, tlvs
 from . import conformance as _helpers
 
-REVIEWED_CORE_SHA256 = '4c5dcdcc779c5ba0ee85060a33b2b629deddad3e8f8f1a22e18bdeea9d471bdc'  # oep-spec a09fa45 docs/oep-core.ja.md
+REVIEWED_CORE_SHA256 = 'd63f99f1809146ad41f1643526c81417b366d7a9d85af3845daee6654a229a14'  # oep-spec 02c08c9 docs/oep-core.ja.md
 
 
 class CoreSmokeChecks:
@@ -85,7 +85,8 @@ class CoreSmokeChecks:
         identity = values.get(tags['unit_id'], b'').decode('ascii')
         require(identity.lower() == self.unit.lower() and 1 <= len(identity) <= 32 and
                 all(c in 'abcdefghijklmnopqrstuvwxyz0123456789-' for c in identity), 'unit_id')
-        require(set(self.core.values()) <= ops(values.get(self.reg['describe_common']['ops'], b'')), 'core ops')
+        declared = ops(values.get(self.reg['describe_common']['ops'], b''))
+        require(_helpers.required_core_ops(self.reg, declared, values) <= declared, 'core ops')
         maximum = values.get(tags['max_op_ms'], b'')
         require(len(maximum) == 4 and 1 <= int.from_bytes(maximum, 'little') <= 600000, 'max_op_ms')
         require(any(t == tags['transport'] and len(v) == 3 and v[0] == self.observed['confirm']['transport']

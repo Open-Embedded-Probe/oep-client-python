@@ -3,7 +3,7 @@
 `CoreSmokeChecks`は、現行作業版の選択した契約を、小さいraw messageの検査で確認するAPIである。
 旧`Checks`のガードを解除したり、旧検査全部を新仕様の検査として走らせたりはしない。
 選択したSPECのcore SHAとheader/corr定義を確認し、レビューしていない本文では送信前に止める。
-レビュー済みの本文はoep-spec a09fa45の`docs/oep-core.ja.md`である。
+レビュー済みの本文はoep-spec 02c08c9の`docs/oep-core.ja.md`である。
 
 ```python
 from oep_client.conformance import spec_identity

@@ -20,7 +20,7 @@ def selected_spec(monkeypatch):
 def test_core_reader_contracts():
     r=cc.HostCoreShapeChecks(decode,spec=SPEC).run()
     assert r['status']=='passed',[(x['id'],x.get('error')) for x in r['checks']]
-    assert len(r['checks'])==9 and r['adopted_shapes']=={'core_success_operations':8,'core_reject_reasons':11,'known_tlv_context_entries':33}
+    assert len(r['checks'])==9 and r['adopted_shapes']=={'core_success_operations':8,'core_reject_reasons':11,'known_tlv_context_entries':41}
     assert not r['full_conformance']
 
 
@@ -141,4 +141,4 @@ def test_changed_reviewed_spec_stops_before_reader_use(tmp_path,monkeypatch,faul
 
 
 def registry_fixture():
-    return dict(protocol={'revision':1,'byte_order':'little'},roles={'result':2},resolutions={'rejected':0,'completed':1},outcomes={'success':0,'failed':1,'partial':2},reject_reasons=dict(cc.CORE_REASONS),describe_common={'role_channels':1,'max_clock_hz':2,'max_length':3,'min_clock_hz':4,'features':5,'channel_group':6,'ops':7},core={'op':[{'name':n,'code':v} for n,v in cc.CORE_OPS.items()], 'tlv':{'confirm_answer':{'transport':1},'locked_payload':{'owner':1},'lock_state_answer':{'owner':1},'unavailable_payload':{'cause':1,'channel':2,'fn':5},'unsupported_payload':{'supported':1,'channel':2,'fn':5},'describe':{'firmware':64,'model':65,'unit_id':66,'channels':67,'label':70,'transport':73,'chip':76,'max_op_ms':77}}})
+    return dict(protocol={'revision':1,'byte_order':'little'},roles={'result':2},resolutions={'rejected':0,'completed':1},outcomes={'success':0,'failed':1,'partial':2},reject_reasons=dict(cc.CORE_REASONS),describe_common={'role_channels':1,'max_clock_hz':2,'max_length':3,'min_clock_hz':4,'features':5,'channel_group':6,'ops':7,'setting':8,'setting_choice':9},core={'op':[{'name':n,'code':v} for n,v in {**cc.CORE_OPS,**cc.SETTINGS_OPS}.items()], 'tlv':{'confirm_answer':{'transport':1},'locked_payload':{'owner':1},'lock_state_answer':{'owner':1},'unavailable_payload':{'cause':1,'channel':2,'item':3,'fn':5},'unsupported_payload':{'supported':1,'channel':2,'item':3,'fn':5},'describe':{'firmware':64,'model':65,'unit_id':66,'channels':67,'channel_name':68,'netif':69,'transport':73,'chip':76,'max_op_ms':77}}})

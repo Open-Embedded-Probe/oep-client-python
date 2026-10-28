@@ -1,6 +1,6 @@
 # 異なるレートのgroup取得検査
 
-`CaptureTimelineChecks`は、明示したSPEC（a09fa45）のcapture §2/3.2/3.4/4.1とcore §10に基づく第三段階の検査。
+`CaptureTimelineChecks`は、明示したSPECのcapture §2/3.2/3.4/4.1とcore §10に基づく第三段階の検査。
 `SampleCaptureTimelineAdapter`で独立`CaptureTimelineModel`の時計と通知の取り出しを指定する。
 私的ベンチ、endpoint、兄弟checkout、既存Hostのcapture decoder、他のcapture checkerは取り込まない。
 layoutはconfigureの応答から独立に解き、生データを既知の波形と照合する。

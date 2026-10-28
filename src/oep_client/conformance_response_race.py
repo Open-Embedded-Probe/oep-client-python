@@ -23,7 +23,7 @@ class ResponseRaceChecks:
         expected_request='01030001001007000000'+('03' if kind=='REJECTED' else '01')
         expected_reply='0203000003' if kind=='REJECTED' else '02030001000200'
         require(old['request_hex']==expected_request and fixed_then_tlvs(bytes.fromhex(old['reply_hex']),bytes.fromhex(expected_reply)) and old['token']==[7,1],'old request/reply/token differs')
-        # core §6.1 (a09fa45): the old holder's answer restarts its lease when it is generated (rejected too), not at
+        # core §6.1: the old holder's answer restarts its lease when it is generated (rejected too), not at
         # the writer's completion
         require(old['before']['deadline']==lease and old['after']['deadline']==100+lease and old['after']['holder']==7 and old['after']['now_ms']==100,'old answer did not restart the lease at its generation, or lost it')
         finish=next(e for e in events if e['action']=='finish' and e['request_hex']==expected_request)

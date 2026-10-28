@@ -25,7 +25,7 @@ pinsと各callbackは呼び出すプロジェクトが明示する。私的bench
 これは実行すると指定GPIOを設定し、UARTのplanを作り、SWD attachを行う検査である。明示した設備だけを選び、排他とframingは呼び出す側で用意する。
 未選択のtargetを探したり、他のセッションをforceで奪ったりはしない。
 
-SPECのcoreと、fixture/plan/debug/commonの本文SHAを確認してから送信する（レビュー済みはoep-spec a09fa45）。
+SPECのcoreと、fixture/plan/debug/commonの本文SHAを確認してから送信する（レビュー済みはoep-spec 02c08c9）。
 選択したOEPの必須操作はopsにあることを確認する。不在なら準備不成立を失敗として記録し、任意機能と混同しない。
 
 GPIOはplan/set/readを行い、後ろに未対応modeを持つbatchを実行前に拒否して旧状態を保つことを確認する。

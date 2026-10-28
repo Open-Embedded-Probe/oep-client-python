@@ -1,6 +1,6 @@
 """Selected-SPEC cross-rate immediate group acquisition checks with an independent waveform oracle.
 
-Self-contained for capture a09fa45: no imports of probe encoders, Host decoders,
+Self-contained for capture: no imports of probe encoders, Host decoders,
 the bench endpoint or the other capture checkers. Layouts are decoded from the
 configure answers; the waveform and clock are the documented fixture's.
 """

@@ -4,18 +4,20 @@ from pathlib import Path
 import struct
 from .conformance import require,spec_identity
 
-REVIEWED_CORE_SHA256='4c5dcdcc779c5ba0ee85060a33b2b629deddad3e8f8f1a22e18bdeea9d471bdc'
+REVIEWED_CORE_SHA256='d63f99f1809146ad41f1643526c81417b366d7a9d85af3845daee6654a229a14'
 CORE_OPS={'confirm':1,'list':2,'describe':3,'clock':4,'open':16,'end':17,'keepalive':18,'lock_state':19}
+# the settings' ops (core §13.5 / §13.7, transports §7.3): their numbers reviewed, their results not read here
+SETTINGS_OPS={'get':32,'set':33,'unset':34,'save':35,'state':36,'network':37}
 CORE_REASONS={'unknown_function':1,'unknown_operation':2,'malformed':3,'unavailable':4,'window_exceeded':6,'no_session':7,'locked':8,'session_required':9,'no_resource':10,'unsupported':11,'result_lost':12}
 
 
 def reviewed_identity(spec):
     registry,identity=spec_identity(spec);core_sha=hashlib.sha256((Path(spec)/'docs/oep-core.ja.md').read_bytes()).hexdigest()
     require(core_sha==REVIEWED_CORE_SHA256,'core text changed: review result shapes before reusing vectors')
-    require(registry['protocol']['revision']==1 and registry['protocol']['byte_order']=='little' and {r['name']:r['code'] for r in registry['core']['op']}==CORE_OPS and registry['reject_reasons']==CORE_REASONS,'selected core revision/numbers differ')
+    require(registry['protocol']['revision']==1 and registry['protocol']['byte_order']=='little' and {r['name']:r['code'] for r in registry['core']['op']}=={**CORE_OPS,**SETTINGS_OPS} and registry['reject_reasons']==CORE_REASONS,'selected core revision/numbers differ')
     require(registry['roles']['result']==2 and registry['resolutions']=={'rejected':0,'completed':1} and registry['outcomes']=={'success':0,'failed':1,'partial':2},'selected result header meanings differ')
-    tags=registry['core']['tlv'];require(tags['confirm_answer']=={'transport':1} and tags['locked_payload']=={'owner':1} and tags['lock_state_answer']=={'owner':1} and tags['unavailable_payload']=={'cause':1,'channel':2,'fn':5} and tags['unsupported_payload']=={'supported':1,'channel':2,'fn':5},'selected core response tag spaces differ')
-    require(registry['describe_common']=={'role_channels':1,'max_clock_hz':2,'max_length':3,'min_clock_hz':4,'features':5,'channel_group':6,'ops':7} and tags['describe']=={'firmware':64,'model':65,'unit_id':66,'channels':67,'label':70,'transport':73,'chip':76,'max_op_ms':77},'selected declaration tag spaces differ')
+    tags=registry['core']['tlv'];require(tags['confirm_answer']=={'transport':1} and tags['locked_payload']=={'owner':1} and tags['lock_state_answer']=={'owner':1} and tags['unavailable_payload']=={'cause':1,'channel':2,'item':3,'fn':5} and tags['unsupported_payload']=={'supported':1,'channel':2,'item':3,'fn':5},'selected core response tag spaces differ')
+    require(registry['describe_common']=={'role_channels':1,'max_clock_hz':2,'max_length':3,'min_clock_hz':4,'features':5,'channel_group':6,'ops':7,'setting':8,'setting_choice':9} and tags['describe']=={'firmware':64,'model':65,'unit_id':66,'channels':67,'channel_name':68,'netif':69,'transport':73,'chip':76,'max_op_ms':77},'selected declaration tag spaces differ')
     return dict(identity,reviewed_core_sha256=core_sha)
 
 
@@ -50,17 +52,21 @@ def known_vectors():
             (4,b'\x08\x07\x06\5',(b'',b'xxx',b'xxxxx'),False),
             (5,b'\xff\xee\xdd\xcc',(b'',b'xxx',b'xxxxx'),False),
             (6,b'\7\2\1\x34\x12\3\x78\x56',(b'',b'\7',b'\7\2\1\x34\x12',b'\7\1\1\x34\x12x'),True),
-            (7,b'\x10\xff',(b'',b'\x10',b'\xf9\xff'),False)]
+            (7,b'\x10\xff',(b'',b'\x10',b'\xf9\xff'),False),
+            (8,b'\x01\x02\x04\x00\x10\x00name',(b'',b'\0'*6),True),
+            (9,b'\x01\x00low',(b'',b'\x01\x00'),True)]
     for ctx in (desc,other_desc):rows.extend((ctx,*row) for row in common)
-    rows.extend((desc,*row) for row in [(64,b'firmware',(),False),(65,b'model',(),False),(66,b'unit-0123',(b'',b'x'*33),False),(67,b'\x34\x12',(b'',b'x',b'xxx'),False),(70,b'\x34\x12NRST',(b'',b'x'),True),(73,b'\2\4\1',(b'',b'xx',b'xxxx'),True),(76,b'chip',(),False),(77,b'\x04\3\2\1',(b'',b'xxx',b'xxxxx'),False)])
+    rows.extend((desc,*row) for row in [(64,b'firmware',(),False),(65,b'model',(),False),(66,b'unit-0123',(b'',b'x'*33),False),(67,b'\x34\x12',(b'',b'x',b'xxx'),False),(68,b'\x34\x12GPIO1',(b'',b'\x34\x12',b'\x34\x12'+b'x'*17),True),(69,b'wifi',(),True),(73,b'\2\4\1',(b'',b'xx',b'xxxx'),True),(76,b'chip',(),False),(77,b'\x04\3\2\1',(b'',b'xxx',b'xxxxx'),False)])
     confirm=fixed_vectors()[0][0];locked=result(4,struct.pack('<I',900),reason=8);lock_state=result(19,struct.pack('<BI',1,900));unavailable=result(4,reason=4)
     rows.append((confirm,1,b'\3',(b'',b'xx'),False))
     for ctx in (locked,lock_state):rows.append((ctx,1,b'owner',(b'',b'x'*33),False))
     for tag,n,repeated in ((1,1,False),(2,2,True),(5,2,False)):
         rows.append((unavailable,tag,bytes(range(1,n+1)),(b'',b'x'*(n+1)),repeated))
+    rows.append((unavailable,3,b'\1',(b'',b'xx'),False))   # item(u8): the refused value's place in a settings set / unset
     for op in (1,4):
         ctx=result(op,b'\0',reason=11)
         for tag in ((1,2,5) if op==1 else (2,5)):rows.append((ctx,tag,b'\1\2',(b'',b'x',b'xxx'),tag==2))
+        rows.append((ctx,3,b'\1',(b'',b'xx'),False))
     return rows
 
 
@@ -107,7 +113,7 @@ class HostCoreShapeChecks:
             for value in bad:
                 decoded=self.read(self.append(ctx,field(tag,value)))
                 require(decoded is None or decoded==base,'wrong known TLV width/count used')
-                # core §2.3 (a09fa45): a later same-tag TLV is validated as well; a broken one is never used,
+                # core §2.3: a later same-tag TLV is validated as well; a broken one is never used,
                 # whether the reader then drops the whole response or keeps only the valid first value.
                 decoded=self.read(self.append(ctx,field(tag,good)+field(tag,value)))
                 require(decoded is None or decoded in (dict(base,tlvs=[(tag,good)]),base),'broken later duplicate TLV used')
@@ -133,7 +139,7 @@ class HostCoreShapeChecks:
         for n in (0,1,255):
             value=bytes((7,n))+b'\1\2\0'*n;ctx=result(3,b'\0');self.expect(self.append(ctx,field(6,value)),dict(more=False),[(6,value)])
         ctx=result(3,b'\0')
-        for tag,value in ((1,b'\2\0\0'),(7,b'\0'+b'\xff'*32),(7,b'\xf8\xff'),(70,b'\1\0'),(64,b'x'*65535)):
+        for tag,value in ((1,b'\2\0\0'),(7,b'\0'+b'\xff'*32),(7,b'\xf8\xff'),(68,b'\1\0P'),(64,b'x'*65535)):
             self.expect(self.append(ctx,field(tag,value)),dict(more=False),[(tag,value)])
     def flags_bool(self):
         for value in range(256):

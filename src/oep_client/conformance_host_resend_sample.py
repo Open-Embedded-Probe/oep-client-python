@@ -21,7 +21,7 @@ class SampleHostResendAdapter:
         seen={};events=[]
         with patch.object(link,'time',clock),patch.object(frames,'time',clock):
             d=link.SerialLink.on_stream(stream,kind,.05);d.held=lambda:True
-            # core §4.4 (a09fa45): the fixture op16 defines no shorter whole-request bound, so the floor uses max_op_ms.
+            # core §4.4: the fixture op16 defines no shorter whole-request bound, so the floor uses max_op_ms.
             # Production Host.expect_ms carries argument times only; this adapter states the bound explicitly.
             d.expected_s=lambda:MAX_OP_MS/1000
             def write(raw):

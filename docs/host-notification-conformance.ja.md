@@ -3,7 +3,6 @@
 core §2.4/10.1/10.2のHost側を、明示したreaderアダプタと論理時計で検査する。
 production linkの置換は行わず、実装追従前の検査・仮想サンプルである。
 private設備設定や隣接SPECは探索しない。
-oep-spec a09fa45でcore §10.1/10.2（旧§11.1/11.2）を再確認した。Host側の規則と通知の形に変更はない。
 
 採用例はfn 7/8、既知event kind 1（固定部分1 byteとTLV）、標準data形。
 role 0x02だけをcorrと照合する。0x03/0x04の同じ位置はfnである。

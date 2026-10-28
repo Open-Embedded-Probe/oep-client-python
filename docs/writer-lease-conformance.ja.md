@@ -9,7 +9,7 @@ fixtureはlease 1000 ms、max_op_ms 5000 ms、単一writer。
 `advance(ms)`は論理時計を進め、`execution(ms)`は次に実行する有効DMI要求の論理実行時間を指定する。
 実時計sleepやUSB転送は使わない。時計はfixtureの継続カウンタで、bootのuptimeは端点側が分離する。
 
-- 応答を生成した時点から1000 msで数え直し、writer待ち中と書き出しの完了では更新しない（core a09fa45 §6.1）。
+- 応答を生成した時点から1000 msで数え直し、writer待ち中と書き出しの完了では更新しない（core §6.1）。
   rejectedでもsession判定を通った応答は更新する。同一要求再送では更新しない。
 - 実行時間1500 msはleaseより長いが、実行中は期限を数えない。応答の生成から数え、writer待ちでも数え続ける。
 - writer停止中に期限へ達したら、ownerと子stream/protocol/mailbox、connection、pinを解放する。

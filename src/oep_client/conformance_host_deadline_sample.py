@@ -48,7 +48,7 @@ class SampleHostDeadlineAdapter:
         clock=Clock();stream=ScheduledStream(clock,case['kind']);events=stream.events
         with patch.object(link,'time',clock),patch.object(frames,'time',clock):
             d=link.SerialLink.on_stream(stream,case['kind'],.05)
-            # Explicit adoption of core §4.4 (a09fa45): the Link waits the whole-request processing bound, not the
+            # Explicit adoption of core §4.4: the Link waits the whole-request processing bound, not the
             # argument time. Production Host.expect_ms still carries argument times only, so the bound is set here.
             bound=bound_ms(case);d.expected_s=lambda:bound/1000
             d.resend=False;d._recover=lambda:events.append(dict(action='recovery-control',time_ns=clock.ns))

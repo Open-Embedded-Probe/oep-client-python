@@ -3,7 +3,7 @@ import struct
 from .conformance import require
 from .conformance_host_core import HostCoreShapeChecks,CORE_OPS,fixed_vectors,result,field
 
-# Reviewed from core §1.1/4.3/6.4/7 (oep-spec a09fa45: confirm and list entries carry no flags), not inferred from a generated schema.
+# Reviewed from core §1.1/4.3/6.4/7 (confirm and list entries carry no flags), not inferred from a generated schema.
 # Each tuple lists all mandatory request fields and fixed response prefixes.
 CORE_SHAPES=(
  ('confirm',1,(('magic',4),('min_rev',1),('max_rev',1)),(('magic',4),('revision',1),('max_frame',2),('window',4),('max_inflight',1),('boot_id',4))),

@@ -144,7 +144,7 @@ def checker_sources_sha256():
             for name in CHECKER_SOURCES}
 
 
-REVIEWED_CORE_SHA256 = '4c5dcdcc779c5ba0ee85060a33b2b629deddad3e8f8f1a22e18bdeea9d471bdc'   # oep-spec a09fa45 docs/oep-core.ja.md
+REVIEWED_CORE_SHA256 = 'd63f99f1809146ad41f1643526c81417b366d7a9d85af3845daee6654a229a14'   # oep-spec 02c08c9 docs/oep-core.ja.md
 
 
 def require_reviewed_contract(registry, spec=None):
@@ -155,6 +155,23 @@ def require_reviewed_contract(registry, spec=None):
     if spec is not None:
         require(spec.get('core_sha256') == REVIEWED_CORE_SHA256,
                 'checker migration required: core document differs from the reviewed checker contract')
+
+
+def required_core_ops(registry, declared, describe):
+    """fn 0's required ops (core §11): the eight core ops always; get with settings, state with save, network with a netif
+    (core §13, transports §7.3). declared: the ops fn 0 declares; describe: fn 0's describe TLVs by tag."""
+    core = {row['name']: row['code'] for row in registry['core']['op']}
+    required = {core[name] for name in ('confirm', 'list', 'describe', 'clock', 'open', 'end', 'keepalive', 'lock_state')}
+    if 'get' not in core:   # a registry without the settings (core §13): nothing more to require
+        return required
+    setting, netif = registry['describe_common'].get('setting'), registry['core']['tlv']['describe'].get('netif')
+    if declared & {core[name] for name in ('get', 'set', 'unset', 'save', 'state')} or setting in describe:
+        required.add(core['get'])
+    if core['save'] in declared:
+        required.add(core['state'])
+    if netif in describe:
+        required.add(core['network'])
+    return required
 
 
 def spec_identity(path):
@@ -376,7 +393,7 @@ class Checks:
         tag = self.reg['describe_common']['ops']
         require(tag in values, 'core describe missing current ops tag')
         declared = ops(values[tag])
-        require(set(self.core.values()) <= declared, 'mandatory core operation absent')
+        require(required_core_ops(self.reg, declared, values) <= declared, 'mandatory core operation absent')
         self.transport_declarations()
         channels = values.get(self.reg['core']['tlv']['describe']['channels'], b'\0\0')
         require(len(channels) == 2, 'channels must be u16')

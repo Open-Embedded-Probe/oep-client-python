@@ -1,4 +1,4 @@
-"""oep.fixture.logic / oep.fixture.analog / oep.fixture.capture-group revision 1 (oep-spec a09fa45
+"""oep.fixture.logic / oep.fixture.analog / oep.fixture.capture-group revision 1 (oep-spec
 interfaces/oep-if-capture.ja.md: §1 layouts, §2 segments, §3 operations, §3.7 calibration, §4 groups). Numbers from
 `registry`.
 
@@ -515,7 +515,8 @@ class LogicCapture(Interface):
 
         Format 1 (logic blocks, §1.3): `data_format` DATA_FORMAT["logic_blocks"], `events` role -> D for the channels
         carried as events (the others raw), `roles` the plan's roles (to name the raw channels), `block_max` the
-        longest block. Format 4 (test counter) needs nothing else. These go critical.
+        longest block (§3.3's table: without the critical bit). Format 4 (test counter) needs nothing else. The others
+        go critical.
 
         §3.3's contract is checked before anything is sent (ValueError): `samples` is needed in one-shot and repeat
         and not taken in streaming, `segments` is repeat's only, `pretrigger` needs a trigger (type other than 0) - a
@@ -556,7 +557,7 @@ class LogicCapture(Interface):
         for role, d in sorted((events or {}).items()):
             body += m.tlv(CARRIAGE | CRITICAL, struct.pack("<BBI", role, LOGIC_CARRIAGE["events"], d))
         if block_max is not None:
-            body += m.tlv(BLOCK_MAX | CRITICAL, struct.pack("<I", block_max))
+            body += m.tlv(BLOCK_MAX, struct.pack("<I", block_max))   # §3.3's table: every probe takes it
         if trigger_opts is not None:                         # critical: a probe without it refuses (§3.3)
             o = trigger_opts
             body += m.tlv(TRIGGER_OPTS | CRITICAL, struct.pack("<BBBI", o.arm, o.rearm, o.when, o.hysteresis))

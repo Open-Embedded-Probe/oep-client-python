@@ -1,7 +1,7 @@
 # コアの固定フィールドと省略のレビュー
 
 core §2.3の「固定部分に省略できるフィールドを置かない」を、revision1のコアpayloadへ適用する。
-本文SHAは`4c5dcdcc779c5ba0ee85060a33b2b629deddad3e8f8f1a22e18bdeea9d471bdc`（oep-spec a09fa45、[core形の検査](host-core-shapes-conformance.ja.md)の固定を共有）。
+本文SHAは`d63f99f1809146ad41f1643526c81417b366d7a9d85af3845daee6654a229a14`（oep-spec 02c08c9、[core形の検査](host-core-shapes-conformance.ja.md)の固定を共有）。
 CoreFixedFieldChecksはSPECを明示指定し、本文・番号が変わればレビューし直す。
 生成registryは番号の照合に使う。幅・省略条件は本文§1.1/4.3/6.4/7を読んで下の台帳に固定した。
 privateベンチへの依存や隣接SPECの自動探索はない。

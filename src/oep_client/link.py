@@ -36,7 +36,7 @@ throughput of a UART bridge, a measurement of the earlier oep-spec uart-speed-ne
 
 port_speed (oep-if-link §3 is the handshake: baud, step and verify_ms on the UART bridge the request comes in on, and
 leaves which rates to try and how to judge them to the host. The procedure here is this client's own; "guide §17" below
-names the host guide section it came from, which oep-spec a09fa45 no longer has): `raise_speed` (or `open_host(..., port_speed=...)`) asks a probe
+names the host guide section it came from, which the current host guide no longer has): `raise_speed` (or `open_host(..., port_speed=...)`) asks a probe
 that declares it for a faster rate on the UART bridge this host opened. The default candidate is 500000 alone
 (DEFAULT_CANDIDATES): the guide's ceiling - a host does not try faster by default (§17). A rate above DEFAULT_CEILING
 (500000) is the user's choice - pass it in the candidates only when the user named it - and whatever the form, it is

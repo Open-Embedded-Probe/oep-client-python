@@ -2,7 +2,7 @@
 import hashlib
 
 import pytest
-from oep_client.conformance_host_requests import HostRequestChecks, contexts, REVIEWED, REVIEWED_REGISTRY_SHA256, reviewed_identity
+from oep_client.conformance_host_requests import HostRequestChecks, contexts, policy, REVIEWED, REVIEWED_REGISTRY_SHA256, reviewed_identity
 from oep_client.conformance_host_request_sample import encode
 
 SPEC='/explicit/request-policy-spec'
@@ -100,10 +100,10 @@ def test_changed_normative_policy_requires_review(tmp_path,monkeypatch,changed):
 
 def registry_fixture():
     entries={}
-    for name,op,fixed,fields in contexts():
+    for (name,op,fixed,named),(_,_,_,fields) in zip(policy(),contexts()):
         entry=entries.setdefault(name,dict(name=name,revision=1,op=[],tlv={}))
         entry['op'].append(dict(name=op,code=16 if op in ('scan','configure','open','plan_apply') else 17 if op=='attach' else 24))
-        entry['tlv']['configure' if op=='query' else op]={str(t):t for t,v,c in fields}
+        entry['tlv']['configure' if op=='query' else op]={n:t for (n,_,_),(t,_,_) in zip(named,fields)}
     return dict(protocol=dict(revision=1,byte_order='little'),core=entries.pop('core'),interface=list(entries.values()))
 
 
@@ -121,7 +121,7 @@ def test_selected_schema_guard(tmp_path,monkeypatch,change):
     if change=='protocol':registry['protocol']['revision']=2
     if change=='revision':registry['interface'][0]['revision']=2
     if change=='operation':registry['interface'][0]['op'][0]['code']=32
-    if change=='tag':registry['interface'][0]['tlv']['scan']['1']=7
+    if change=='tag':registry['interface'][0]['tlv']['scan']['a_new_tlv']=7   # a TLV with no reviewed policy
     with pytest.raises(Exception,match='request'):reviewed_identity(tmp_path)
 
 
@@ -143,8 +143,8 @@ def test_new_operation_number_requires_review(tmp_path,monkeypatch,interface,ope
 
 @pytest.mark.parametrize('legacy',['attach_legacy_shape','logic_multirate_critical'])
 def test_superseded_policies_are_detected(legacy):
-    # Rules changed at a09fa45: attach max_speed/pins are fixed fields,
-    # so attach tag 1/3 have no critical policy; multirate (0x60) no longer exists and capture TLVs are non-critical.
+    # attach max_speed/pins are fixed fields, so no attach TLV stands for them; multirate is gone and the capture
+    # table's TLVs go non-critical (capture §3.3).
     def broken(name,op,fixed,fields):
         raw=encode(name,op,fixed,fields)
         if legacy=='attach_legacy_shape' and op=='attach':
@@ -160,7 +160,7 @@ def test_superseded_policies_are_detected(legacy):
 
 
 def test_removed_request_contexts_are_not_adopted():
-    # gpio set lost its drive TLV and capture-group bind lost trigger_track at a09fa45.
+    # gpio set has no drive TLV and capture-group bind no trigger_track.
     names={(n,o) for n,o,_,_ in contexts()}
     assert ('oep.fixture.gpio','set') not in names and ('oep.fixture.capture-group','bind') not in names
     for name,op in (('oep.fixture.gpio','set'),('oep.fixture.capture-group','bind')):

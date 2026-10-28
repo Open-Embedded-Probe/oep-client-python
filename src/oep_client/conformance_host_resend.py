@@ -26,7 +26,7 @@ class HostResendChecks:
         require(repeat['next_after']==repeat['next_before'] and repeat['reply_hex']==first['reply_hex'] and repeat['deadline_after']==repeat['deadline_before'],'Probe replay reexecuted/changed result/renewed lease')
         writes=[e for e in events if e['action']=='write'];apps=[e for e in writes if any(bytes.fromhex(p)[3:6]==b'\1\0\x10' for p in e['requests_hex'])]
         if name!='BAD-CRC':
-            # core §4.4 (a09fa45): max_op_ms (no shorter whole-request bound for op16) + 1000 ms + transfer time.
+            # core §4.4: max_op_ms (no shorter whole-request bound for op16) + 1000 ms + transfer time.
             maximum=r.get('max_op_ms');require(isinstance(maximum,int) and 1<=maximum<=600000,'fixture max_op_ms required')
             wire=apps[0]['wire_length'];transfer=(wire+64*3)*10/115200 if r['kind']=='cobs' else 0
             floor_ns=round((maximum/1000+1+transfer)*1e9)

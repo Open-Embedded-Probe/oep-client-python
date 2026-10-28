@@ -1,14 +1,14 @@
 # Hostのsave待ち時間と転送時間の部分検査
 
 SPEC checkoutを明示し、`HostWaitChecks(SampleHostWaitAdapter(), spec=path).run()`を実行する。
-core §4.4/7.5、transports §6、config §3の本文SHA（oep-spec a09fa45）と待ちの数値/現在のsave番号を照合する。
+core §4.4/7.5、transports §6の本文SHA（oep-spec 02c08c9）と待ちの数値/現在のsave番号を照合する。
 registryのcore_quick_op_max_ms（1000）も照合する。
 private設備を探索せず、MemoryStreamだけを使う。OSの口を開いたり実時計で待ったりしない。
 
 既存Host.expecting、ProbeConfig.saveの継承した時間処理、SerialLink._write/_wait/_limitsを通す。
 saveはproductionのProbeConfig.SAVE（0x12、probe-config §2）をそのまま送り、各観測にその番号を記録する。
 
-a09fa45のcore §4.4で、待ちの下限は「要求全体の処理上限＋1秒＋転送時間」になった。saveはconfig §3により
+core §4.4で、待ちの下限は「要求全体の処理上限＋1秒＋転送時間」。saveはconfig §3により
 保存/消去の全処理をmax_op_ms内に終えるので、処理上限はmax_op_msのまま（既存のsave検査と一致）。
 fn 0のconfirmは処理上限min(max_op_ms, core_quick_op_max_ms)、max_op_ms取得前は1000 msで、待ちは2秒＋転送時間以上になる。
 production Hostは要求ごとに処理上限を選ぶ（Host.op_bound_ms）。サンプルはproductionのconfirmをそのまま通す。

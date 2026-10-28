@@ -61,7 +61,7 @@ class PortSpeedExecutionChecks(PortSpeedChecks):
                 require(held['protected']==start['protected'],'execution changed protected state')
                 require(held['ports'][0]['state']==2 and held['ports'][0]['baud']==230400,'execution expired port')
                 require(held['ports'][0]['deadline']==held['time_ms']+3000,'execution consumed idle interval')
-                # core §6.1 (a09fa45): the lease does not run during execution and restarts when the answer is generated;
+                # core §6.1: the lease does not run during execution and restarts when the answer is generated;
                 # waiting for the writer and the write's completion change nothing after that
                 require(held['lease_deadline']==held['time_ms']+lease,'execution consumed the lease or its answer did not restart it')
                 wait=599 if lease==1000 else 2999

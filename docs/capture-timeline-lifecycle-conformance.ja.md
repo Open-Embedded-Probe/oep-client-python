@@ -1,6 +1,6 @@
 # 異レートgroupの停止・再送・寿命検査
 
-`CaptureTimelineLifecycleChecks`は、明示したSPEC（a09fa45）のcapture §2.1/3.2/3.4/4.1とcore §6/8/9/10に基づく第三段階の検査。
+`CaptureTimelineLifecycleChecks`は、明示したSPECのcapture §2.1/3.2/3.4/4.1とcore §6/8/9/10に基づく第三段階の検査。
 [取得timeline](capture-timeline-conformance.ja.md)と同じ独立model/adapterと既知の波形を使い、
 ADCまたはlogicを1000Hzのfast、もう一方を333Hzのslowとする（one-shotは16 sample）。
 私的ベンチ、endpoint、Hostのcapture decoderは必要ない。

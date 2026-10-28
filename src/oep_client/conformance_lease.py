@@ -22,7 +22,7 @@ class LeaseChecks(ReplayPressureChecks):
         self.a.hold(self.a.primary, None); self.service()
 
     def generated(self, at, lease=1000):
-        # core §6.1 (a09fa45): the lease restarts when the answer is generated - rejected answers too - and waiting
+        # core §6.1: the lease restarts when the answer is generated - rejected answers too - and waiting
         # for the writer, a partial write, the write's completion or a closed route change nothing after that.
         require(self.state()['deadline'] == at['now_ms'] + lease, 'lease did not restart at response generation')
 

@@ -6,11 +6,11 @@ import struct
 
 from .conformance import ops, require, tlvs
 
-REVIEWED_INTERFACES = {  # oep-spec a09fa45 interfaces/
-    'oep-if-fixture.ja.md': '4fe81f7920094abe02261cdf3f73a4f4207979244883669b77665872c4f510c5',
+REVIEWED_INTERFACES = {  # oep-spec 02c08c9 interfaces/
+    'oep-if-fixture.ja.md': '780beb7a3f9adb51fccf3441930e4c04d2bb64ef738e302195cf5a4e7c2a60a6',
     'oep-if-plan.ja.md': 'da8bd60af53499573c07bc33dbd8c4df93eb61a93b91dc57907f26620ae36bbf',
-    'oep-if-debug.ja.md': 'b3fdd56f002815c8d85ee6a0d83470e9e4a197d815c46aa5eb0a308b2edf8234',
-    'oep-if-common.ja.md': '4f1cfb88de976f5e934a0526edda3fbf302b51243b43c7faac0b3531d2f9975a',
+    'oep-if-debug.ja.md': '6743420c31bcd354dd5b4b5352f4d8bcfa695f787dbc28644dba9e9533357338',
+    'oep-if-common.ja.md': '25fed0b1b8b7f246a8b71d02cea810249803b1c3c1e9c3df466c04f38687f70c',
 }
 
 

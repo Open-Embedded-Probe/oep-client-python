@@ -1,6 +1,6 @@
 # 応答送信とleaseの補助検査
 
-core §6.1（a09fa45）は、session判定を通った持ち主の要求への応答を**生成した時点**からleaseを数え直す。rejectedも含むが、見出し・再送・別sessionの拒否は更新しない。要求の実行中はleaseを数えない。起算は応答の送信待ち・送信完了によらず、経路が閉じて応答を捨てる場合も同じ。
+core §6.1は、session判定を通った持ち主の要求への応答を**生成した時点**からleaseを数え直す。rejectedも含むが、見出し・再送・別sessionの拒否は更新しない。要求の実行中はleaseを数えない。起算は応答の送信待ち・送信完了によらず、経路が閉じて応答を捨てる場合も同じ。
 
 明示したlogical writerで応答全体の完了を制御する。物理USB/TCPでの送信完了を証明する検査ではない。
 
@@ -31,7 +31,7 @@ with equipment_lock(os.environ['OEP_HW_LOCK']):
 assert report['status'] == 'passed', report
 ```
 
-公開coreモデルは通常の同期APIで全応答を返す時点を送信として扱う。明示pipelineモデルはdefer_sendを使い、応答ごとの更新ticketを単一writerに渡す。再送/前段の拒否にはticketを作らない。ticketはsession IDとロック世代に結びつき、end・期限切れ・forceで無効になる。deadlineは応答の生成時に更新し、ticketを書き終えても変えない（a09fa45 §6.1）。閉じた経路では未完了ticketを破棄し、deadlineはそのまま。
+公開coreモデルは通常の同期APIで全応答を返す時点を送信として扱う。明示pipelineモデルはdefer_sendを使い、応答ごとの更新ticketを単一writerに渡す。再送/前段の拒否にはticketを作らない。ticketはsession IDとロック世代に結びつき、end・期限切れ・forceで無効になる。deadlineは応答の生成時に更新し、ticketを書き終えても変えない（core §6.1）。閉じた経路では未完了ticketを破棄し、deadlineはそのまま。
 
 実行中の時間はleaseから除外し、処理を終えて応答を生成した時点からlease全体を数え直す。同じsessionの新corr openはlease値を変更し、資源/履歴を残し、応答の生成時に更新する。同一openの再送は更新しない。これらの長い実行・経路切断・同session openは仮想時計の追加単体検査で、記録した実時計の検査とは区別する。
 

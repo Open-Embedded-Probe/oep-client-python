@@ -86,7 +86,7 @@ class Core:
         return struct.pack('<I', remaining) + (tlv(1, self.owner) if self.owner else b'')
 
     def response_sent(self, token, *, check_expiry=True):
-        # The lease restarted when the answer was generated (core a09fa45 §6.1): waiting to write it, writing it,
+        # The lease restarted when the answer was generated (core §6.1): waiting to write it, writing it,
         # or dropping it with a closed route changes nothing. A model hands the token over only to let time pass.
         if check_expiry:
             self.tick()
@@ -215,7 +215,7 @@ class Core:
             result = answer(exc.reason, exc.payload)
         if passed_session and sid == self.holder:
             # The lease did not run while the request ran and restarts from the answer's generation, rejected answers
-            # too, whether the answer then waits for the writer, is written or is dropped (core a09fa45 §6.1).
+            # too, whether the answer then waits for the writer, is written or is dropped (core §6.1).
             self.renewal = (sid, self.generation)
             self.deadline = self.ep.now() + self.lease
         if sid and sid == self.last:
