@@ -2,7 +2,7 @@
 
 core §6.1（a09fa45）は、session判定を通った持ち主の要求への応答を**生成した時点**からleaseを数え直す。rejectedも含むが、見出し・再送・別sessionの拒否は更新しない。要求の実行中はleaseを数えない。起算は応答の送信待ち・送信完了によらず、経路が閉じて応答を捨てる場合も同じ。
 
-`LeaseChecks`は[pressure検査](replay-pressure-conformance.ja.md)15項目、時計/観測の前提1項目、次の6契約で22項目。明示したlogical writerで応答全体の完了を制御する。物理USB/TCPでの送信完了を証明する検査ではない。
+明示したlogical writerで応答全体の完了を制御する。物理USB/TCPでの送信完了を証明する検査ではない。
 
 - clock応答を止めて待ち、7 byteだけ送って待つ。応答の生成時にlease_ms先へ更新し、その後の待機・部分送信・全応答の完了ではdeadlineを変えない。
 - session判定を通ったmalformed拒否も、生成時に更新し、送信完了では変えない。保存した拒否応答の再送は更新しない。
@@ -33,6 +33,6 @@ assert report['status'] == 'passed', report
 
 公開coreモデルは通常の同期APIで全応答を返す時点を送信として扱う。明示pipelineモデルはdefer_sendを使い、応答ごとの更新ticketを単一writerに渡す。再送/前段の拒否にはticketを作らない。ticketはsession IDとロック世代に結びつき、end・期限切れ・forceで無効になる。deadlineは応答の生成時に更新し、ticketを書き終えても変えない（a09fa45 §6.1）。閉じた経路では未完了ticketを破棄し、deadlineはそのまま。
 
-実行中の時間はleaseから除外し、処理を終えて応答を生成した時点からlease全体を数え直す。同じsessionの新corr openはlease値を変更し、資源/履歴を残し、応答の生成時に更新する。同一openの再送は更新しない。これらの長い実行・経路切断・同session openは仮想時計の追加単体検査で、記録した実時計22項目とは区別する。
+実行中の時間はleaseから除外し、処理を終えて応答を生成した時点からlease全体を数え直す。同じsessionの新corr openはlease値を変更し、資源/履歴を残し、応答の生成時に更新する。同一openの再送は更新しない。これらの長い実行・経路切断・同session openは仮想時計の追加単体検査で、記録した実時計の検査とは区別する。
 
 `full_conformance=false`。実際のUSB/TCP送信完了、並行処理、実時計での長いop、再起動、host scheduler、silent loss回復、大きな要求/応答の保持上限は未検査。公開wire opやSPECの変更ではない。

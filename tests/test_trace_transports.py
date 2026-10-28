@@ -704,7 +704,7 @@ def test_a_length_port_that_never_goes_quiet_is_closed_and_opened_again(monkeypa
     assert hst.session == 0xABCD and hst.subscriptions == {5}
 
 
-# ---- second review (docs/trace/review2/transports.json) -------------------------------------------------------------
+# ---- second review -------------------------------------------------------------
 
 def test_a_closed_route_drops_what_it_had_and_rolls_nothing_back():
     """transports §3: a transport closing leaves the session, the lock and the core §5.1 table; a request it had already

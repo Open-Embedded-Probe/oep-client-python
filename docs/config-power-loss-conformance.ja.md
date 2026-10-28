@@ -2,7 +2,7 @@
 
 SPEC registryを明示したChecksとConfigPowerLossModelを作り、InterfaceChecksの後に
 `ConfigPowerLossChecks(checks, SampleConfigPowerLossAdapter(model)).run()`を実行する。
-privateベンチや隣接SPECを自動探索しない。RegisteredOps2/context1/4ケース＝7項目、共通宣言33項目。
+privateベンチや隣接SPECを自動探索しない。
 max_frame256、storage64、items label/idle/disableの論理fixture。
 
 設定の持ち方は2領域のbyte配列ジャーナルをこのfixtureで選んだ。

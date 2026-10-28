@@ -5,7 +5,6 @@ RestartChecksはrestart §1/2とcore §9に基づき、現在のCoreとGPIO/plan
 明示SPEC registryでChecksを作り、共通InterfaceChecks、RegisteredOpsChecks、固有検査の順で実行する。
 公開部品はprivateベンチや設備を自動探索しない。
 
-`RestartChecks(checks, SampleRestartAdapter(model)).run()`はRegisteredOps2/context1/3ケースの計6項目。
 SampleRestartAdapterは明示的なwrite完了と論理時計、3経路へのraw配送を提供する。
 contextでrestart op16とrestart_max_ms50を確認する。
 restart_delay_ms50はこの仮想fixtureが遅らせる実際の再起動時間であり、制御条件として明示する。

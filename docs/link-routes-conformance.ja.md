@@ -53,7 +53,7 @@ FREE-CACHEの固定corrはProbeのSID0非重複排除を検査する順次刺激
 再送時pin変化・変更要求受理、peer経路のend後ロック残留を含む。
 所有権をcloseで失う故障は、checkerのcleanupが元の違反を隠さないこともassertする。
 
-9項目の部分report（full_conformance=false）。true concurrentな複数経路のwindow/inflight、
+部分report（full_conformance=false）。true concurrentな複数経路のwindow/inflight、
 通知先・revision選択、他資源、port_speedの握手/期限、productionと実機は未証明。
 公開checkerはprivate台帳・隣接SPECを自動探索しない。外部adapterの観測sourceと版も別途保存する。
 [単一経路の転送検査](link-transfer-conformance.ja.md)の全ケースを多経路へ適用した証明ではない。

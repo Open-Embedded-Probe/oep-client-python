@@ -4,7 +4,6 @@ ConfigPagingModelとChecksへSPEC registryを明示し、InterfaceChecksの後�
 `ConfigPagingChecks(checks, SampleConfigPagingAdapter(model)).run()`を実行する。
 privateベンチや隣接SPECを自動探索しない。max_frame 64/128/256の3つの明示profileを使う。
 fn 0のchannelsは512、GPIOの駆動候補は従来の0〜7。大きい番号の項目を確認するための論理fixtureであり、512本の物理pinを模擬する意味ではない。
-RegisteredOps2/context1/5ケース＝8項目、共通宣言33項目をprofileごとに検査する。
 
 getの応答は`more(u8) generation(u32) count(u8) count×項目 [TLV]`。項目はcountで数えて読み、残りは応答の末尾TLVとして別に読む。
 

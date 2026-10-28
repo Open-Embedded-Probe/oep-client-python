@@ -1,6 +1,6 @@
 # corr枯渇時の複数pending放棄と新しい経路での回復
 
-`ExhaustedChecks`は制御前提1項目＋保持検査15項目＋batch回復1項目の17項目。none/prefix/queuedの3条件をそれぞれ新しい明示modelで検査する。core §4.1/4.4/5.2/6に基づくsample hostの補助検査で、production Hostや物理再接続の実装ではない。
+none/prefix/queuedの3条件をそれぞれ新しい明示modelで検査する。core §4.1/4.4/5.2/6に基づくsample hostの補助検査で、production Hostや物理再接続の実装ではない。
 
 corr 65533のcreate、65534の不正kind create、65535のendを受付枠内で送る。noneは処理済みの全応答を失い、prefixは先頭の成功だけ受信し、queuedは受理済み未実行のまま保持する。最初の未解決要求について1050ms待った後、経路全体を放棄する。後続要求それぞれのtimeout成立を主張せず、経路放棄によってpendingをunknownにする。
 

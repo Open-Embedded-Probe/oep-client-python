@@ -3,7 +3,6 @@
 SPEC registryを明示してConfigModelとChecksを作り、InterfaceChecksの後に
 `ConfigFallbackChecks(checks, SampleConfigFallbackAdapter(model)).run()`を実行する。
 公開側はprivateベンチや隣接SPECを探索しない。保存内容の変更は明示adapterのRAM制御に限定する。
-RegisteredOps2/context1/8ケース＝11項目。共通宣言は33項目。
 
 label ch4、idle ch1 output-high、disable ch6をwireでset/saveした後、adapterが保存内容を古いfirmwareや破れた書込みが残しうる形へ変える。
 次のbootでは保存項目を1つずつ検証し、disable、idle、labelの順に適用する。

@@ -11,7 +11,6 @@ channel 0はidle出力high、その他は入力。外部入力値はchannel番�
 強さ切替なしの別条件も単体で確認する。数値mAと電気的特性は論理モデルの証明対象ではない。
 明示logical restartで新bootに戻し、Coreのsession/replay機構を使用する。
 
-23動作条件と登録op前提を含む28項目を検査する。
 
 - plan取得では最初のsetまでidleを保つ。fn別置換は他fnを保ち、置換するfnの旧割当を除いて競合確認する。
 - planの重複/無効fn/role/channel/容量/取り合いを、副作用前に拒否する。
@@ -23,7 +22,7 @@ channel 0はidle出力high、その他は入力。外部入力値はchannel番�
 - 同一要求の再送でplan適用や駆動を繰り返さない。
 - 個別/all release、plan置換、session endで旧ピンをidleへ戻す。
 
-新fixtureの共通宣言25項目、2 GPIOのmetadata 7項目も別に実行する。
+新fixtureの共通宣言、GPIOのmetadataも別に実行する。
 38単体テストは、誤ったwire outcome/reason、順序逆転、拒否前副作用、再送時二重駆動、idle復元漏れの故障を検出する。
 物理level/pull/電流/波形、他fixtureのrole/channel_group、永続config、GPIO planでのforce/expiryは未検査。
 この結果で全標準opや全plan条件の適合とはしない。`full_conformance`はfalse。

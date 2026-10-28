@@ -14,7 +14,7 @@
 
 ## 実行
 
-`tests/equipment/.env.example` をコピーし、明示的に読み込む。設定は安定した port/名指しした USB/TCP、期待する unit ID、SPEC checkout、既存の共有 lock、新規 JSON 出力先。SPEC は隣接 checkout を自動探索しない。私的設備台帳への依存はない。配線・target の指定はこのコア検査には不要。`OEP_CONFORMANCE_FRAMING=serial` では独立した COBS/CRC 検査器を使い、47項目のメッセージ検査に8項目のwire検査と4項目の再接続検査を加える。`tcp` は明示した `tcp://HOST:PORT` に独立したlength検査器を使い、47項目＋7項目のTCP検査を実行する。DNS-SDや隣接設定を自動探索しない。`client` は従来backendを使い、USB/TCPでもメッセージ検査を実行できる。
+`tests/equipment/.env.example` をコピーし、明示的に読み込む。設定は安定した port/名指しした USB/TCP、期待する unit ID、SPEC checkout、既存の共有 lock、新規 JSON 出力先。SPEC は隣接 checkout を自動探索しない。私的設備台帳への依存はない。配線・target の指定はこのコア検査には不要。`OEP_CONFORMANCE_FRAMING=serial` では独立した COBS/CRC 検査器を使い、メッセージ検査に wire 検査と再接続検査を加える。`tcp` は明示した `tcp://HOST:PORT` に独立したlength検査器を使い、メッセージ検査に TCP 検査を加える。DNS-SDや隣接設定を自動探索しない。`client` は従来backendを使い、USB/TCPでもメッセージ検査を実行できる。
 
 ```sh
 uv run --group dev --env-file tests/equipment/.env pytest tests/equipment/test_core_contract.py
@@ -26,7 +26,7 @@ uv run --env-file tests/equipment/.env oep-conformance
 
 ## 新コアのバーチャルベンチ
 
-既存のCLIに `--profile core-v1` を指定すると、新コア仕様 `4681d22` の最小端点を起動する。既存のtarget付きprofileは固定した旧仕様のまま。このprofileはfn 0のみで、target/fixture/interface/resource/subscriptionを持たない。共通インターフェースやOEP固有opまでPASSしたとは扱わない。
+既存のCLIに `--profile core-v1` を指定すると、コアだけの最小端点を起動する。このprofileはfn 0のみで、target/fixture/interface/resource/subscriptionを持たない。共通インターフェースやOEP固有opまでPASSしたとは扱わない。
 
 ```sh
 uv run python -m oep_client.virtual_bench_serve --pty --profile core-v1
@@ -34,19 +34,19 @@ uv run python -m oep_client.virtual_bench_serve --pty --profile core-v1
 uv run python -m oep_client.virtual_bench_serve --tcp 0 --profile core-v1
 ```
 
-表示されたportと `OEP_CONFORMANCE_UNIT_ID=virtual-core-1` を明示設定に入れる。serialでは59項目、TCPでは54項目を検査する。複数接続を明示設定したTCPでは60項目になる。必須の `tests/test_virtual_core.py` はraw-message、実際のPTY、loopback TCPで同じ公開検査器を使い、子processを終了まで管理する。通常のテストでは実機を開かない。コアが通った後に、既存profileのinterfaceを新仕様へ順に追従させる。
+表示されたportと `OEP_CONFORMANCE_UNIT_ID=virtual-core-1` を明示設定に入れる。必須の `tests/test_virtual_core.py` はraw-message、実際のPTY、loopback TCPで同じ公開検査器を使い、子processを終了まで管理する。通常のテストでは実機を開かない。コアが通った後に、既存profileのinterfaceを新仕様へ順に追従させる。
 
 ## 明示したTCP peerとの検査
 
-同時に2接続を受け付ける設備では、`OEP_CONFORMANCE_TCP_PEER=tcp://HOST:PORT`（CLIでは `--tcp-peer`）を追加する。同じlistenerのaddressでよい。別listenerを指定する場合も同じ個体・boot・core/interface宣言を照合する。DNS-SDで候補を探さない。設定がなければ通常の54項目だけを実行し、複数接続は未検査に残す。設定したのに接続できない・個体が違う場合はFAILであり、skipや単一接続へのfallbackにはしない。全TCP実装に同時接続数2を要求するものではない。
+同時に2接続を受け付ける設備では、`OEP_CONFORMANCE_TCP_PEER=tcp://HOST:PORT`（CLIでは `--tcp-peer`）を追加する。同じlistenerのaddressでよい。別listenerを指定する場合も同じ個体・boot・core/interface宣言を照合する。DNS-SDで候補を探さない。設定がなければ複数接続は未検査に残す。設定したのに接続できない・個体が違う場合はFAILであり、skipや単一接続へのfallbackにはしない。全TCP実装に同時接続数2を要求するものではない。
 
-追加する6項目はpeerの識別、共通lock/ownerと他sessionの拒否、応答の送り先、接続ごとの途中frameの分離、片側のclose後のlock保持、peerの過大length切断時のprimary保持。応答漏れの無応答観測は100ms、途中header待ちは300ms。JSONにprimary/peerのraw bytesと観測を残す。
+追加する検査はpeerの識別、共通lock/ownerと他sessionの拒否、応答の送り先、接続ごとの途中frameの分離、片側のclose後のlock保持、peerの過大length切断時のprimary保持。応答漏れの無応答観測は100ms、途中header待ちは300ms。JSONにprimary/peerのraw bytesと観測を残す。
 
 close後はsession 0のpeerからlockを観測し、primaryを開き直して再照合する。元のsession Sの要求は新接続へ移さず、自分のownerを確認できた場合だけ別session Tでforceし、Tを同じ新接続でendする。識別・boot・owner・takeoverが不確かなら後続を止め、閉じた接続のsessionの後始末はleaseに任せる。同一sessionのTCP経路移動と再送は未検査として残す。
 
 ## raw USBとソフトウェアモデル
 
-bulk/HIDには独立したraw adapter APIと最小USBモデルを追加した。[USB検査ガイド](usb-conformance.ja.md)を参照。モデルでbulk 55項目、ID付きHID 60項目を実行する。USB device/gadgetやOSのUSB stackではなく、実機raw adapterとdescriptor検査は未実装。通常CLIのUSB `framing=client` は従来どおりメッセージ検査のみで、モデルの成功を実機へ適用しない。
+bulk/HIDには独立したraw adapter APIと最小USBモデルを追加した。[USB検査ガイド](usb-conformance.ja.md)を参照。USB device/gadgetやOSのUSB stackではなく、実機raw adapterとdescriptor検査は未実装。通常CLIのUSB `framing=client` は従来どおりメッセージ検査のみで、モデルの成功を実機へ適用しない。
 
 ## 現在の粒度と限界
 
@@ -76,77 +76,77 @@ bulk/HIDには独立したraw adapter APIと最小USBモデルを追加した。
 
 資源寿命には[明示adapterによる補助検査](resource-conformance.ja.md)を追加した。最小サンプルは14資源契約＋2宣言検査を実行する。通常CLIへ自動追加せず、購読・route切断・依存順・電気的idleを未検査として残す。
 
-購読・出来事の寿命には[外部刺激adapterの補助検査](subscription-conformance.ja.md)を追加した。サンプルはidentity＋15動作契約＋2宣言の18項目。raw通知と観測窓を保存する。data、応答優先、route、queue上限は未検査で、通常CLIには自動追加しない。
+購読・出来事の寿命には[外部刺激adapterの補助検査](subscription-conformance.ja.md)を追加した。raw通知と観測窓を保存する。data、応答優先、route、queue上限は未検査で、通常CLIには自動追加しない。
 
-[data/eventとまとめ送りの補助検査](data-conformance.ja.md)は購読18項目＋data前提検証＋14データ契約の33項目。外部byte位置とloss-freeな刺激条件を明示し、閾値・first-byte delay・共通seq・分割・再送/同session openでの未送信データ保持を検査する。seq一周は単体で65,538個を実際に生成して検証し、実時計・実機の結果と分ける。
+[data/eventとまとめ送りの補助検査](data-conformance.ja.md)。外部byte位置とloss-freeな刺激条件を明示し、閾値・first-byte delay・共通seq・分割・再送/同session openでの未送信データ保持を検査する。seq一周は単体で65,538個を実際に生成して検証し、実時計・実機の結果と分ける。
 
-[経路・writerの補助検査](route-conformance.ja.md)はinstrumentationを持つ論理モデルで9項目。応答/通知の経路、優先順位、未送信suffixのqueue上限、dropのseq、切断後のsession/資源/購読/履歴保持を確認する。実際のframing/OS buffer、経路別window/max_inflight、並行実行と実機切断は未検査。
+[経路・writerの補助検査](route-conformance.ja.md)。応答/通知の経路、優先順位、未送信suffixのqueue上限、dropのseq、切断後のsession/資源/購読/履歴保持を確認する。実際のframing/OS buffer、経路別window/max_inflight、並行実行と実機切断は未検査。
 
-[経路別受付と回復の補助検査](pipeline-conformance.ja.md)は明示したreject-overflowモデルで9項目。count/byte境界を分離し、別接続の独立性と応答送信後の回復を確認する。超過拒否はSPEC上任意で、一般実機の必須条件に追加しない。
+[経路別受付と回復の補助検査](pipeline-conformance.ja.md)。count/byte境界を分離し、別接続の独立性と応答送信後の回復を確認する。超過拒否はSPEC上任意で、一般実機の必須条件に追加しない。
 
-[混雑時のsession再送・拒否cache](replay-pressure-conformance.ja.md)はpipelineを含む15項目。再送/見出し/session判定を混雑より先に適用し、拒否結果の再送とpeerのsession 0照会が共有履歴を壊さないことを確認する。Sはprimaryに固定し、別ID Tのforceで共有cacheが置換されることも確認する。
+[混雑時のsession再送・拒否cache](replay-pressure-conformance.ja.md)。再送/見出し/session判定を混雑より先に適用し、拒否結果の再送とpeerのsession 0照会が共有履歴を壊さないことを確認する。Sはprimaryに固定し、別ID Tのforceで共有cacheが置換されることも確認する。
 
-[応答送信とlease](lease-conformance.ja.md)はpressureを含む22項目。応答の生成時に更新し（a09fa45 §6.1）、送信待ち/部分送信/送信完了/再送/前段の拒否では更新しない。送信待ちでの失効と、end/force後の古い応答での復活・誤更新を検査する。物理的な送信完了は未検査。
+[応答送信とlease](lease-conformance.ja.md)。応答の生成時に更新し（a09fa45 §6.1）、送信待ち/部分送信/送信完了/再送/前段の拒否では更新しない。送信待ちでの失効と、end/force後の古い応答での復活・誤更新を検査する。物理的な送信完了は未検査。
 
-[再送cacheの保持上限](retention-conformance.ja.md)は明示した16 byte / 8件のfixtureで11項目。要求/応答それぞれの境界、欠落marker、追い出しと未使用の古いcorr、拒否/end/同session openでの保持を確認する。要求が保持されていれば同一性を先に比較し、変更要求のmalformedを応答欠落のresult_lostと区別する。
+[再送cacheの保持上限](retention-conformance.ja.md)。要求/応答それぞれの境界、欠落marker、追い出しと未使用の古いcorr、拒否/end/同session openでの保持を確認する。要求が保持されていれば同一性を先に比較し、変更要求のmalformedを応答欠落のresult_lostと区別する。
 
-[保持欠落とsession/boot寿命](retention-lifecycle-conformance.ja.md)はretentionを含む19項目。期限切れでは履歴を残し、異なるsessionでは置換し、新bootでは履歴/資源/送信待ちを無効にする。明示logical-model resetだけを許し、物理設備の再起動は行わない。
+[保持欠落とsession/boot寿命](retention-lifecycle-conformance.ja.md)。期限切れでは履歴を残し、異なるsessionでは置換し、新bootでは履歴/資源/送信待ちを無効にする。明示logical-model resetだけを許し、物理設備の再起動は行わない。
 
-[corr u16の境界](corr-conformance.ja.md)はretentionを含む21項目。循環番号の前進、ちょうど半周とそれ以上の拒否、65535から1への一周、半周以上後ろの番号の拒否、SID 0の独立性、一周後のendと別sessionでの履歴の置換を検査する。
+[corr u16の境界](corr-conformance.ja.md)。循環番号の前進、ちょうど半周とそれ以上の拒否、65535から1への一周、半周以上後ろの番号の拒否、SID 0の独立性、一周後のendと別sessionでの履歴の置換を検査する。
 
-[result_lost後の状態読み直し](recovery-conformance.ja.md)はretentionを含む22項目。sample hostがwireだけでboot/sessionと現在の資源を確認し、結果不明の変更要求を新corrで再実行しないことを検査する。元のoutcomeはunknownのままとする。
+[result_lost後の状態読み直し](recovery-conformance.ja.md)。sample hostがwireだけでboot/sessionと現在の資源を確認し、結果不明の変更要求を新corrで再実行しないことを検査する。元のoutcomeはunknownのままとする。
 
-[回復中のforceと経路単位の結果不明化](recovery-races-conformance.ja.md)は条件ごとに27項目。読み出し前/途中/最後のsession差し替えを検出し、全応答喪失・先頭だけ受信・全件未実行の3条件で、その経路の未解決要求だけをunknownにする。
+[回復中のforceと経路単位の結果不明化](recovery-races-conformance.ja.md)。読み出し前/途中/最後のsession差し替えを検出し、全応答喪失・先頭だけ受信・全件未実行の3条件で、その経路の未解決要求だけをunknownにする。
 
 corr枯渇前のsession切替検査は、corrが循環する現行core（§4.1、§5.1）では不要になったため削除した。corrの循環・半周・記録の破棄は[corr検査](corr-conformance.ja.md)のWRAP/HALF-GAPS/WRAP-ENDで確認する。
 
-[end/openの結果喪失からの回復](session-loss-conformance.ja.md)は保持検査を含む21項目。同一要求を再送し、現在のsession状態も確認する。保存されたopenの成功を取得しても、期限切れなら利用を再開しない。result_lostから成功やlease値を推測しない。
+[end/openの結果喪失からの回復](session-loss-conformance.ja.md)。同一要求を再送し、現在のsession状態も確認する。保存されたopenの成功を取得しても、期限切れなら利用を再開しない。result_lostから成功やlease値を推測しない。
 
-[番号枯渇時の複数pending放棄と新経路での回復](exhausted-conformance.ja.md)は保持検査を含む13項目を3条件で実施する。旧Sを移さず、解放をSID 0で確認してから別IDでopenする。旧要求のunknownと受信済み結果を保持する。
+[番号枯渇時の複数pending放棄と新経路での回復](exhausted-conformance.ja.md)は3条件で実施する。旧Sを移さず、解放をSID 0で確認してから別IDでopenする。旧要求のunknownと受信済み結果を保持する。
 
-[全インターフェイスの宣言検査](interface-conformance.ja.md)は前提1項目＋各fn 8項目。名前のlabel、ops、共通タグ固定幅、channel、各位置のページング、session前後の不変性、未宣言op、instanceを分けて報告する。標準opやcommon部品の採用を名前から推測しない。
+[全インターフェイスの宣言検査](interface-conformance.ja.md)。名前のlabel、ops、共通タグ固定幅、channel、各位置のページング、session前後の不変性、未宣言op、instanceを分けて報告する。標準opやcommon部品の採用を名前から推測しない。
 
-[採用を明示した位置付きストリーム](stream-conformance.ja.md)は15項目。readの非消費性・u64位置・gapと、marksのinclusiveページング・eviction・u32一周・時刻を検査する。persistent-fnの条件に限定し、資源型streamやcaptureへ自動適用しない。
+[採用を明示した位置付きストリーム](stream-conformance.ja.md)。readの非消費性・u64位置・gapと、marksのinclusiveページング・eviction・u32一周・時刻を検査する。persistent-fnの条件に限定し、資源型streamやcaptureへ自動適用しない。
 
-[採用を明示したwrite受付とdebug完了結果](outcome-conformance.ja.md)は19項目。accepted/doneとsuccess/partial/failed、未知statusの失敗分類、再送時の副作用非重複を検査する。独自sampleの容量・payloadを明示し、物理配送やOEP固有debug opの適合とは分ける。
+[採用を明示したwrite受付とdebug完了結果](outcome-conformance.ja.md)。accepted/doneとsuccess/partial/failed、未知statusの失敗分類、再送時の副作用非重複を検査する。独自sampleの容量・payloadを明示し、物理配送やOEP固有debug opの適合とは分ける。
 
-[資源を指定するstreamとdebug connectionの寿命](dependency-conformance.ja.md)は19項目。解放の依存順、resource addressing、buffer/queue保持、session終了、解放後のhistorical replayを検査する。標準consoleのmechanism制約や物理解放とは分ける。
+[資源を指定するstreamとdebug connectionの寿命](dependency-conformance.ja.md)。解放の依存順、resource addressing、buffer/queue保持、session終了、解放後のhistorical replayを検査する。標準consoleのmechanism制約や物理解放とは分ける。
 
-[標準wire／console固有の宣言](oep-declaration-conformance.ja.md)は選択4 fnで13項目。標準必須op・固有describe・SWIO clockを第三段階`oep-interface`で報告し、共通準拠やop動作の結果と分ける。
+[標準wire／console固有の宣言](oep-declaration-conformance.ja.md)。標準必須op・固有describe・SWIO clockを第三段階`oep-interface`で報告し、共通準拠やop動作の結果と分ける。
 
-[標準wire attachとconsole open](attach-conformance.ja.md)は22項目。critical TLV・副作用前の拒否・方式/資源の制約と再送を第三段階で確認する。論理targetアクセスと電気的bringup/配送を分ける。
+[標準wire attachとconsole open](attach-conformance.ja.md)。critical TLV・副作用前の拒否・方式/資源の制約と再送を第三段階で確認する。論理targetアクセスと電気的bringup/配送を分ける。
 
-[標準wireの有限scan](scan-conformance.ja.md)は21項目。明示候補の先頭からの探索、全候補の事前検証、pin解放、識別子の基準と再送を第三段階で確認する。任意scanを明示提供する論理fixtureに限定する。
+[標準wireの有限scan](scan-conformance.ja.md)。明示候補の先頭からの探索、全候補の事前検証、pin解放、識別子の基準と再送を第三段階で確認する。任意scanを明示提供する論理fixtureに限定する。
 
-[標準consoleのSDI/DMDATA mailbox](mailbox-conformance.ja.md)は23項目。枠の境界、DATA0/DATA1の順序、sender queue、SDIゼロ長write、halt/debug中停止を第三段階で確認する。dmseq・実debug要求との調停・物理配送は未検査。
+[標準consoleのSDI/DMDATA mailbox](mailbox-conformance.ja.md)。枠の境界、DATA0/DATA1の順序、sender queue、SDIゼロ長write、halt/debug中停止を第三段階で確認する。dmseq・実debug要求との調停・物理配送は未検査。
 
-[probe側dmseq framing](dmseq-conformance.ja.md)は35項目。CRC・通番・SYN/TO・pendingの再送とack、検出済みtarget reset、connection間の独立性とcloseを第三段階で確認する。target側timeoutや物理配送は未検査。
+[probe側dmseq framing](dmseq-conformance.ja.md)。CRC・通番・SYN/TO・pendingの再送とack、検出済みtarget reset、connection間の独立性とcloseを第三段階で確認する。target側timeoutや物理配送は未検査。
 
-[target側dmseq](dmseq-target-conformance.ja.md)は18項目。再送、入力Hの重複抑止/空き不足、timeoutと遅いackを論理時計で確認する。独立probeとのmailbox往復も検査し、実時間下限・firmware統合とは分ける。
+[target側dmseq](dmseq-target-conformance.ja.md)。再送、入力Hの重複抑止/空き不足、timeoutと遅いackを論理時計で確認する。独立probeとのmailbox往復も検査し、実時間下限・firmware統合とは分ける。
 
-[必須riscv-dmとconsole調停](debug-conformance.ja.md)は21項目。dmiの構文・進捗・poll、halt/resume、同じconnectionのmailbox停止/復帰を第三段階で確認する。追加fnを含む全5 fnの共通宣言は第二段階で別に検査する。
+[必須riscv-dmとconsole調停](debug-conformance.ja.md)。dmiの構文・進捗・poll、halt/resume、同じconnectionのmailbox停止/復帰を第三段階で確認する。追加fnを含む全5 fnの共通宣言は第二段階で別に検査する。
 
-[optional blockと状態復元](block-conformance.ja.md)は20項目。長さ・alignment・hart前提、bus値/進捗、GPR/DATA/abstractautoの復元とconsole保持を第三段階で確認する。物理abstract commandや復元失敗は未検査。
+[optional blockと状態復元](block-conformance.ja.md)。長さ・alignment・hart前提、bus値/進捗、GPR/DATA/abstractautoの復元とconsole保持を第三段階で確認する。物理abstract commandや復元失敗は未検査。
 
-[optional stepと再停止](step-conformance.ja.md)は22項目。PC/movedの成功時と失敗時、prvとDATAの保持、再停止とstep_left、console調停と再送を第三段階で確認する。物理命令・CSR操作と待ち時間は未検査。
+[optional stepと再停止](step-conformance.ja.md)。PC/movedの成功時と失敗時、prvとDATAの保持、再停止とstep_left、console調停と再送を第三段階で確認する。物理命令・CSR操作と待ち時間は未検査。
 
-[optional resetとDM復帰](reset-conformance.ja.md)は32項目。modeごとの成功条件、DM応答待ち、havereset、reset/restart markとdmseq再同期を第三段階で確認する。物理ndmresetと実行確認の手順は未検査。
+[optional resetとDM復帰](reset-conformance.ja.md)。modeごとの成功条件、DM応答待ち、havereset、reset/restart markとdmseq再同期を第三段階で確認する。物理ndmresetと実行確認の手順は未検査。
 
-[optional runとloader状態](run-conformance.ja.md)は29項目。stopped/status/PC/値と経過時間、host変更の保持、scratch復元、事前拒否とprogram後のbus値を第三段階で確認する。物理CPU実行と実時間は未検査。
+[optional runとloader状態](run-conformance.ja.md)。stopped/status/PC/値と経過時間、host変更の保持、scratch復元、事前拒否とprogram後のbus値を第三段階で確認する。物理CPU実行と実時間は未検査。
 
-[wireのattachオプション](wire-options-conformance.ja.md)は40項目。reset channel/hold/競合とDM復帰、idle_clock、SWD targetselの同一性とdetach/endでのピン解放を第三段階で検査する。scanオプションと電気的適合は未検査。
+[wireのattachオプション](wire-options-conformance.ja.md)。reset channel/hold/競合とDM復帰、idle_clock、SWD targetselの同一性とdetach/endでのピン解放を第三段階で検査する。scanオプションと電気的適合は未検査。
 
-[scanのidle_clock/targetsel](scan-options-conformance.ja.md)は29項目。単一の明示targetsel、候補全体の事前検査、探索中のidle levelsと候補ごとのピン解放を第三段階で確認する。物理waveform/時間は未検査。
+[scanのidle_clock/targetsel](scan-options-conformance.ja.md)。単一の明示targetsel、候補全体の事前検査、探索中のidle levelsと候補ごとのピン解放を第三段階で確認する。物理waveform/時間は未検査。
 
 線の再試行の[論理検査](retry-conformance.ja.md)では、host DMIの曖昧配送後の非再送、
 busy、probe内部の読み、失敗後の駆動解放と正常idle復帰を分けて確認する。
-第二段階41項目、第三段階14項目。応答後の線切れ解放と物理波形は未検査。
+応答後の線切れ解放と物理波形は未検査。
 
 線切れの[論理検査](cut-conformance.ja.md)では、要求応答の書き出し後の依存資源解放、
 consoleのlink-lost/closed、成功後の履歴消去と他connectionの保持を確認する。
-第二段階41項目、第三段階9項目。実transport配送とwriter並行性は未検査。
+実transport配送とwriter並行性は未検査。
 
-[標準資源のwriter lease検査](writer-lease-conformance.ja.md)は第一段階7項目。
+[標準資源のwriter lease検査](writer-lease-conformance.ja.md)。
 実行中の停止、送信時の再開始、writer待ち中の期限切れ、古いtokenによる所有権復活防止を
 明示logical clockで確認する。新fixtureの共通宣言と既存cut検査は第二/第三段階へ分ける。
 
@@ -154,7 +154,7 @@ consoleのlink-lost/closed、成功後の履歴消去と他connectionの保持�
 第三段階で確認する。実動作を呼ばず、宣言だけのfixtureを完全probeと扱わない。
 必須describe metadataと固有payload/副作用は追加検査が必要。
 
-[選択したdescribe metadata](selected-metadata-conformance.ja.md)はrestart/config/RISC-V/ARM-ADIの4 fnで10項目。
+[選択したdescribe metadata](selected-metadata-conformance.ja.md)はrestart/config/RISC-V/ARM-ADIの4 fnを選ぶ。
 必須tag、固定幅、条件付きstorage、block上限と全経路のframe収容、ARM-ADIのfeatures禁止を検査する。
 他のmetadataと広告opの実動作は別途検査が必要。
 
@@ -168,24 +168,24 @@ GPIO入力とdrive、UART formats、I2C/SPIの固定形とframe上限、任意st
 [GPIOとplanの動作](gpio-conformance.ja.md)は明示fixtureで、事前拒否、fn別原子置換、駆動順序、
 drive/read、再送とidle復元を第三段階で確認する。物理pin/他fixture/永続configは未検査。
 
-[GPIO planでのcore寿命](gpio-lifecycle-conformance.ja.md)は第一段階11項目。
+[GPIO planでのcore寿命](gpio-lifecycle-conformance.ja.md)。
 明示時計で期限切れ、force、同じIDのopen、再送履歴、lease更新/非更新とpin/plan解放を確認する。
 
-[UART固有動作](uart-conformance.ja.md)は第三段階28項目。
+[UART固有動作](uart-conformance.ja.md)。
 configure、受信/送信、TX idle、再送、plan再作成とend/expiry/forceを確認する。
-[UARTへの共通stream適用](uart-stream-conformance.ja.md)は第二段階15項目で、既存assertをplan所有の寿命に合わせて使う。
+[UARTへの共通stream適用](uart-stream-conformance.ja.md)は、既存assertをplan所有の寿命に合わせて使う。
 
-dmseq検査は35項目。console §2に従うresync/TO/CRCのmarkと無効flagの誤通知を追加した。繰り返し観測のmark数は固定しない。
+console §2に従うresync/TO/CRCのmarkと無効flagの誤通知を追加した。繰り返し観測のmark数は固定しない。
 
-[I2C targetの固有検査](i2c-conformance.ja.md)は第三段階34項目。
+[I2C targetの固有検査](i2c-conformance.ja.md)。
 RX/TX FIFO、ACK、overflow、stretch/configure、再送の非重複、plan寿命を4構成で確認する。
 
-[SPI targetの固有検査](spi-conformance.ja.md)は第三段階41項目。
+[SPI targetの固有検査](spi-conformance.ja.md)。
 mode/bit順/CS、部分byte、arm/overflow/FIFO、再送、CS有効時を含むplan寿命を2構成で確認する。
 
-[logic captureの固有検査](logic-conformance.ja.md)は第三段階33項目。
+[logic captureの固有検査](logic-conformance.ja.md)。
 query/configure、one-shot/repeat、世代、read/区画/release、short/error、plan寿命を明示sampleで確認する。
 
-[analog成功payloadの検査](analog-payload-conformance.ja.md)は第三段階3項目。
+[analog成功payloadの検査](analog-payload-conformance.ja.md)。
 layout/actual値/scale/skew/frontend/reference、calibrationと既知raw sampleを独立に確認する。
 実行・拒否・世代・資源寿命・通知と全analog操作の適合は別に整備する。

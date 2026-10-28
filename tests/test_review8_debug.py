@@ -1,4 +1,4 @@
-"""Round 8, debug (docs/trace/review8/debug.json)."""
+"""Round 8, debug."""
 import struct
 
 from oep_client.conformance_arm_adi import ArmAdiChecks

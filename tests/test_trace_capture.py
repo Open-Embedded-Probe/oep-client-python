@@ -1768,7 +1768,7 @@ def test_group_describe_tracks():
     assert int.from_bytes(d.get(0x05, b"\0"), "little") == GROUP.enum["features"]["trigger_source"]
 
 
-# ---- independent review (docs/trace/review/capture.json): rules the trace above left unchecked ---------------------
+# ---- independent review: rules the trace above left unchecked ---------------------
 
 def test_review_signed_converter_values_arrive_as_offset_binary():
     """capture §1.2 rule 1: a converter with a signed (b-bit two's complement) result sends offset binary - bit b-1
@@ -1977,7 +1977,7 @@ def test_review_the_same_plan_on_a_bound_track_is_a_no_op():
     assert cause(r) == 4 and snap(ep, lc.fn) == before
 
 
-# ---- second review (docs/trace/review2/capture.json): rules the first review passed but no named test checked -------
+# ---- second review: rules the first review passed but no named test checked -------
 
 def test_review2_start_in_state_1_clears_the_old_segments_and_goes_to_2_or_3():
     """capture §3.2's state table, row 1: start -> 3 (immediate) or 2 (a trigger), the generation + 1 and the
@@ -2168,7 +2168,7 @@ def test_review2_a_bind_is_the_sessions_and_ends_with_it():
     assert ep.groups[grp.fn].tracks == [] and ep.captures[lc.fn].group is None and ep.captures[an.fn].group is None
 
 
-# ---- third review (docs/trace/review3/capture.json): rules the two reviews passed but no named test checked --------
+# ---- third review: rules the two reviews passed but no named test checked --------
 
 def _with_wire_on_adc_pin():
     """p4_x035 with its RVSWD pair moved to (17, 54): SWDIO on an ADC pin (VIRTUAL BENCH ONLY: a probe of another

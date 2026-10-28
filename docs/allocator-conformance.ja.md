@@ -5,7 +5,6 @@
 privateベンチや隣接checkoutは探索しない。資源opの符号化はresource-conformance.ja.mdの独自sampleを採用し、
 資源番号だけはcore §9のとおりu32で運ぶ（create応答・close/use要求・snapshotの番号がu32、上限0xFFFFFFFF）。
 
-前提1、動作6で7項目。
 
 - 0xFFFFFFFE/0xFFFFFFFFを異なるfn/kindへ割り当て、全slotでそれ以上のcreateをunavailable・cause 2とする。
   既存資源はuse/closeでき、種類違いはcause 6、閉じた番号はno_resource。
@@ -55,4 +54,4 @@ PY
 ```
 
 seed無しの全2^32−1割当、失敗予約、他のgeometry、並行allocatorと実資源、全core/共通規範は未検査である。
-この7項目だけで資源寿命全体・実機適合を主張しない。
+この検査だけで資源寿命全体・実機適合を主張しない。

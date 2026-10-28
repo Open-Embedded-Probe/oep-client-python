@@ -6,7 +6,7 @@
 全5 fnの共通宣言は第二段階の`InterfaceChecks`へ分ける。
 公開コードは設備や私的ベンチを探索しない。
 
-前提1＋動作28項目。optional runを提供する明示論理fixtureを使う。
+optional runを提供する明示論理fixtureを使う。
 runはloader呼出しであり、デバッガのcontinueへ流用しない。
 
 - 正常停止はstopped 1 / success。PCが開始位置のままでも成功にし、resumeを出し直さない。

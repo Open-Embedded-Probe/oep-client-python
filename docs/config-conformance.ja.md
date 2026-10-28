@@ -3,7 +3,7 @@
 ConfigModelは現在のCore/GPIO/planへconfigを接続し、ConfigChecksはそのwire操作を検査する。
 SPEC registryを明示してChecksを作り、InterfaceChecksの後に
 `ConfigChecks(checks, SampleConfigAdapter(model)).run()`を実行する。private設備や隣接SPECは探索しない。
-RegisteredOps2/context1/5ケース、合計8項目。storage max_bytes 64、items label/idle/disable（0x02/0x03/0x07）、channels 8の明示profile。
+storage max_bytes 64、items label/idle/disable（0x02/0x03/0x07）、channels 8の明示profile。
 save/eraseは組で宣言する。保存はRAM内の独立なcopyであり、flash耐久性や電源断を実装するものではない。
 
 要求の形はset `count(u8) 項目 [TLV]`、unset `count(u8) count×(tag(u8) channel(u16)) [TLV]`、

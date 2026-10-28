@@ -47,7 +47,7 @@ streamingでは購読前のgroup startがcause 6で断られることを確か�
 track故障は未到来sampleの計上、未確定byte、生データ、区画時刻、readの位置/gap/max=0の誤り、
 区画をまたぐframe、segment_infoの欠落・sample数・時刻、generation TLV、streamingの区画出来事を注入する。
 group故障は世代0の応答、購読なしのstart受付、終了後の購読残留、start_nsのずれを注入する。
-全24構成をまとめたreportは30項目（登録op5・前提1・取得24）。
+全24構成をまとめて報告する。
 
 `full_conformance`はfalse。既知の2 track/即時開始の論理fixtureを検査する。
 repeat/release、streamingの送信余地不足や購読喪失による落とし、他のgroup構成・ADC layout/skew、

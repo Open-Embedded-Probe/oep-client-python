@@ -8,7 +8,6 @@
 `ScanChecks(checks, adapter).run()`を呼ぶ。公開コードは設備設定や私的ベンチを
 探索しない。実装の版・SPEC identityと各検査のraw交換は既存の報告に残す。
 
-前提1項目と動作20項目を検査する。
 
 - RVSWD/SWIO/SWDの識別子、kind、候補順、triedとcount、未知応答TLV。
 - 先頭から有限数を試し、残りをhostが次の要求で明示する。見つからなくても進む。

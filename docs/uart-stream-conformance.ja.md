@@ -1,6 +1,6 @@
 # plan所有UARTへ適用する共通stream検査
 
-`UartStreamChecks`は第二段階15項目。`SampleUartStreamAdapter.adoption`でfn 2とread/marks/clear/mark/write、
+`SampleUartStreamAdapter.adoption`でfn 2とread/marks/clear/mark/write、
 byte ring 64 / mark ring 5 / TX queue 4という採用条件を明示する。
 既存StreamChecksの位置・ページング・あふれ・mark cursor/一周/eviction・u64境界のassertを再利用する。
 clearの再送とwrite受付/結果/prefix/再送も確認する。

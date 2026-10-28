@@ -1,7 +1,7 @@
 # UARTの論理動作とplan寿命
 
 `UartChecks(checks, adapter).run()`は明示したplan fn 1 / UART fn 2を第三段階で検査する。
-登録opの前提を含む29項目。code/tagは選択registryから読む。公開コードは私的ベンチに依存しない。
+code/tagは選択registryから読む。公開コードは私的ベンチに依存しない。
 
 独立UartModelは8 channel中RX 0/TX 1を候補とし、両方/片方のplanを扱う。
 空きはHi-Z。plan取得時にストリームを作りTXをhighへ保つ。

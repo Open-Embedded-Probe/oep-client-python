@@ -16,7 +16,7 @@ block上限では、要求18 byte＋data、応答8 byte＋dataが経路のframe�
 `max_length=0`も、仕様に正の下限がないため拒否しない。
 
 `SelectedMetadataModel`は17 interfaceの宣言だけを持つ独立fixture。
-この検査の選択は4 fnで10項目、全fnの共通宣言137項目と登録op18項目も別に確認する。
+全fnの共通宣言と登録opも別に確認する。
 広告したopの実動作は持たず、適合probeとは扱わない。欠落・型・容量・禁止tagを壊す単体テストを含む。
 他の必須metadata、restartの所要時間、bus/storage動作、物理配送は検査していない。
 `full_conformance`はfalse。私的ベンチや設備の暗黙検索には依存しない。

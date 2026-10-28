@@ -4,7 +4,7 @@
 `Checks(send, registry, unit)` と `SampleI2cAdapter(source)` を明示して渡す。
 公開側は私的ベンチ・設備設定・隣接リポジトリを探索しない。
 
-前提と標準op宣言を含む35項目。別に第二段階の共通宣言17項目とI2C metadata 5項目を適用する。
+別に第二段階の共通宣言とI2C metadataを適用する。
 
 - 未設定ではどのアドレスにもACKしない。plan前configureと未設定read_rx/preload_txを拒否する。
 - role 1/2を各1つ、別のchannelに割り当てる。満たさない組はunsupported（role_assignmentのtag）、同じ(fn, role, channel)の重複はmalformed。

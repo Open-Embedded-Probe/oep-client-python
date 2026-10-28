@@ -1,4 +1,4 @@
-"""Fifth review, core §6 to §13 (docs/trace/review5/core-b.json): each test fails on the code before its fix."""
+"""Fifth review, core §6 to §13: each test fails on the code before its fix."""
 
 import struct
 

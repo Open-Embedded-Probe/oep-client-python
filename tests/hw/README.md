@@ -132,7 +132,7 @@ The current `boards.py` is a legacy table combining physical devices, profiles a
 | `OEP_PROBE_DIR` / `OEP_PROBE_VERSION` / `OEP_HW_NOFLASH` | the firmware source (one of them) |
 | `OEP_HW_TARGET`, `OEP_HW_RESET`, `OEP_HW_TARGET_ADDR`, `OEP_HW_LOOPS` | the wire test: a target is wired (and where), its reset line, the block address, the loop count |
 | `OEP_HW_REOPEN_S` | seconds more to open a restarted probe again once its restart_max_ms has passed (the user's reopen, above; WSL / usbipd). Default 0: none - the probe is gone after restart_max_ms |
-| `OEP_HW_RESTART=1` | the config test reboots a USB probe (P4, RP2) through `oep.probe.restart` (default: not - a restart left an RP2350 and a P4 failing enumeration until a replug with oep-probe-arduino 0.0.29-dev+3c0cd99) |
+| `OEP_HW_RESTART=1` | the config test reboots a USB probe (P4, RP2) through `oep.probe.restart` (default: not - some combinations fail enumeration after a restart until a replug) |
 | `OEP_HW_WIRE` | the wire / console tests' wire by name (default: `oep.wire.swio` when `OEP_HW_TARGET` names one pin and the probe offers it, else the first wire); the console test uses the `oep.target.console` instance whose open takes that connection |
 | `OEP_HW_GPIO`, `OEP_HW_DISABLE`, `OEP_HW_UART`, `OEP_HW_UART_LOOP` | channel overrides for the fixture tests |
 | `OEP_HW_ANALOG`, `OEP_HW_I2C`, `OEP_HW_SPI` | the analog capture's channel, the i2c-target's `sda,scl`, the spi-target's `sck,mosi,miso,cs` (default: the table's free channels - gpio pair, disable, UART pair - that the describe allows) |

@@ -1,5 +1,5 @@
 """Round 5 review of debug §4-§7 (riscv-dm, arm-adi) and the console: code that required or did what a09fa45 does not
-say (docs/trace/review5/debug-targets.json)."""
+say."""
 import struct
 
 from oep_client import riscv, virtual_bench

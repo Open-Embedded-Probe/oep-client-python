@@ -16,7 +16,7 @@ SPEC core §11.2/11.3の、data/event共通seq、データの形、min_bytes/max
 
 ## adapterと実行
 
-`DataChecks`は既存の購読18項目に、data adapterの前提検証と14データ契約を加える。2 fnのサンプルは計33項目。従来のコア49項目・資源16項目も同じモデルへ別途適用する。通常CLIへ自動追加せず、補助レポートは常に`full_conformance=false`。
+`DataChecks`は既存の購読の検査に、data adapterの前提検証とデータ契約を加える。従来のコアと資源の検査も同じモデルへ別途適用する。通常CLIへ自動追加せず、補助レポートは常に`full_conformance=false`。
 
 adapterは[購読adapter](subscription-conformance.ja.md)のfunctions / stimulate / receive / decode_eventに、次を提供する。
 
@@ -49,6 +49,6 @@ assert report['status'] == 'passed', report
 
 新規JSONを`open('x')`で予約し、SPEC/検査器/モデルsource hash、日時、raw要求/応答/通知、データ刺激と期待位置、観測時間を保存する。既存`.env.example`のSPEC/共有lock項目を使う。モデルはADDRESS/FRAMING/TCP_PEERを使わず、私的ベンチや実機を探索しない。
 
-単体検査はu64 position/u16 lenのliteral bytes、壊れた通知、閾値/時刻/seq/再送/旧bufferのmutant、再起動を含む。seq一周では65,538個のdata/eventを交互に生成・復号し、65535→0を検証する。内部counterをseedしていないが、これは仮想時計・in-process配信の検査であり、実時計の33項目や実機wireのseq一周の証拠とは区別する。
+単体検査はu64 position/u16 lenのliteral bytes、壊れた通知、閾値/時刻/seq/再送/旧bufferのmutant、再起動を含む。seq一周では65,538個のdata/eventを交互に生成・復号し、65535→0を検証する。内部counterをseedしていないが、これは仮想時計・in-process配信の検査であり、実時計の検査や実機wireのseq一周の証拠とは区別する。
 
 応答優先、通知経路/切断、送信queue上限、dropのseq消費、物理非同期動作、未指定fn、実時計実行での再起動とseq一周は残件。

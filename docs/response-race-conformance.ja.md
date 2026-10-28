@@ -5,7 +5,7 @@ core/transports本文SHAとregistry待ち値を照合する。private設備・OS
 現在のCore.handle(defer_send=True)とresponse_sentを、3本の論理writerと明示millisecond時計で通す。
 fn1/op16は資源を作るサンプル拡張で、標準OEP操作ではない。
 
-13項目、12条件：6種類×lease1000/60000。
+6種類×lease1000/60000の条件。
 
 - FORCE：旧所有者7の成功応答が待つ間に8がforceし、新資源を作る。後で旧応答を完了しても新lease/資源/cacheを変えない。
 - REJECTED：旧所有者の要求が拒否された応答の場合も、旧完了通知が新しい所有者を更新しない。

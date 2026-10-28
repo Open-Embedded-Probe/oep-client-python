@@ -6,9 +6,9 @@ Open Embedded Probe の host 側。v1（oep-spec の本体 `docs/oep-core.ja.md`
 `generated/oep-v1/oep_v1_registry.py` をそのまま写した `oep_client.registry` から取る。破壊的変更を前提とする
 実験段階で、互換 API は約束しない。
 
-**実装する仕様: oep-spec の commit `67876b7`**（`v0.x` のタグはまだ無い。oep-spec versioning §2 / §6: 凍結の前は revision 1 だけでは
-形が決まらないので、実装は自分が実装する仕様の commit を名乗る）。番号の表と `tests/vectors/` の共有ベクタはその commit から写したもの
-（`tests/vectors/SPEC_COMMIT`）。そこまでの変更は [CHANGELOG.md](CHANGELOG.md) にある。
+**実装する仕様: `tests/vectors/SPEC_COMMIT` にある oep-spec の commit**（`v0.x` のタグはまだ無い。oep-spec versioning §2 / §6: 凍結の前は revision 1 だけでは
+形が決まらないので、実装は自分が実装する仕様の commit を名乗る）。番号の表と `tests/vectors/` の共有ベクタはその commit から写したもの。
+変更の履歴は [CHANGELOG.md](CHANGELOG.md) にある。
 
 凍結までは日本語の文（`.ja.md`）が仕様の作業の文で、英語の文書は凍結のときにそこから作り、そのときから英語が正になる（それまで oep-spec は英訳を置かない）。OEP を初めて読む人は oep-spec の
 [README](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/README.ja.md) と [レビューの手引き](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/review-guide.ja.md)（どこに何が書いてあるか）から。
@@ -192,8 +192,7 @@ TCP で OEP を運ぶ probe は DNS-SD で見つける（ネットワークの�
 オープンドレインだけ。gpio の plan を新しくすると、probe は前の plan のピンを（電源の channel も）いったん離すので、`--power`
 では新しい plan のたびにきれいに電源を入れ直す（報告の `power_cycles`）。
 
-ESP32-P4 と CH32V003（電源は GPIO5）、2026-10-02。2026-10-07 の変更より前の、両方の pull でも読んでいた頃の実行で、その
-"pulled-up" の行（channel 4、リセットの線の弱い pull-up）はここでは除いた - pull-up と pull-down だけなら floating と読める:
+例（ESP32-P4 と CH32V003、電源は GPIO5）:
 
 ```
 $ oep pins /run/board-identify/by-id/esp32-series-30eda0ea068b --power 5 --wire swio --name v003
@@ -290,7 +289,7 @@ max(基準 × 2, 10 %) を超えて壊れ・失われたら下げる。下げる
 仮想ベンチは、probe とその先の target、治具の配線を、実際の治具に合わせてソフトウェアで作ったもので、ハードウェアなしで host の
 ソフトウェアを試す環境である（この repo で「ベンチ」とだけ書けば実機の HIL の治具を指し、ソフトウェアのほうは常に「仮想ベンチ」と書く）。
 
-その probe、`endpoint.Endpoint` は oep-spec 67876b7 の規範どおりに答え（応答のデータと並びは長さを持ち、どの応答にも TLV が
+その probe、`endpoint.Endpoint` は実装する仕様の規範どおりに答え（応答のデータと並びは長さを持ち、どの応答にも TLV が
 続けられる、describe は宣言だけで状態はロック不要の状態の op、キャプチャの世代）、ch32rv・この client・probe の firmware を突き合わせる
 「動く spec」として使う（spec が変わったら、probe の firmware より先にここを合わせる）。`virtual_bench` は宣言の例（profile:
 `p4-x035`、`esp32-v003` = classic ESP32 の firmware と同じフレームの上限 - max_frame 512、riscv-dm の max_length 488 -、
@@ -401,4 +400,3 @@ tests/test_virtual_bench_announce.py がこれを `oep find`、`discovery.find_u
 サービスと違う TXT の unit_id を並べて広告し、確かめでそれが外れることも見る）。multicast が
 戻らない所では skip する。
 
-v0 の client（`oep_client.v0`）は 2026-09-26 に消した（git の履歴に残る）。v0 を話す probe はもう無い。

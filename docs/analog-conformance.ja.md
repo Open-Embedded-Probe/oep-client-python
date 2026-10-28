@@ -3,7 +3,7 @@
 `AnalogChecks(checks, adapter).run()`は、明示したSPECのcapture §1.2/2/3/3.7、plan §2、core §4.4/6/8/9を
 第三段階で確認する。`Checks(send, registry, unit)`と`SampleAnalogAdapter(source)`を渡す。
 公開checkerとadapterは私的ベンチ・兄弟checkout・設備設定を探索しない。
-前提と標準op宣言を含む46項目。共通宣言とcapture metadataは別checkerで確認する。
+共通宣言とcapture metadataは別checkerで確認する。
 
 既存`LogicChecks`のwire交換・世代・データ寿命・資源寿命の検査手順を再利用し、
 analogの成功payloadと生データは`AnalogPayloadChecks`で独立に読む。

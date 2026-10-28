@@ -18,8 +18,8 @@ SPIは要求14＋max_length byte、応答12＋max_length byte。
 仕様にないqueue_depth/max_length/max_clock_hzの正の下限や、drive mAの正の下限は課さない。
 
 独立`FixtureMetadataModel`は17 interfaceの宣言だけを持つfixture。
-選択4 fnの第三段階は11項目（前提、登録op、metadata、GPIO間一致）。
-共通宣言137項目と登録op18項目は別にも確認する。
+選択したfnの第三段階は、前提、登録op、metadata、GPIO間一致を確かめる。
+共通宣言と登録opは別にも確認する。
 広告したopの動作やpin割当は実装しておらず、完全適合probeとして使わない。
 configure/set/転送/plan寿命/電気的適合は未検査で、`full_conformance`はfalse。
 公開側は私的ベンチや設備設定へ依存しない。

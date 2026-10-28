@@ -12,7 +12,7 @@ sample fn1/2、kind1/2、max_frame64/window80/max_inflight3、連続allocatorを
 - 各batchをwriter budget0/1/通常の3状態で実行。停止・部分送信ではresult完了前に実資源とallocatorを観測する。
 - resultのcorr/shape/outcome/IDを独立に照合し、再送が元の結果を返して副作用を再実行しないことを確認する。
 
-前提1・動作6に各caseの共通宣言2を加えて19項目。全case後に所有lockと資源を解放する。
+全case後に所有lockと資源を解放する。
 将来IDを予測する部分はfixtureの観測に基づく検査刺激で、通常Hostの資源利用例ではない。
 既知の次番号を前提にするため、任意allocator/全失敗holeをこのfixtureの規則へ合わせない。
 

@@ -1,4 +1,4 @@
-"""Round 7, request validation (docs/trace/review7/request-validation.json)."""
+"""Round 7, request validation."""
 import struct
 
 from oep_client.registry import WIRE_RVSWD as _WIRE, REJECT_REASONS as _R

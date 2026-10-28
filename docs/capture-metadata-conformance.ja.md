@@ -21,7 +21,7 @@ storage max_bytesとsave/erase提供時の存在は既存SelectedMetadataChecks�
 itemsの未知tagを独自拡張でないと推測して禁止しない。
 
 `CaptureMetadataModel`は17 interfaceの宣言だけを持つ独立fixture。
-4 fnで10項目、全fn共通宣言137項目と登録op18項目は別に確認する。
+全fn共通宣言と登録opは別に確認する。
 fixtureはfn 14にmode 1/3とsubscribe/unsubscribe、fn 15にmode 1/2とreleaseを宣言し、probeのchannelsを3にする。
 広告opを実装せず、完全probeとして使わない。ここで検査した固定形を、容量/rate/frontendの実動作や
 track bindの適合証拠としない。configure/取得/read/release/通知/世代/plan lifetimeは追加検査が必要。

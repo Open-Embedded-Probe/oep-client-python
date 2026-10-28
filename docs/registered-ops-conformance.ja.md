@@ -7,7 +7,7 @@ lock有無や番号の空きから推測しない。revision 1の17 interfaceに
 
 `RegisteredOpsModel`は独立した宣言だけのfixtureであり、広告したopの実装を持たない。
 適合probeとして使わない。最小の必須opだけを宣言し、単体では宣言を壊して検査器を確認する。
-前提1＋fn別17の18項目。全17 fnの共通宣言137項目は第二段階で別に実行する。
+全fnの共通宣言は第二段階で別に実行する。
 既存のwire/console宣言検査は、固有metadataを扱う追加検査として保持する。
 
 - plan/restart、ARM-ADI、GPIO、SPIの表のopは必須。

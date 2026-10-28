@@ -4,7 +4,7 @@ SPEC checkoutを明示し、`CaptureSerialChecks(SampleCaptureSerialAdapter(), s
 core/transportsに加え、capture/common本文のレビュー済みSHAを照合する。private設備や実transportを使わない。
 logic/analogの現在の独立モデルに実wire要求とsampleを送り、u32 serialとu64 byte positionを区別する。
 
-5項目、4条件：logic/analogと開始serial0/0xFFFFFFFEの組合せ。
+4条件：logic/analogと開始serial0/0xFFFFFFFEの組合せ。
 repeat、2sample/区画、2区画容量、1000Hz、max_frame256、session7。位置は2^40+17から始める。
 start後に、既に解放済みの大量の過去取得を表す「保持していないprefix」のseedを明示的に置く。
 これは有限の論理境界検査で、数十億回の実取得を実行したという証拠ではない。

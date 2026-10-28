@@ -5,7 +5,7 @@
 `SampleScanOptionsAdapter(source)`を明示して`ScanOptionsChecks(checks, adapter).run()`を呼ぶ。
 共通宣言は第二段階の`InterfaceChecks`へ分ける。公開コードは設備や私的ベンチを探索しない。
 
-前提1＋動作28項目。明示候補だけを有限個試し、connectionを作らない。
+明示候補だけを有限個試し、connectionを作らない。
 fixtureは前回のwire attachモデルにscanを追加し、max_op_ms=5、既定候補上限2、
 最も遅い速さ1000 Hz、候補ごと1 msの論理時計を使う。他probeへこの値を要求しない。
 
@@ -33,6 +33,6 @@ selectorはSWDだけで使い、Noneは省略。配線/実targetを探索する�
 新bootごとにraw交換、選択、read時のlevels/速さ/ID、解放順と資源状態を保存する。
 
 単体36件は18種類の誤動作注入、前提不足、不正刺激、共通宣言、
-新fixtureでの既存attachオプション40項目を含む。`full_conformance`はfalse。
+新fixtureでの既存attachオプションを含む。`full_conformance`はfalse。
 物理wake/dmactive/idle cycles/時間、線切れの応答/解放順、他budget/frame経路とwriter並行性、
 plan統合とproduction Host統合は未検査。

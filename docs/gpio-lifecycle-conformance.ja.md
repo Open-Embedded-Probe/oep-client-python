@@ -6,7 +6,7 @@ fn 1 plan、fn 2/3 GPIO、8 channel、4割当とidle/driveはGPIO fixtureの契�
 
 `GpioLifecycleModel`はGpioModelに明示logical ms時計を加えた独立fixture。
 各条件で明示logical restartにより新bootへ戻す。待ち時間をsleepで近似しない。
-11項目（前提＋10条件）をcoreとして報告し、GPIOの固有動作28項目と共通宣言25項目は別に検査する。
+前提と条件をcoreとして報告し、GPIOの固有動作と共通宣言は別に検査する。
 
 - lease 1000 msの999 msまではpin/planを保持し、1000 msで両GPIOのplanを解き全pinをidleへ戻す。
 - 期限切れ後は同一set/plan要求に保存した成功を返せるが、資源を再確保・駆動・lease更新してはならない。

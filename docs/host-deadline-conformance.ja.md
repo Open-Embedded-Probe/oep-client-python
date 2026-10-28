@@ -21,7 +21,6 @@ production Hostは要求ごとに処理上限を選ぶ（Host.op_bound_ms、host
 このサンプルアダプタは処理上限を明示的にSerialLink.expected_sへ与え、待受けループの起点と下限の扱いだけを検査する。
 reportの`bound_source`にこの採用を記録する。
 
-6項目、34条件を確認する。
 
 - SINGLE16：length/COBS、(引数, max_op_ms)＝(0,1)/(0,5000)/(1500,5000)/(5000,5000)、write400/4000ms。返答は必要な待ちの1ms前に完成し、Hostがその完成まで受けられることを確認する。引数がmax_op_msより短い条件で引数だけの下限を検出する。
 - TIMEOUT4：length/COBS、(0,1)/(1500,5000)、write4000ms、応答なし。書き終わりから少なくとも必要な時間を待つ。

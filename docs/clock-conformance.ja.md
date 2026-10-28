@@ -4,7 +4,7 @@
 選択したSPECを明示し、公開Pythonパッケージの`ClockModel`と`SampleClockAdapter`で実行する。
 privateベンチ、設備設定、隣接リポジトリの自動探索は必要ない。
 
-9項目（前提1、動作8）で次を確認する。
+次を確認する。
 
 - 起動相対のu64 nsを、0、u32境界、浮動小数点の精度境界、符号境界、u64上端付近で保持する。
 - 同じSID 0/corrのclockを繰り返しても、現在の時刻を返す。
@@ -57,4 +57,4 @@ PY
 
 実clockの精度/分解能、transport writerの実際の境界、全拡張のtimestampとの一致、
 遅延/並行writer、core/共通の全規範とproduction Host統合は未検査である。
-この9項目のPASSだけでcore準拠全体を主張しない。
+この検査のPASSだけでcore準拠全体を主張しない。

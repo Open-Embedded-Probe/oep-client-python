@@ -6,7 +6,7 @@
 全5 fnの共通宣言は`InterfaceChecks`の第二段階で確認する。
 公開コードは設備や私的ベンチを探索しない。
 
-前提1項目＋動作21項目。optional stepを提供する明示論理fixtureを使う。
+optional stepを提供する明示論理fixtureを使う。
 提供しないprobeへstepの実装を要求するものではない。
 
 - 成功時はstatus ok、PC before/afterとmovedを返す。自己分岐でPCが同じでも成功。

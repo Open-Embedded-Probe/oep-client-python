@@ -8,10 +8,9 @@ and the interfaces `interfaces/*.ja.md`), v1 before the freeze: until the freeze
 oep-spec's generated `generated/oep-v1/oep_v1_registry.py`. This is an experimental stage: breaking changes are expected and
 no compatible API is promised.
 
-**The spec this implements: oep-spec commit `67876b7`** (no `v0.x` tag yet; oep-spec versioning §2 / §6 - before the
+**The spec this implements: the oep-spec commit in `tests/vectors/SPEC_COMMIT`** (no `v0.x` tag yet; oep-spec versioning §2 / §6 - before the
 freeze, revision 1 alone does not fix the forms, so an implementation names the spec commit it implements). The registry
-and the shared vectors in `tests/vectors/` are copied from that commit (`tests/vectors/SPEC_COMMIT`); what changed on the
-way to it is in [CHANGELOG.md](CHANGELOG.md).
+and the shared vectors in `tests/vectors/` are copied from that commit; the history is in [CHANGELOG.md](CHANGELOG.md).
 
 Until the freeze the Japanese text (`.ja.md`) is the specification's working text; the English documents are produced
 from it at the freeze and become authoritative then (oep-spec keeps no English translations until then). Start with oep-spec's [README](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/README.ja.md) and
@@ -206,9 +205,7 @@ Safety: a driven or active channel is never driven, scanned or held; the power c
 holding low is open drain only. A new gpio plan lets every pin of the old one go first - the power channel too - so with
 `--power` each new plan is followed by a clean power cycle (`power_cycles` in the report).
 
-ESP32-P4 with a CH32V003 (power on GPIO5), 2026-10-02 - a run from before the 2026-10-07 change, which also read under both
-pulls; its "pulled-up" row (channel 4, the reset line's weak pull-up) is left out here - under pull-up and pull-down
-alone that channel reads floating:
+An example (ESP32-P4 with a CH32V003, power on GPIO5):
 
 ```
 $ oep pins /run/board-identify/by-id/esp32-series-30eda0ea068b --power 5 --wire swio --name v003
@@ -319,7 +316,7 @@ The virtual bench is a probe, the targets behind it and the fixture wiring, mode
 the environment host software is tested in, without hardware. ("Bench" alone in this repository means the real
 hardware-in-the-loop jigs; the software one is always "virtual bench".)
 
-Its probe, `endpoint.Endpoint`, answers as oep-spec 67876b7 says (every answer carries the length of its data or list,
+Its probe, `endpoint.Endpoint`, answers as the spec it implements says (every answer carries the length of its data or list,
 TLVs may follow anything, describe = declarations and lock-free state ops for the rest, capture generations); ch32rv,
 this client and the probe firmware are checked against it (when the spec changes, this is brought in line before the
 firmware). `virtual_bench` holds example declarations (profiles `p4-x035`, `esp32-v003` = the classic ESP32 firmware's
@@ -459,4 +456,3 @@ name too). A container or VM answers only on its own network. tests/test_virtual
 `oep find`, `discovery.find_unit` and `tcp:UNIT_ID` (both engines) - with in-process responders announcing a non-OEP
 TCP service and a wrong TXT unit_id beside it, which the verify drops - skipped where multicast does not loop back.
 
-The v0 client (`oep_client.v0`) was removed on 2026-09-26 (it stays in the git history); no probe speaks v0 any more.

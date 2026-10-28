@@ -4,7 +4,7 @@ core §4.3/5.2/6.1を、[経路別受付モデル](pipeline-conformance.ja.md)�
 
 超過要求を落として応答しない選択もSPEC上許される。今回の検査は`reject-overflow`を選ぶ明示sample用であり、一般probeに超過拒否を必須化しない。範囲外刺激もfixtureの拒否方針を検査するために意図して送る。通常hostが上限を超えてよいという変更ではない。
 
-`ReplayPressureChecks`はpipelineの9項目、追加instrumentation前提1項目、次の5契約を合わせた15項目。fn 1のsample create(kind u8)で実際に資源を作り、返された非zero u16 ID、raw応答、観測した資源一覧を比較する。
+fn 1のsample create(kind u8)で実際に資源を作り、返された非zero u16 ID、raw応答、観測した資源一覧を比較する。
 
 - 3つのcreateで受付枠を満たし、応答が止まっている間に最初の要求をそのまま再送する。同じ応答を返し、資源は3個のまま。送信再開後の再送もlease/cache/資源状態を変えない。
 - 3つの要求で枠を満たし、新corrのcreateを拒否する。枠が回復した後にも同一要求には同じwindow_exceededを返し、実行しない。同corrの変更要求はmalformed、新corrなら1回だけcreateが成功する。

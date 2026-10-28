@@ -12,7 +12,7 @@ queue残量・購読・再送履歴の保持はinstrumentationで観測する。
 
 ## adapterと証拠
 
-`RouteChecks(checks, adapter).run()`はprimaryのidentity/宣言＋6動作契約、計9項目を返す。peerの個体/boot/宣言もidentity内で確認する。adapterはprimary/peerという明示した異なる経路、functions、exchange、hold(route, byte_budget)、submit([(route, request)]), service, receive(route), queue(route), stimulate, feed, close, state, create_resourceを提供する。`trace`には各制御の引数・結果・raw bytes・時刻・errorを保存する。
+`RouteChecks(checks, adapter).run()`はprimaryのidentity/宣言と動作契約を返す。peerの個体/boot/宣言もidentity内で確認する。adapterはprimary/peerという明示した異なる経路、functions、exchange、hold(route, byte_budget)、submit([(route, request)]), service, receive(route), queue(route), stimulate, feed, close, state, create_resourceを提供する。`trace`には各制御の引数・結果・raw bytes・時刻・errorを保存する。
 
 `queue`は待機中通知と、部分送信通知の未送信suffixをbytesで返し、共通検査が合計する。`state`はholder、資源、購読seq/route、保持した要求/応答を観測する。これらはinstrumentationが必要で、通常の実機公開opから推定した値を代用しない。`feed`は外部入力のpositionを返す。`create_resource`は明示したinterfaceの資源opを符号化・検証する。
 

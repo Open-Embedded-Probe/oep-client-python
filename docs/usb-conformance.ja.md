@@ -14,12 +14,12 @@ uv run --group dev --env-file tests/equipment/.env \
   python -m oep_client.conformance_usb_model --kind hid --out /absolute/path/to/new-hid.json
 ```
 
-bulkは47 message＋8 wire＝55項目、HIDはさらに5項目を加え60項目。ID付きHIDの既定はreport ID 6、input 9 byte、output 11 byte。サイズはID/countを含む。`--report-id 0` ならIDを使わないので、別IDの入力だけnot_applicableとなり理由を残す。`--input-size` / `--output-size` で別のサイズも試せる。実機のdescriptorをこの値から推定しない。
+ID付きHIDの既定はreport ID 6、input 9 byte、output 11 byte。サイズはID/countを含む。`--report-id 0` ならIDを使わないので、別IDの入力だけnot_applicableとなり理由を残す。`--input-size` / `--output-size` で別のサイズも試せる。実機のdescriptorをこの値から推定しない。
 
 | 検査 | 刺激・観測 |
 |---|---|
-| bulk/HID共通8項目 | byte単位の分割、結合、length 0、短い要求、未知role、length/body途中の放棄とgap後の回復、過大lengthとgapまでの破棄、宣言max_frame丁度の要求 |
-| HID追加5項目 | count 0、任意値の受信paddingを無視、別report IDの入力を破棄、report容量を超えるcountとgapまでの破棄、SET_REPORT（通常のOUTも全ケースで使用） |
+| bulk/HID共通 | byte単位の分割、結合、length 0、短い要求、未知role、length/body途中の放棄とgap後の回復、過大lengthとgapまでの破棄、宣言max_frame丁度の要求 |
+| HIDだけ | count 0、任意値の受信paddingを無視、別report IDの入力を破棄、report容量を超えるcountとgapまでの破棄、SET_REPORT（通常のOUTも全ケースで使用） |
 
 異常countと過大lengthの直後にも正常要求を送り、gap以前の入力をすべて捨てることを確認する。途切れの観測はSPECのframe gap＋100ms。無応答、回復後の単一応答、boot/corr、raw transfer/report、method、時間を保存する。max_frame 65535の過大lengthだけはu16で表現できずnot_applicable。frame/report破損・アクセスエラーをskipや再試行で隠さない。
 

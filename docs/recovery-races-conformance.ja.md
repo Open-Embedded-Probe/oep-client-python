@@ -2,7 +2,7 @@
 
 core §5.2は、再送を諦めた経路の未解決要求をすべて結果不明とする。受信済みの確定結果を捨てたり、別経路の要求まで諦めたりはしない。回復時のboot/session確認が終わるまでは、旧資源の一覧を次の操作へ使わない。
 
-`RecoveryRaceChecks`は[recoveryの26項目](recovery-conformance.ja.md)＋制御前提1項目＋force 3項目＋batch 1項目の31項目。batch条件`none`、`prefix`、`queued`は、明示した新しいmodelでそれぞれ実行する。一つの結果で全条件を検査したとは扱わない。通常core検査も別に実施する。
+batch条件`none`、`prefix`、`queued`は、明示した新しいmodelでそれぞれ実行する。一つの結果で全条件を検査したとは扱わない。通常core検査も別に実施する。
 
 ## 読み出し中のsession差し替え
 

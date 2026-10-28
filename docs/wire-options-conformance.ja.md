@@ -6,7 +6,7 @@
 全4 fnの共通宣言は第二段階の`InterfaceChecks`へ分ける。
 公開コードは設備や私的ベンチを探索しない。
 
-前提1＋動作39項目。明示論理fixtureはRVSWD/SWIO/SWD/consoleを持つ。
+明示論理fixtureはRVSWD/SWIO/SWD/consoleを持つ。
 reset role 3はchannel 6、max_op_ms=5、最も遅い読出しは1000 Hzを宣言する。
 この番号・時間・速さを他probeや設備へ要求しない。
 

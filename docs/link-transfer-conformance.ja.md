@@ -58,7 +58,7 @@ adapterは実際の保存上限を返し、23 byte未満なら採用前提不足
 50件は正常3、共通宣言3、wire故障21、意味的故障18、seed不足1、control不足3、保存前提不足1。
 意味的故障は長さ/限界/pattern/空データ、pin/plan変化、短い固定/countの誤受理、
 未知critical/壊れたTLVの無視、tag印の消失、誤ったSID受理、再送payload変化、変更要求の誤受理、
-未宣言port_speed受理を検出する。各profileの第三段階reportは10項目でfull_conformance=false。
+未宣言port_speed受理を検出する。各profileの第三段階reportはfull_conformance=false。
 
 物理転送量・遅延、複数経路それぞれのmax_frame、transport framing、port_speed、
 真の並行性とGPIO/plan以外の資源不変、production Host/Probe適合は未証明。

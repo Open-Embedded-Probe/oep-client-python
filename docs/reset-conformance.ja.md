@@ -6,7 +6,7 @@
 `ResetChecks(checks, adapter).run()`を呼ぶ。全5 fnの共通宣言は第二段階の
 `InterfaceChecks`へ分ける。公開コードは設備や私的ベンチを探索しない。
 
-前提1＋動作24項目。optional resetを提供する明示論理fixtureを使う。
+optional resetを提供する明示論理fixtureを使う。
 resetを提供しないprobeへ実装を要求するものではない。
 
 - modeは0と2だけ（debug §4.3）。1と3はunsupported（固定部分の印0）。

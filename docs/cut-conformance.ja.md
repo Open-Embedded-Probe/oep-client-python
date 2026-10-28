@@ -1,7 +1,7 @@
 # 線切れの応答と解放の論理検査
 
 `CutChecks`と独立した`CutModel`/`SampleCutAdapter`はOEP debug §2、common §1/2、
-core §5.2/9を検査する。共通宣言41項目は第二段階、前提1＋動作8項目は第三段階。
+core §5.2/9を検査する。共通宣言は第二段階、前提と動作は第三段階。
 今回の動作caseはRVSWD接続のRISC-V DMIとdmseq consoleを使う。
 公開Pythonライブラリだけで利用でき、SPEC/registryは呼び出し側で選ぶ。
 `full_conformance`はfalse。設備設定や私的ベンチを探索しない。

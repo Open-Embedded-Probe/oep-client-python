@@ -5,7 +5,7 @@
 `SampleMailboxAdapter(source)`を明示して`MailboxChecks(checks, adapter).run()`を呼ぶ。
 私的ベンチや設備設定を公開コードから探索しない。raw交換・刺激・DMIアクセス記録を報告に残す。
 
-前提1項目＋動作22項目。対象はmechanism 0/1を明示提供する論理sampleである。
+対象はmechanism 0/1を明示提供する論理sampleである。
 
 - SDIはL=0〜7を検査し、L=1〜7ではDATA0→DATA1読出し→DATA0=0の順で受信する。L≥8は枠でないのでDATA0=0で消す（console §3.1）。
   L=8〜255では受信も消去もしない。短い枠でもDATA1を読む。

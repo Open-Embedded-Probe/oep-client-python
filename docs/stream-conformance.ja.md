@@ -9,7 +9,7 @@
 | oep.fixture.logic / analog | capture文書の区画・世代付き形式。今回のread/marks検査を適用しない。 |
 | 独自拡張 | 拡張の仕様とadapterがcommon §1の採用・addressing・op対応を明示した場合だけ適用。 |
 
-`StreamChecks`は前提1項目＋動作16項目の17項目をinterface段階で報告する。今回のadapterは独自のpersistent-fn sampleへ、read/marks/clear/mark/writeの対応、規範の参照、byte ring 64、mark ring 5を明示する。5 opの宣言は必須で、writeがないものをreadだけの成功で適合としない。writeの動作適合は今回の実行範囲に含めない。
+今回のadapterは独自のpersistent-fn sampleへ、read/marks/clear/mark/writeの対応、規範の参照、byte ring 64、mark ring 5を明示する。5 opの宣言は必須で、writeがないものをreadだけの成功で適合としない。writeの動作適合は今回の実行範囲に含めない。
 
 | case | 検査 |
 | --- | --- |

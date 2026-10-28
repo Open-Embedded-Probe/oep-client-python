@@ -4,7 +4,6 @@
 公開`RouteModel`と`SampleNotificationSequenceAdapter`を使い、選択SPEC checkoutを明示する。
 privateベンチや隣接checkoutの探索は行わない。
 
-前提1、共通describe 2、動作8の計11項目を持つ。
 
 | 動作 | 観測 |
 |---|---|

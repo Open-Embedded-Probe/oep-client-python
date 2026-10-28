@@ -1,6 +1,6 @@
 # 資源を指定するstreamとdebug connectionの寿命検査
 
-common §1の位置付きstreamと§2のdebug connectionを採用し、streamがconnectionに依存すると明示した拡張へ適用する。`DependencyChecks`は前提1項目＋動作18項目をinterface段階で報告する。全fnの宣言検査と、標準OEP op固有の検査は別途行う。
+common §1の位置付きstreamと§2のdebug connectionを採用し、streamがconnectionに依存すると明示した拡張へ適用する。全fnの宣言検査と、標準OEP op固有の検査は別途行う。
 
 | 契約 | 検査 |
 | --- | --- |

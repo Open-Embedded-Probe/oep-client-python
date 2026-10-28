@@ -5,7 +5,6 @@ core/transports本文SHAとregistry待ち値を照合する。private設備・OS
 現在のvirtual Coreへraw messageを入力し、応答とowner/資源/cache/leaseを直接観測する。
 fn1/op16はサンプル資源作成で、標準OEP固有操作ではない。
 
-6項目、2,337観測。
 
 - roleが0x01以外の全255値を、10/11/64byteで入力する（765件）。既知のresult/event/dataも含め、無応答・状態非変更を確認する。
 - role0x01の要求を0〜9byteに切る（10件）。見出し未完成のため、malformed応答すら返さずに捨てる。

@@ -41,7 +41,7 @@ assert report["status"] == "passed"
 uv環境で実行する。単体はuv run pytest -q tests/test_conformance_tlv_requests.py。
 public checkerはprivate台帳や隣接SPECを探索しない。raw交換と状態の判定を保存する。
 独自fixtureではそのschema・state観測・source/版も保存する。
-6項目のPASSはこの4文脈に限る。全要求schema、並行性、全core/共通/OEP固有規則、物理Probeは証明しない。
+PASSはこの4文脈に限る。全要求schema、並行性、全core/共通/OEP固有規則、物理Probeは証明しない。
 
 Hostが重要な項目へcriticalを付けることは別の責任である。
 [Host要求のcritical指定](host-request-conformance.ja.md)では、実際に組み立てたpayloadを検査する。

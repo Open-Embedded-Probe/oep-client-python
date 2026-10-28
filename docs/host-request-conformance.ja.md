@@ -28,16 +28,7 @@ encoderは文脈の方針に従ってbit7を付け、長さu16 little-endian、�
 | uart configure | format 1 | — | fixture §2、Host方針 |
 | config set（項目） | — | label 2、idle 3、disable 7 | config §1（項目のbit7は0で送る） |
 
-旧レビュー（b7ffb17/d1b38a0/19753f5、registry b7ffb17）からの変更:
-
-- wire attachのmax_speedとピン（旧TLV 1/3）は固定部分`method(u8)、swdio(u16)、swclk(u16)、max_speed(u32)`になった。
-  attachのTLVはreset 5、rvswdのidle_clock 4、swdのtargetsel 2だけ。scanの固定部分は`count(u8)、count × (swdio、swclk)`。
-- captureのmultirate（0x60）とcapture-groupのtrigger_track（1）は削除された。logicのcriticalは無くなり、capture-group bindはTLVを持たない。
-- gpio setのdrive（1）は削除された（fixture §1：v1は強さの段の切替えを定義しない）。gpio setとcapture-group bindの文脈を外した。
-- config setの項目はTLVでなく設定データの容器になり、「hostはbit7を0で送る」と本文が定めた（config §1）。
-  旧方針の全項目criticalは現在の規則に反する。項目はplan 1/slot 4/uart 6/wifi 8が削除され、label 2/idle 3/disable 7だけ。
-  固定部分にはcount(u8)を置き、項目を同じ`tag、len(u16)、value`の並びとして検査する（countと項目数の一致は検査しない）。
-- core §2.3は「scanのmax_speed」「attachのreset」をcriticalにする例として挙げる。
+core §2.3は「scanのmax_speed」「attachのreset」をcriticalにする例として挙げる。
 
 rvswd scanのidle_clockに、本文はcriticalの指定を書かない（attachのidle_clockだけ「critical」と書く）。
 scanの休ませ方が無視されると指定した線の状態で探索する意味を失うため、旧版と同じくHost方針でcriticalとする。
@@ -63,7 +54,7 @@ Path("/explicit/output/host-request-policy.json").write_text(json.dumps(report, 
 assert report["status"] == "passed"
 ```
 
-5項目はcritical、noncritical、順序/文脈、値のコピー、無効入力。
+検査はcritical、noncritical、順序/文脈、値のコピー、無効入力。
 毎回の入力・期待payload・実際のpayloadを保存する。無効入力はtag/長さと拒否を保存する。
 繰り返すfrontend、plan、config項目を異なる値で送り、同じtag1をwire/core/uartへ交互に送る。
 個別項目の省略はtail組み立てだけの検査で、必須TLVを省略した完全な要求の成功を主張しない。

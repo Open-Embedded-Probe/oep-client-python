@@ -3,7 +3,7 @@
 `LogicChecks(checks, adapter).run()` は選択SPECのcapture §1〜3、plan §2、core §6/8/9を第三段階で検査する。
 `Checks(send, registry, unit)` と `SampleLogicAdapter(source)` を明示する。
 公開側は私的ベンチ・隣接リポジトリ・設備設定を探索しない。
-前提と標準op宣言を含む34項目。共通宣言17項目とlogic metadata4項目は別に適用する。
+共通宣言とlogic metadataは別に適用する。
 
 - state 0、plan無しconfigure/query/startの拒否、空readとstop、logicがpinの電気状態を変えないことを確認する。
 - queryは設定を適用せず、configureと同じ実際の値を返す。必須TLV/幅/省略契約/0値/raw tag/first-winsを確認する。

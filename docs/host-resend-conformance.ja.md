@@ -8,7 +8,6 @@ core/transports本文（oep-spec a09fa45、待受け期限の検査と共有）�
 
 fixtureのfn1/op16はresource(kind u8)を作り、成功payloadはid(u16)。op19は読むだけの状態。
 標準OEP操作ではなく、coreの再送規則を試すサンプル拡張である。
-8項目、7条件を検査する。
 
 - LOST-COBS/LENGTH：Probeが実行した最初の応答を失わせる。Hostは待ちの下限後に同じ全byteを再送し、同じidを受ける。Probeは2回目の実行をせず、再送でleaseを更新しない。
 - PIPELINE-COBS/LENGTH：2要求の2つ目の応答だけを失わせる。解決済みの1つ目を除き、未解決の2つ目だけを同じ全byteで再送する。resourceは2個のまま。

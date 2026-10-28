@@ -3,7 +3,7 @@
 `SpiChecks(checks, adapter).run()` は選択SPECのfixture §4、plan §2、core §6/8/9を第三段階で検査する。
 `Checks(send, registry, unit)` と `SampleSpiAdapter(source)` を明示して渡す。
 公開checkerは私的ベンチや隣接リポジトリ、設備設定を探索しない。
-前提と標準op宣言を含む42項目。共通宣言17項目とSPI metadata5項目は別に適用する。
+共通宣言とSPI metadataは別に適用する。
 
 - state 0、plan開始前configure、未設定read_rx、role 1〜4の各1つ/別pin、拒否前不変を確認する。
 - configureのmode/bit_order幅、LSB featureの有無、未知TLV/raw tag、mode/statusを確認する。

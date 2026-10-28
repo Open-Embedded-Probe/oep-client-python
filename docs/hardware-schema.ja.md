@@ -1,6 +1,6 @@
 # 実機設定形式 v1 の提案
 
-状態: v1 の初期実装あり。offline validate/plan と virtual smoke が使用可能。実機の probe 単体 preflight と明示 pytest 入口も使用可能。配線 discovery/target runner adapter は未実装。2026-10-09。[全体テスト方針](testing-policy.ja.md)と[構成管理方針](hardware-configuration.ja.md)を具体化する。現行の legacy 実機 runner はこの形式を読まない。最小入口は [動作確認手順](hardware-quickstart.ja.md)。OEP の wire protocol や SPEC を変更する提案ではない。
+状態: v1 の初期実装あり。offline validate/plan と virtual smoke が使用可能。実機の probe 単体 preflight と明示 pytest 入口も使用可能。配線 discovery/target runner adapter は未実装。[全体テスト方針](testing-policy.ja.md)と[構成管理方針](hardware-configuration.ja.md)を具体化する。現行の legacy 実機 runner はこの形式を読まない。最小入口は [動作確認手順](hardware-quickstart.ja.md)。OEP の wire protocol や SPEC を変更する提案ではない。
 
 ## 所有と境界
 

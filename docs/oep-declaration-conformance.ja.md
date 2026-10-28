@@ -2,7 +2,7 @@
 
 `OepDeclarationChecks`は第三段階の`oep-interface`として、選択した標準名・revision 1の必須opと固有describe宣言を検査する。第一段階のコア準拠、第二段階の全fnに使える`InterfaceChecks`・採用した共通部品の検査とは、独立した結果にする。
 
-fnと標準名の対応を明示する。名称による全fnへの自動適用や設備探索は行わない。選択SPECのregistryからop・tag・enumを読む。今回はRVSWD／SWIO／SWD／consoleの4 fnを選び、前提1項目＋各wire 3項目＋SWIO clock 1項目＋console 2項目の13項目を報告する。
+fnと標準名の対応を明示する。名称による全fnへの自動適用や設備探索は行わない。選択SPECのregistryからop・tag・enumを読む。今回はRVSWD／SWIO／SWD／consoleの4 fnを選ぶ。
 
 | 検査 | 規範と適用 |
 | --- | --- |

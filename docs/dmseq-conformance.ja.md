@@ -8,7 +8,7 @@
 `DmseqChecks(checks, adapter).run()`を呼ぶ。公開コードは設備や私的ベンチを探索しない。
 adapterのmailbox word・poll・reset刺激と状態、各検査のraw交換を報告に保存する。
 
-前提1項目＋動作34項目。選択したconsoleはmechanism 2を宣言することを前提にする。
+選択したconsoleはmechanism 2を宣言することを前提にする。
 
 - CRC-8の規範検査値FB/F3とword例3298/F300、payload長0〜6、DATA1を読む境界3を確認する。
   検査側のCRCは整数多項式の除算で計算し、モデル側のbit逐次計算を利用しない。
@@ -35,7 +35,7 @@ synced/last_s/last_syn/h/pendingをstreamごとに持つ。`reset_target(connect
 probe側のframing検査だけでtarget側や全consoleの適合とは扱わない。
 
 
-承認されたconsole §2のmark条件を6項目で確認する。
+console §2のmark条件も確認する。
 同期後の新しいSYN（同じS/異なるS）はrestart/detail 2、有効TO（新規/重複）はlost/detail 4、
 CRC不一致はlost/detail 2を要求し、marks opで読み返す。
 CRC不一致やN=7、host所有wordのSYN/TOからrestart/resync・lost/TOを出す誤動作を検出する。

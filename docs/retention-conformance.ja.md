@@ -6,7 +6,6 @@ core §5.2は直近max_inflight個以上の記録とcorrの最大値を保持し
 
 sample fn 1/2のown create(op 16)はkind u8、reply_size u8、[TLV]を受け、resource_id u16、[TLV]を返す。kindは1/2、reply_sizeは応答message全体の長さ7/16/17。16/17では非critical tag 0x40のpaddingを足す。要求も非critical TLVで16/17 byteに調整する。いずれもmax_frame内で実行可能な要求で、保持上限は受付上限とは別。
 
-`RetentionChecks`はidentity/幾何条件＋12契約＋primaryの2 IF宣言で15項目。
 
 - 要求16 byte: 全要求と応答を保持し、同一再送を返す。変更した同corrはmalformed。
 - 要求17 byte: 要求の欠落markerと小さい応答を保持する。同一/変更要求はresult_lostで、資源を増やさない。

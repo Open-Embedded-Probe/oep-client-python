@@ -14,7 +14,7 @@ fn 0のconfirmは処理上限min(max_op_ms, core_quick_op_max_ms)、max_op_ms取
 production Hostは要求ごとに処理上限を選ぶ（Host.op_bound_ms）。サンプルはproductionのconfirmをそのまま通す。
 reportはproduction_opcode_alignment_proven=true、production_quick_bound_proven=trueを持つ。
 
-4項目、87観測。SAVE72、失敗6、confirm履歴9（各confirmは処理上限1000 ms、max_op_ms5000）。
+SAVE72、失敗6、confirm履歴9（各confirmは処理上限1000 ms、max_op_ms5000）。
 max_op_ms1/5000/600000、max_frame64/256/65535、外側の待ち0/7000ms、
 length framingとUARTの現在baud1200/115200/3000000を組み合わせる。
 短い設定timeout0.05秒、lease1秒の速度変更経路でも、saveのmax_op_ms＋1秒＋転送時間を下回らない。

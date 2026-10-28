@@ -3,7 +3,7 @@
 `CaptureGroupChecks(checks, adapter).run()`は明示したSPECのcapture §4.1、plan §2、core §4.3/4.4/6/8/9を
 第三段階で確認する。`Checks(send, registry, unit)`と`SampleCaptureGroupAdapter(source)`を渡す。
 公開checker/adapterは私的ベンチ・兄弟checkout・設備設定を探索しない。
-前提と登録op宣言（12 fn）を含む53項目。共通宣言97項目とgroup/track metadata8項目は別に適用する。
+共通宣言とgroup/track metadataは別に適用する。
 
 - 未結合のstate 0、start前の時刻sentinel（全bit1）と世代0。startのcause 6拒否、stopと空bindのno-op。
 - bind順序、同じリストの再指定のno-op（取得中も状態・データを保つ）、bindが世代を変えないこと。

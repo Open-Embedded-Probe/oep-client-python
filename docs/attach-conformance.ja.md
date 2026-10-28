@@ -1,6 +1,6 @@
 # 標準wire attachの事前検査とconsole open
 
-`AttachChecks`は第三段階`oep-interface`として、選択SPECに基づくwire attachの要求と拒否、console openの制約を検査する。前提1項目＋動作21項目の22項目。コアと共通部品の準拠は別の検査を併用する。
+`AttachChecks`は第三段階`oep-interface`として、選択SPECに基づくwire attachの要求と拒否、console openの制約を検査する。コアと共通部品の準拠は別の検査を併用する。
 
 | 契約 | 検査 |
 | --- | --- |

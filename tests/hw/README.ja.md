@@ -131,7 +131,7 @@ TCP は `OEP_HW_BOARDS=tcp:<unit_id>` または `tcp://<host>:<port>` を明示�
 | `OEP_PROBE_DIR` / `OEP_PROBE_VERSION` / `OEP_HW_NOFLASH` | firmware の出所（どれか 1 つ） |
 | `OEP_HW_TARGET`、`OEP_HW_RESET`、`OEP_HW_TARGET_ADDR`、`OEP_HW_LOOPS` | wire の試験: target が繋がっている（どこに）、reset の線、block の番地、回数 |
 | `OEP_HW_REOPEN_S` | 再起動した probe を、restart_max_ms が過ぎた後さらに何秒まで開き直すか（利用者が開き直す。上。WSL / usbipd）。既定 0: しない - restart_max_ms の後 probe は無くなったものとする |
-| `OEP_HW_RESTART=1` | config の試験で USB の probe（P4、RP2）を `oep.probe.restart` で再起動する（既定はしない: oep-probe-arduino 0.0.29-dev+3c0cd99 では RP2350 と P4 が再起動の後に列挙に失敗し、抜き差しが要った） |
+| `OEP_HW_RESTART=1` | config の試験で USB の probe（P4、RP2）を `oep.probe.restart` で再起動する（既定はしない: 再起動の後に列挙に失敗して抜き差しが要る組み合わせがあるため） |
 | `OEP_HW_WIRE` | wire / console の試験の wire の名前（既定: `OEP_HW_TARGET` が 1 本のピンを名指し、probe が `oep.wire.swio` を持てばそれ、無ければ最初の wire）。console の試験は、その connection の open を受ける `oep.target.console` の instance を使う |
 | `OEP_HW_GPIO`、`OEP_HW_DISABLE`、`OEP_HW_UART`、`OEP_HW_UART_LOOP` | fixture の試験のチャネルの上書き |
 | `OEP_HW_ANALOG`、`OEP_HW_I2C`、`OEP_HW_SPI` | アナログのキャプチャのチャネル、i2c-target の `sda,scl`、spi-target の `sck,mosi,miso,cs`（既定: 表の空きチャネル（gpio の 2 本、disable、UART の 2 本）のうち describe が許すもの） |

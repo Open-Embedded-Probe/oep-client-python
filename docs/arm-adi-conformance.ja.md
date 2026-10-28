@@ -3,7 +3,6 @@
 `ArmAdiChecks`は選択したSPECのdebug §2/6とcore §2.3/4/5/7/9から、
 raw-messageで`oep.target.arm-adi`を確認する第三段階の検査である。
 一般インターフェイス検査（第二段階）も別に実行する。
-基底の31項目に、`ArmAdiBlockChecks`でMEM-AP blockの28項目を追加し、合計59項目を持つ。
 ARM-ADI全体の適合は主張しない。
 
 ## 前提と構成

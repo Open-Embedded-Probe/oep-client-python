@@ -7,7 +7,6 @@ port_speed(0x12)とport_state(0x13)を宣言し、phaseを口ごとに持つ（0
 物理UARTは開かず、実際のHostがbaudを切り替えるプログラムの適合とは別に扱う。
 
 共通InterfaceChecks、RegisteredOpsChecks、固有checkerの順で実行する。
-固有reportはRegisteredOps2・context1・20 case、合計23項目。
 registryのop18/19、両opのdescribe宣言、idle3000ms、許容差2%とUART bridge宣言を確認する。
 RegisteredOpsChecksはport_speedを持つならport_stateも持つことを確認する。
 public checkerはSPECを明示選択し、privateベンチや隣接checkoutを自動探索しない。
@@ -55,7 +54,7 @@ prepared/sent/discardのeventと、その時のbaud・論理時刻を別に記�
 | NON-BRIDGE | sessionをTCPで開き、同じTCPからのport_speedとport_state（SID0/保持SID）をcause6で拒否 |
 | ONE-PORT | port0がphase1/2/3の間、別bridgeのstep0/1/2はcause6でpeerも変えず、別bridgeのport_stateは115200/phase0 |
 | PENDING-VERIFY | verify境界をまたぐframe：port_stateはphase3、所有sessionのstep0/1/2もcause6、無効frameも含め応答後に復帰 |
-| PENDING-IDLE-OWNER | idle境界をまたぐ所有sessionのport_state/keepaliveは旧baudで応答した後に戻り、step0/1/2はcause6。phase 3は取り消さない（oep-spec cf69012） |
+| PENDING-IDLE-OWNER | idle境界をまたぐ所有sessionのport_state/keepaliveは旧baudで応答した後に戻り、step0/1/2はcause6。phase 3は取り消さない |
 | PENDING-IDLE-OTHER | SID0のport_stateやsource、無効frameも、phase3のまま旧baudで応答した後に戻る |
 
 ONE-PORTは、同じowner IDの要求を別のbridgeへ入れる**Probeへの不正なHost刺激**である。

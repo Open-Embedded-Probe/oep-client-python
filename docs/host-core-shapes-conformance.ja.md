@@ -46,7 +46,7 @@ unsupportedのtag 0は固定部分の値を示す印で、TLV番号0とは区別
   a09fa45でunsupported/unavailableのindexはcoreのtagでなく各インターフェースの0x40〜0x7Fになったため、
   registryのcore `unsupported_payload`にindexが無いことも照合する。
 
-9項目で固定形、短い見出し/固定部分/数付き名前、後続TLV破損、既知値の幅/count、
+固定形、短い見出し/固定部分/数付き名前、後続TLV破損、既知値の幅/count、
 重複の最初の値と繰返し順序、文脈の分離、可変長境界、boolを確認する。
 KNOWN-WIDTHは、正しい既知TLVの後に同じtagの壊れた値を置き、後の値も検証して使わないことを確かめる
 （core §2.3、a09fa45で追加。応答全体を使わないreader、壊れた値だけまたはそのtagを捨てるreaderを許す）。
@@ -55,8 +55,7 @@ KNOWN-WIDTHは、正しい既知TLVの後に同じtagの壊れた値を置き、
 listは0/1/48/255 entry、channel_groupは0/1/255 member、text/TLV値は65535 byteまでの試料を含む。
 これらはpayload部品の境界検査で、transportのmax_frameへ収まることを証明するものではない。
 
-本文SHAとprotocol revision/番号/tag空間をレビュー時の値に固定する。現在の固定はoep-spec a09fa45のcore本文
-（4681d22からの差分をレビュー。confirm/listのflags削除は既にreaderへ反映済みで、文書の表だけを更新した）。
+本文SHAとprotocol revision/番号/tag空間をレビュー時の値に固定する。現在の固定はoep-spec a09fa45のcore本文。
 SPECが変わった場合は入力を読み直すまで停止し、番号が同じだけで形の互換性を推定しない。
 固定形を変更する将来のrevisionは、このrevision 1 readerへ無条件で適用しない。
 

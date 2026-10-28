@@ -2,8 +2,8 @@
 
 SPEC registryを明示してConfigExecutionModelとChecksを作り、InterfaceChecksの後に
 `ConfigExecutionChecks(checks, SampleConfigExecutionAdapter(model)).run()`を実行する。
-privateベンチや隣接SPECを自動探索しない。RegisteredOps2/context1/9ケース＝12項目、共通宣言33項目。
-既存ConfigChecks8項目も別のadapterで検査し、get/set/unset/save/erase/stateを保つ。
+privateベンチや隣接SPECを自動探索しない。
+既存ConfigChecksも別のadapterで検査し、get/set/unset/save/erase/stateを保つ。
 
 保存先への実write呼出しで、fixtureの時計を1,500又は5,000ms進める。max_op_msは5,000ms。
 実時計で待ったり実flashを書いたりするものではない。

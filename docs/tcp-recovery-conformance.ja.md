@@ -6,7 +6,6 @@ core/transports本文SHAと待ち数値を照合する。private設備設定やO
 close/reopen/confirm/replayは明示的なサンプルHostの手順であり、production SerialLinkの再接続適合を示すものではない。
 
 fn1/op16の資源作成をサンプル拡張として使う。max_frame64、boot17、session7/lease60000。
-10項目、9条件を確認する。
 
 - PAUSE-HEADER/BODY：keepaliveの後、長さ又は本文の途中で400ms休止する。100msのrecvでは未完了として返し、部分byteを保持する。次のrecvで元の結果を完成させ、接続を開き直さない。
 - LENGTH：上限を超える長さを受ける。接続を閉じて新しいparserを作る。

@@ -2,7 +2,7 @@
 
 SPEC registryを明示したChecksとConfigStorageModelを作り、InterfaceChecksの後に
 `ConfigStorageChecks(checks, SampleConfigStorageAdapter(model)).run()`を実行する。
-privateベンチ/隣接SPECを自動探索しない。RegisteredOps2/context1/7ケース＝10項目、共通宣言33項目。
+privateベンチ/隣接SPECを自動探索しない。
 保存容量64byte、items label/idle/disableの明示profile。
 
 保存先はRamConfigStorage。writeの実呼出しで独立copyをcommitし、その回数と保存内容を観測する。

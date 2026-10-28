@@ -2794,7 +2794,7 @@ def test_keepalive_changes_nothing_but_the_lease():
     assert w.lock_state()[:2] == (1, 2000)
 
 
-# ---- second review of §7-§13 (docs/trace/review2/core.7-13.json) ----------------------------------------------------
+# ---- second review of §7-§13 ----------------------------------------------------
 
 def test_instances_are_unique_u16s_with_gaps_and_not_the_fn_order():
     """core §7.2: instance is a u16 unique within its (name, revision) - 0 may be used, gaps are allowed, it is not
@@ -2969,7 +2969,7 @@ def test_event_bytes_are_not_counted_toward_min_bytes():
     assert [f[0] for f in pushed] == [m.ROLE_EVENT] and ep.captures[lc.fn].unsent() == 750
 
 
-# ---- third review of §0-§5 (docs/trace/review3/core-a.json) -----------------------------------------------------------
+# ---- third review of §0-§5 -----------------------------------------------------------
 
 def test_the_preflight_reports_describe_text_with_control_characters_replaced(monkeypatch, tmp_path):
     """core §2.1: the hardware preflight's report shows fn 0's describe text (firmware, model, unit_id, chip) - with C0
@@ -3182,7 +3182,7 @@ def test_on_tcp_a_resend_given_up_closes_and_opens_the_connection_and_confirms_f
     assert [m.Request.unpack(x[2:]).op for x in new.writes] == [m.OP_CONFIRM, m.OP_CLOCK]
 
 
-# ---- third review (docs/trace/review3/core-b.json): core §6-§13 ------------------------------------------------------
+# ---- third review: core §6-§13 ------------------------------------------------------
 
 def test_the_lease_restarts_at_the_answers_generation_not_its_write():
     """core §6.1 (a09fa45): the holder's answer restarts lease_ms when it is generated - the write waiting, completing

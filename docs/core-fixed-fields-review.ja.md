@@ -2,7 +2,6 @@
 
 core §2.3の「固定部分に省略できるフィールドを置かない」を、revision1のコアpayloadへ適用する。
 本文SHAは`4c5dcdcc779c5ba0ee85060a33b2b629deddad3e8f8f1a22e18bdeea9d471bdc`（oep-spec a09fa45、[core形の検査](host-core-shapes-conformance.ja.md)の固定を共有）。
-a09fa45でconfirmの応答とlistのentryからflagsが削除されたので、台帳から外した。
 CoreFixedFieldChecksはSPECを明示指定し、本文・番号が変わればレビューし直す。
 生成registryは番号の照合に使う。幅・省略条件は本文§1.1/4.3/6.4/7を読んで下の台帳に固定した。
 privateベンチへの依存や隣接SPECの自動探索はない。
@@ -38,7 +37,7 @@ locked/lock_stateのownerは、設定した場合だけ存在するTLV。owner�
 `CoreFixedFieldChecks(decoder, probe_factory, spec="/explicit/oep-spec").run()`。
 公開結果reader部品`conformance_host_core_sample.decode`とResourceModelのCoreを参照例として使える。
 factoryは検査用の独立状態を毎回返す。実機での無断session操作を行うためのAPIではない。
-REVIEW、REQUEST-FIELDS、RESPONSE-FIELDS、ZERO-VALUES、OWNER-TLVの5項目。
+REVIEW、REQUEST-FIELDS、RESPONSE-FIELDS、ZERO-VALUES、OWNER-TLVを検査する。
 各要求/応答の固定fieldを丸ごと抜いた刺激と、list要素の各field欠落を確認する。
 これはtailを含まない欠落刺激であり、任意byte列を足した全曖昧性を証明しない。
 

@@ -52,6 +52,6 @@ uv環境で`uv run python example.py`として実行する。単体は
 reportにはraw刺激・読出し期限・終了時刻・結果・checker/sample SHAを保存する。
 独自アダプタのsource/版は利用者が追加して保存する。
 
-9項目・565スケジュールのPASSは、production Host、実時計/OS scheduling、他のevent形、破損時のtransport回復、
+PASSは、production Host、実時計/OS scheduling、他のevent形、破損時のtransport回復、
 回復/再送、Probe通知送出の適合を意味しない。full_conformanceは常にfalse。
 未知kindを送り込む試料はHostの将来値への耐性を調べるもので、Probeが未割当kindを送ってよいという仕様ではない。

@@ -47,7 +47,7 @@ error値・write_pos・完了peerの消去/state変更、世代の一周・使�
 start失敗の成功応答・短い固定形・state・peerの取得継続・世代の巻き戻し、
 状態表（取得中のconfigure受付、完了データの消去、世代を見ないrelease、state 6からのstart拒否、
 state 6のstop、plan無しのquery、state 0のstopの副作用）、streamingエラーのwrite_pos・失敗区画の公開・reason・peerの継続を検出する。
-全40構成をまとめたreportは46項目（登録op5・前提1・取得寿命40）。
+全40構成をまとめて報告する。
 
 `full_conformance`はfalse。既知の2 track/即時開始について順次刺激した検査である。
 repeat/release、trigger待ちとforce（state 2/5）、他の構成・ADC layout/skew、保持境界、

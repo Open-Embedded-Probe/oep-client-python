@@ -8,7 +8,7 @@ hostは宣言した上限を守る。**超過要求へのwindow_exceeded応答�
 
 要求を受理するとその経路の枠を予約し、**このサンプルでは応答message全体を書き終えるまで**保持する。処理完了だけで解放せず、途中まで送った応答も未解決とする。これは保守的なモデル方針で、SPECに新たな内部bufferの解放時点を定める変更ではない。送信完了後には枠を戻す。超過要求は受理せず、受信順にwindow_exceededを返す。通知queueの上限とは別管理。
 
-`PipelineChecks`はidentity/宣言と6動作契約、primaryの2 IF宣言を含む9項目。peerの個体/boot/宣言も照合する。
+peerの個体/boot/宣言も照合する。
 
 - count境界: 10 byte×3要求を受理し、writer停止中も枠を保持する。
 - window境界: 64+16 byteの要求を受理し、見出し/TLVを含む80 byteを数える。

@@ -36,5 +36,5 @@ uv環境でuv run python example.pyとして実行する。
 SPEC commit/dirty/registry SHA、raw frame、読出し結果、checker/sample SHAをreportに残す。
 独自readerのsource/版は利用者が別途保存する。public runnerはprivateベンチや隣接checkoutを探索しない。
 
-6項目のPASSは選んだ形の読出し範囲に限る。他のstatus/reason/flags、全TLV幅、
+PASSは選んだ形の読出し範囲に限る。他のstatus/reason/flags、全TLV幅、
 全payload、production Host、target実行や経路回復は証明しない。full_conformanceは常にfalse。

@@ -5,7 +5,7 @@
 `SampleBlockAdapter(source)`を明示して`BlockChecks(checks, adapter).run()`を呼ぶ。
 公開コードは設備や私的ベンチを探索しない。共通宣言は`InterfaceChecks`で第二段階に分ける。
 
-前提1項目＋動作21項目。明示fixtureではread_block/write_blockを組で提供し、
+明示fixtureではread_block/write_blockを組で提供し、
 max_length=8 byteを宣言する。この値を他のprobeへ要求しない。
 
 - max_lengthの単位/幅、opの組、選択経路のframeへの収容とcountの上限を確認する。

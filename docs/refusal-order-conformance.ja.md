@@ -4,7 +4,7 @@ SPEC checkoutを明示し、`RefusalOrderChecks(SampleRefusalOrderAdapter(), spe
 core/transports本文SHAとregistry待ち値を照合する。private設備・実transportを使わない。
 現在のCoreとサンプル資源拡張へraw要求を送り、core §4.3の順序を確認する。
 
-11項目、60観測。所有中/期限切れと、通常保持/要求保持不足/応答保持不足の6状態へ、10種類の要求を入力する。
+所有中/期限切れと、通常保持/要求保持不足/応答保持不足の6状態へ、10種類の要求を入力する。
 実remember_maxを2048/10/16にして、要求だけ又は応答だけを保持できない状況を作る。cacheを偽造して境界を作らない。
 
 - corr0、未知fn、未知op、SID0でのsession_requiredは、再送・所有・payload条件より先。

@@ -5,7 +5,7 @@ timeoutを第三段階`oep-interface`で検査する。`Checks(send, registry, u
 `SampleTargetDmseqAdapter(source)`を明示して`TargetDmseqChecks(checks, adapter).run()`を呼ぶ。
 公開コードから設備・私的ベンチを探索しない。
 
-前提1項目＋動作17項目。対象は短い待ち20 ms、長い待ち1000 ms、入力容量2 byte、
+対象は短い待ち20 ms、長い待ち1000 ms、入力容量2 byte、
 出力queue容量6 byteを明示した論理fixtureである。この容量や待ちの上限を一般実装へ要求しない。
 仕様の実時間の下限を、この結果だけで満たしたとは報告しない。
 
