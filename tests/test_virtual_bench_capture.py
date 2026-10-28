@@ -450,7 +450,8 @@ def test_describe_declares_no_background_layouts_or_budgets():
         assert {v[0] for v in modes} == {c.ONE_SHOT, c.REPEAT, c.STREAMING}
         assert [v for t, v in d if t & 0x7F == __import__('oep_client.registry',fromlist=['FIXTURE_LOGIC']).FIXTURE_LOGIC.tlv['describe']['channels']] == [bytes([16 if fn == lc.fn else 4])]
         R_=__import__('oep_client.registry',fromlist=['FIXTURE_ANALOG'])
-        assert {t & 0x7F for t, _ in d} <= set(R_.DESCRIBE_COMMON.values()) | set(R_.FIXTURE_ANALOG.tlv['describe'].values())   # only what the SPEC defines
+        own = (R_.FIXTURE_LOGIC if fn == lc.fn else R_.FIXTURE_ANALOG).tlv['describe']
+        assert {t & 0x7F for t, _ in d} <= set(R_.DESCRIBE_COMMON.values()) | set(own.values())   # only what the SPEC defines
     tags = {t & 0x7F for t, _ in core.describe(hst, grp.fn)}
     assert 0x40 in tags and 0x41 in tags and not {0x42, 0x43} & tags   # tracks, trigger_caps (§4.4)
 

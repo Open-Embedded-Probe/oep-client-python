@@ -542,7 +542,10 @@ def p4_x035() -> VirtualProbe:
         Offered(7, 0, "oep.fixture.logic", _roles({k: pins for k in range(16)})
             + _capture_decl(["one_shot", "repeat", "streaming"], 16, 1 << 20, 8, 1_000, 20_000_000, 0b0111, 16,
                             (_FMT["logic_blocks"], _FMT["test_counter"]),
-                            (sum(1 << v for v in _CARRIAGE.values()), 2, 4096), linked=True),   # raw / events D 2-4096
+                            (sum(1 << v for v in _CARRIAGE.values()), 2, 4096), linked=True)    # raw / events D 2-4096
+            # PARLIO's clock input (rising or falling, a qualifier) and the GPIO flex glitch filters (25 - 1600 ns)
+            + (catalog.tlv(_CAPD["external_clock"], struct.pack("<IBB", 40_000_000, 0b011, 1)),
+               catalog.tlv(_CAPD["glitch_filter"], struct.pack("<BIII", 0, 25, 1600, 25))),
             inner=_capture_inner([1, 2, 4, 8, 16], 8, 4096)),
         _i2c_target(8, pins, max_length=128, max_hz=1_000_000, features=0, queue_depth=8,
                     max_stretch_us=100_000),                                                       # stretch
@@ -591,7 +594,10 @@ def esp32_v003(max_frame: int = 512) -> VirtualProbe:
         _uart(5, 0, wired, 115_200),
         # the classic ESP32's GPIO sampler: a byte a sample (w 8), one-shot
         Offered(6, 0, "oep.fixture.logic", _roles({k: wired for k in range(4)})
-            + _capture_decl(["one_shot"], 8, 65536, 1, 400_000, 2_000_000), inner=_capture_inner([8], 1, 480)),
+            + _capture_decl(["one_shot"], 8, 65536, 1, 400_000, 2_000_000, formats=(_FMT["state_timed"],))
+            # the sampler's window on an external clock (rising, falling or both, a qualifier), format 3 in CPU cycles
+            + (catalog.tlv(_CAPD["external_clock"], struct.pack("<IBB", 1_000_000, 0b111, 1)),),
+            inner=_capture_inner([8], 1, 480)),
         _i2c_target(7, wired, max_length=16, max_hz=100_000, features=0, queue_depth=4),       # no stretch
         # Two fixed pin sets (an example of channel_group; GPIO23 is the DUT's NRST on this jig); MSB first only.
         Offered(8, 0, "oep.fixture.spi-target", (

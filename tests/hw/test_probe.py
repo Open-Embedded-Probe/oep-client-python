@@ -18,6 +18,10 @@
                pulled up then down through fixture gpio on the same pins -> all ones, then all zeros
   capture_analog  fixture analog (when listed): a one-shot on a free ADC channel at the lowest rate, the widest frontend
   capture_group   fixture capture-group (when listed): logic + analog bound and started together, both read back
+  capture_external_clock  logic on an external clock (when declared): a PWM on a free channel the clock, the other one
+               driven high / low the data; a qualifier; format 3's deltas when declared
+  capture_glitch_filter   logic's glitch filter (when declared): short PWM pulses seen without it, none through it
+  capture_analog_format_2 analog format 2 (when declared): minmax and sum over D 16 consistent
   i2c_target   fixture i2c-target (when listed): configure 0x42 / status / preload a queue / configure again / release
   spi_target   fixture spi-target (when listed): configure / status / arm one transaction / configure again / release
   console      target console on the wire connection, mechanism dmseq: open, read for 1 s, close   (only with OEP_HW_TARGET)
@@ -40,7 +44,7 @@ import pytest
 
 import json
 
-from oep_client import (capture, catalog, stimulus, console as console_mod, core, dump, fixture, host as h, link, linktest,
+from oep_client import (capture, capture_blocks, catalog, stimulus, console as console_mod, core, dump, fixture, host as h, link, linktest,
                         message as m, registry as reg, riscv, settings)
 
 from . import firmware as fwmod, flash, record
@@ -537,8 +541,11 @@ def _capture_declared(decl: dict) -> dict:
     if ch:
         out["channels"] = {"max": ch[0][0]}
     for v in decl["own"].get(_ANALOG_D["frontend"], ()):
-        fe, lo, hi, att = struct.unpack_from("<BiiI", v)
-        out.setdefault("frontends", {})[fe] = {"min_mv": lo, "max_mv": hi, "attenuation_mdb": att}
+        fe, lo, hi = struct.unpack_from("<Bii", v)                    # frontend min_mv max_mv (capture §3.5)
+        out.setdefault("frontends", {})[fe] = {"min_mv": lo, "max_mv": hi}
+    for tag in (_LOGIC_D["formats"], _LOGIC_D["external_clock"], _LOGIC_D["glitch_filter"], _ANALOG_D["carriage"]):
+        if decl["own"].get(tag):
+            out.setdefault("optional", {})[tag] = decl["own"][tag][0].hex()
     return out
 
 
@@ -858,6 +865,162 @@ def test_pwm_counter(run: record.Run):
         rec["runs"] = runs
     finally:
         core.plan_release(hst, [pwm.fn, cnt.fn])
+
+
+CLOCK_HZ = 10_000             # the external clock the clock tests make (a PWM on a free channel): every probe's ceiling
+
+
+def test_capture_external_clock(run: record.Run):
+    """oep-if-capture §3.8 with nothing wired: a PWM on a free channel is the clock (the logic only listens to it), the
+    second free channel driven high then low by fixture gpio is the data - a one-shot of N samples is all ones, then all
+    zeros, done after N clock periods, actual_rate 0 / 1, the clock's role no channel of the layout. With a qualifier on
+    the data channel at level 1, driven low no sample comes (stop: nothing kept), driven high they do. Format 3 when the
+    probe declares it: every delta but the first one clock period in the timebase."""
+    hst = run.take()
+    if not (_listed(hst, capture.LogicCapture.NAME) and _listed(hst, fixture.Pwm.NAME)):
+        pytest.skip("the probe does not list oep.fixture.logic and oep.fixture.pwm")
+    lc = capture.LogicCapture(hst)
+    decl = record.declared(hst, lc.fn)
+    clock_decl = decl["own"].get(_LOGIC_D["external_clock"])
+    if not clock_decl:
+        pytest.skip("the logic capture declares no external_clock")
+    max_hz, edges, qualifier = struct.unpack_from("<IBB", clock_decl[0])
+    clk, data = run.board.gpio
+    if not (clk and data):
+        pytest.skip("no two free channels in the board table")
+    pwm, gpio = fixture.Pwm(hst), fixture.Gpio(hst)
+    formats = set(decl["own"].get(_LOGIC_D["formats"], [b""])[0])
+    samples = 200
+    rec = run.record("capture_external_clock", channels={"clock": clk, "data": data}, clock_hz=CLOCK_HZ,
+                     declared={"max_hz": max_hz, "edges": edges, "qualifier": qualifier, "formats": sorted(formats)})
+    core.plan_apply(hst, [(lc.fn, 0, clk), (lc.fn, 1, data)] + pwm.assignments(clk) + [(gpio.fn, GPIO_ROLE_LINE, data)])
+    runs = []
+    try:
+        made = pwm.start(0, CLOCK_HZ, 32768)
+        for level, mode in ((1, gpio.OUTPUT_HIGH), (0, gpio.OUTPUT_LOW)):
+            gpio.set([(data, mode)])
+            cfg = lc.configure(rate=CLOCK_HZ, samples=samples, options={"clock": (0, 0, None, 0)})
+            assert cfg.external_clock and cfg.positions == [0], f"actual_rate {cfg.rate}, layout {cfg.positions}"
+            t0 = time.monotonic()
+            lc.start()
+            (seg,) = lc.wait(timeout=5.0)
+            done_s = time.monotonic() - t0
+            bits = lc.channel(lc.read_segment(seg), 0, seg.samples)
+            runs.append({"level": level, "samples": seg.samples, "ones": sum(bits), "done_s": round(done_s, 4),
+                         "start_uncertainty_ns": seg.start_uncertainty_ns})
+            assert seg.samples == samples and bits == [level] * samples, f"{runs[-1]}"
+            assert done_s >= samples / made.hz * 0.9, f"done after {done_s:.4f} s: {samples} edges of {made.hz:.0f} Hz"
+        if qualifier:
+            gpio.set([(data, gpio.OUTPUT_LOW)])
+            lc.configure(rate=CLOCK_HZ, samples=samples, options={"clock": (0, 0, 1, 1)})
+            lc.start()
+            time.sleep(samples / made.hz * 3)
+            st = lc.status()
+            runs.append({"qualifier": "low", "state": st.state, "write_pos": st.write_pos})
+            assert st.state == capture.STATE["capturing"] and st.write_pos == 0, f"{runs[-1]}"
+            lc.stop()
+            gpio.set([(data, gpio.OUTPUT_HIGH)])
+            lc.start()
+            (seg,) = lc.wait(timeout=5.0)
+            runs.append({"qualifier": "high", "samples": seg.samples})
+            assert seg.samples == samples, f"{runs[-1]}"
+        if capture.DATA_FORMAT["state_timed"] in formats:
+            cfg = lc.configure(rate=CLOCK_HZ, samples=samples, data_format=capture.DATA_FORMAT["state_timed"],
+                               options={"clock": (0, 0, None, 0)})
+            lc.start()
+            (seg,) = lc.wait(timeout=5.0)
+            rows = lc.state_timed(lc.read_segment(seg), seg.samples)
+            deltas = [b[0] - a[0] for a, b in zip(rows, rows[1:])]
+            period = float(cfg.timebase) / made.hz
+            runs.append({"format": 3, "timebase": float(cfg.timebase), "period_ticks": round(period, 1),
+                         "delta_min": min(deltas), "delta_max": max(deltas)})
+            assert all(abs(d - period) <= period * 0.02 + 64 for d in deltas), f"{runs[-1]}"
+    finally:
+        try:
+            pwm.stop(0)
+        finally:
+            core.plan_release(hst, [lc.fn, pwm.fn, gpio.fn])
+            rec["runs"] = runs
+
+
+def test_capture_glitch_filter(run: record.Run):
+    """oep-if-capture §3.8's glitch filter with nothing wired: a PWM of short high pulses on a free channel, captured on
+    it (the logic only listens) - seen without the filter, not one sample high with a filter longer than the pulse."""
+    hst = run.take()
+    if not (_listed(hst, capture.LogicCapture.NAME) and _listed(hst, fixture.Pwm.NAME)):
+        pytest.skip("the probe does not list oep.fixture.logic and oep.fixture.pwm")
+    lc = capture.LogicCapture(hst)
+    decl = record.declared(hst, lc.fn)
+    glitch_decl = decl["own"].get(_LOGIC_D["glitch_filter"])
+    if not glitch_decl:
+        pytest.skip("the logic capture declares no glitch_filter")
+    group, lo, hi, step = struct.unpack_from("<BIII", glitch_decl[0])
+    ch = run.board.gpio[0]
+    if not ch:
+        pytest.skip("no free channel in the board table")
+    pwm = fixture.Pwm(hst)
+    hz, duty = 100_000, 1311                                       # 2 % of 10 us: 200 ns pulses
+    rate = 20_000_000
+    rec = run.record("capture_glitch_filter", channel=ch, declared={"group": group, "min_ns": lo, "max_ns": hi, "step_ns": step})
+    core.plan_apply(hst, [(lc.fn, 0, ch)] + pwm.assignments(ch))
+    runs = []
+    try:
+        made = pwm.start(0, hz, duty)
+        pulse_ns = made.duty / 65536 * 1e9 / made.hz                # the high pulse as made
+        for ns in (0, max(lo, int(pulse_ns * 2) // step * step)):
+            cfg = lc.configure(rate=rate, samples=8192, options={"glitch_filter": {group: ns}})
+            lc.start()
+            (seg,) = lc.wait(timeout=5.0)
+            bits = lc.channel(lc.read_segment(seg), 0, seg.samples)
+            runs.append({"filter_ns": cfg.used.get("glitch_used", {}).get(group), "pulse_ns": round(pulse_ns),
+                         "rate": float(cfg.rate), "ones": sum(bits), "samples": seg.samples})
+        assert runs[0]["ones"] > 0, f"no pulse seen without the filter: {runs}"
+        assert runs[1]["ones"] == 0, f"pulses seen through a {runs[1]['filter_ns']} ns filter: {runs}"
+    finally:
+        try:
+            pwm.stop(0)
+        finally:
+            core.plan_release(hst, [lc.fn, pwm.fn])
+            rec["runs"] = runs
+
+
+def test_capture_analog_format_2(run: record.Run):
+    """oep-if-capture §1.4 on the probe: a one-shot in format 2 on a free ADC channel, minmax and sum over D 16 - the
+    segment's length the blocks' fixed size, every interval min <= max, its sum between points x min and points x max,
+    the values within b bits."""
+    hst = run.take()
+    if not _listed(hst, capture.AnalogCapture.NAME):
+        pytest.skip("the probe does not list oep.fixture.analog")
+    ana = capture.AnalogCapture(hst)
+    decl = record.declared(hst, ana.fn)
+    if capture.DATA_FORMAT["analog_blocks"] not in set(decl["own"].get(_ANALOG_D["formats"], [b""])[0]):
+        pytest.skip("the analog capture declares no format 2")
+    declared = _capture_declared(decl)
+    ch = _analog_channel(hst, run.board, decl)
+    rate, samples = _capture_rate_samples(declared)
+    samples = max(samples, 256)
+    rec = run.record("capture_analog_format_2", channel=ch, rate=rate)
+    core.plan_apply(hst, [(ana.fn, 0, ch)])
+    try:
+        both = capture_blocks.MINMAX | capture_blocks.SUM
+        cfg = ana.configure(rate=rate, samples=samples, data_format=capture.DATA_FORMAT["analog_blocks"],
+                            carriage={0: (both, 16)}, block_max=64)
+        ana.start()
+        (seg,) = ana.wait(timeout=10.0)
+        data = ana.read_segment(seg)
+        blocks = ana.analog_blocks(data, seg.samples)
+        full = (1 << cfg.bits) - 1
+        bad = []
+        for b in blocks:
+            part = b.channels[0]
+            for mn, mx, total, n in zip(part.mins, part.maxs, part.sums, part.points(b.samples)):
+                if not (0 <= mn <= mx <= full and n * mn <= total <= n * mx):
+                    bad.append((b.first, mn, mx, total, n))
+        rec.update(block=cfg.block, bytes=len(data), samples=seg.samples, intervals=sum(len(b.channels[0].mins) for b in blocks),
+                   bad=bad[:8])
+        assert cfg.format == capture.DATA_FORMAT["analog_blocks"] and cfg.block and not bad, f"{rec}"
+    finally:
+        core.plan_release(hst, [ana.fn])
 
 
 def _widest_frontend(declared: dict) -> int | None:
