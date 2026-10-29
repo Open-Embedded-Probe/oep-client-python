@@ -1,6 +1,15 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) `probe_log`: a probe's own log (oep-probe-arduino's OepProbeLog.h) read as lines - each line's text cut at its
+  mark, with the probe's clock -, `sample_of` placing a line in a capture segment (the same clock as its start_ns),
+  `rows` giving the lines as a recorder's log rows (WireSkein's run.json: the host's time.monotonic() from Host.clock
+  readings, probe_ns, boot_id, the probe's name; `#` lines as markers). Missing lines show: a lost mark, a jump in the
+  marks' serials, a read past what is kept.
+- (JA) `probe_log`: プローブ上のコードのログ（oep-probe-arduino の OepProbeLog.h）を行として読む - 各行の本文をそのマークで切り、プローブの
+  時計を付ける。`sample_of` は行をキャプチャの区画に置く（start_ns と同じ時計）。`rows` は行を記録器のログの行にする（WireSkein の
+  run.json: Host.clock の読みから求めたホストの time.monotonic()、probe_ns、boot_id、プローブの名前。`#` の行はマーカー）。欠けた行は
+  分かる: lost のマーク、マークの通し番号の飛び、残っていない所からの読み。
 - (EN) Capture data format 2, the analog blocks (oep-if-capture §1.4): `AnalogCapture.configure(carriage={role: (kind,
   D)})` (kind a bit set of `capture_blocks.PACKED` / `MINMAX` / `SUM`), `analog_blocks()` reading a segment into its
   blocks (`capture_blocks.read_analog_blocks`, checked against oep-spec's shared vectors), `Config.segment_bytes` of the
