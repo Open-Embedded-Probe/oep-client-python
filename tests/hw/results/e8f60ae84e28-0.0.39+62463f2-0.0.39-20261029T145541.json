@@ -1,0 +1,575 @@
+{
+  "schema": 1,
+  "board": {
+    "id": "e8f60ae84e28",
+    "kind": "esp32p4",
+    "profile": "esp32p4x",
+    "model": "esp32p4x",
+    "port": "usb:e8f60ae84e28",
+    "unit_id": "e8f60ae84e28",
+    "gpio": [
+      32,
+      33
+    ],
+    "disable": 34,
+    "uart": [
+      36,
+      37
+    ],
+    "analog": 17,
+    "notes": "P4X (ESP32-P4 silicon v3, HS USB), ours: an M030 (ArduinoCore-CH32RV's bench) on GPIO30 (its rx, label m030.rx) and GPIO31 (its swio, m030.swio); keyed by unit id"
+  },
+  "client": {
+    "version": "0.0.39",
+    "python": "3.13.16",
+    "commit": "41e52ad",
+    "dirty": false
+  },
+  "firmware": {
+    "before": {
+      "boot_id": 2969364128,
+      "revision": 1,
+      "max_frame": 27136,
+      "max_inflight": 8,
+      "window": 108544,
+      "firmware": "0.0.39+62463f2",
+      "model": "esp32p4x",
+      "unit_id": "e8f60ae84e28",
+      "chip": "esp32p4 v3.2",
+      "transports": [
+        {
+          "index": 0,
+          "kind": 4
+        },
+        {
+          "index": 1,
+          "kind": 3
+        },
+        {
+          "index": 2,
+          "kind": 5
+        },
+        {
+          "index": 3,
+          "kind": 2
+        }
+      ],
+      "max_op_ms": 10000,
+      "link_fn": 13,
+      "plan_fn": 20,
+      "restart_fn": 21,
+      "restart_max_ms": 3000
+    },
+    "source": {
+      "kind": "on-board",
+      "why": "OEP_HW_NOFLASH"
+    },
+    "expected": null,
+    "flashed": false,
+    "after": {
+      "boot_id": 2969364128,
+      "revision": 1,
+      "max_frame": 27136,
+      "max_inflight": 8,
+      "window": 108544,
+      "firmware": "0.0.39+62463f2",
+      "model": "esp32p4x",
+      "unit_id": "e8f60ae84e28",
+      "chip": "esp32p4 v3.2",
+      "transports": [
+        {
+          "index": 0,
+          "kind": 4
+        },
+        {
+          "index": 1,
+          "kind": 3
+        },
+        {
+          "index": 2,
+          "kind": 5
+        },
+        {
+          "index": 3,
+          "kind": 2
+        }
+      ],
+      "max_op_ms": 10000,
+      "link_fn": 13,
+      "plan_fn": 20,
+      "restart_fn": 21,
+      "restart_max_ms": 3000
+    }
+  },
+  "started": "2026-10-29T14:55:41+09:00",
+  "seconds": 4.1,
+  "host": {
+    "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+    "python": "3.13.16"
+  },
+  "environment": {
+    "OEP_HW_BOARDS": "e8f60ae84e28",
+    "OEP_HW_NOFLASH": "1"
+  },
+  "tests": {
+    "flash": {
+      "port": "usb:e8f60ae84e28",
+      "skipped": "nothing flashed: OEP_HW_NOFLASH",
+      "boot_seconds": 1.2,
+      "firmware_after": "0.0.39+62463f2",
+      "verdict": "passed"
+    },
+    "identity": {
+      "boot_id": 2969364128,
+      "firmware": "0.0.39+62463f2",
+      "model": "esp32p4x",
+      "unit_id": "e8f60ae84e28",
+      "chip": "esp32p4 v3.2",
+      "revision": 1,
+      "max_frame": 27136,
+      "max_inflight": 8,
+      "interfaces": [
+        "1:oep.wire.rvswd@1",
+        "2:oep.target.riscv-dm@1",
+        "3:oep.target.console@1",
+        "4:oep.fixture.gpio@1",
+        "5:oep.fixture.uart@1",
+        "6:oep.fixture.uart@1",
+        "7:oep.fixture.logic@1",
+        "8:oep.fixture.i2c-target@1",
+        "9:oep.fixture.spi-target@1",
+        "10:oep.fixture.analog@1",
+        "11:oep.fixture.capture-group@1",
+        "12:oep.wire.swio@1",
+        "13:oep.probe.link@1",
+        "14:oep.wire.swd@1",
+        "15:oep.target.arm-adi@1",
+        "16:oep.fixture.i2c-controller@1",
+        "17:oep.fixture.spi-controller@1",
+        "18:oep.fixture.pwm@1",
+        "19:oep.fixture.counter@1",
+        "20:oep.probe.plan@1",
+        "21:oep.probe.restart@1"
+      ],
+      "clock_uptime_ns": 59896517000,
+      "clock_round_trip_us": 551.5,
+      "firmware_expected": null,
+      "verdict": "passed"
+    },
+    "capture": {
+      "channels": [
+        32,
+        33
+      ],
+      "rate": 627451,
+      "samples_asked": 6275,
+      "declared": {
+        "features": null,
+        "modes": {
+          "1": {
+            "max_samples": 134217728,
+            "max_segments": 1
+          },
+          "2": {
+            "max_samples": 8388608,
+            "max_segments": 7936
+          },
+          "3": {
+            "max_samples": 523264,
+            "max_segments": 256
+          }
+        },
+        "rate_range": {
+          "min_hz": 627451,
+          "max_hz": 160000000,
+          "exact": false
+        },
+        "channels": {
+          "max": 16
+        },
+        "optional": {
+          "69": "0104",
+          "76": "005a62020301",
+          "77": "00190000004006000019000000",
+          "70": "030100000000100000"
+        }
+      },
+      "pull": "gpio on the same channel",
+      "configured": {
+        "actual_rate": 627450.9803921569,
+        "samples": 6275,
+        "segments": 1,
+        "bytes": 1569,
+        "layout": {
+          "w": 2,
+          "pos": [
+            0,
+            1
+          ]
+        }
+      },
+      "levels": {
+        "32:pull-up": {
+          "ones": 6275,
+          "samples": 6275
+        },
+        "33:pull-up": {
+          "ones": 6275,
+          "samples": 6275
+        },
+        "32:pull-down": {
+          "ones": 0,
+          "samples": 6275
+        },
+        "33:pull-down": {
+          "ones": 0,
+          "samples": 6275
+        }
+      },
+      "captures": [
+        {
+          "done_s": 0.0122,
+          "read_s": 0.001,
+          "window_s": 0.01,
+          "start_ns": 59922747000,
+          "start_uncertainty_ns": 5000,
+          "flags": 0,
+          "generation": 1
+        },
+        {
+          "done_s": 0.0138,
+          "read_s": 0.002,
+          "window_s": 0.01,
+          "start_ns": 59953311000,
+          "start_uncertainty_ns": 5000,
+          "flags": 0,
+          "generation": 2
+        }
+      ],
+      "generations": [
+        1,
+        2
+      ],
+      "actual_rate": 627450.9803921569,
+      "layout": {
+        "w": 2,
+        "pos": [
+          0,
+          1
+        ]
+      },
+      "samples": 6275,
+      "seconds": 0.01,
+      "verdict": "passed"
+    },
+    "capture_analog_trigger": {
+      "stimulus": null,
+      "forced": {
+        "channel": 17,
+        "trigger_index": 100,
+        "samples": 400
+      },
+      "verdict": "passed"
+    },
+    "capture_repeat_rearm": {
+      "channel": 32,
+      "verdict": "skipped",
+      "why": "Skipped: the probe does not take repeat with rearm 1: rejected: unsupported"
+    },
+    "capture_external_clock": {
+      "channels": {
+        "clock": 32,
+        "data": 33
+      },
+      "clock_hz": 10000,
+      "declared": {
+        "max_hz": 40000000,
+        "edges": 3,
+        "qualifier": 1,
+        "formats": [
+          1,
+          4
+        ]
+      },
+      "runs": [
+        {
+          "level": 1,
+          "samples": 200,
+          "ones": 200,
+          "done_s": 0.1099,
+          "start_uncertainty_ns": 104939000
+        },
+        {
+          "level": 0,
+          "samples": 200,
+          "ones": 0,
+          "done_s": 0.1066,
+          "start_uncertainty_ns": 102475000
+        },
+        {
+          "qualifier": "low",
+          "state": 3,
+          "write_pos": 0
+        },
+        {
+          "qualifier": "high",
+          "samples": 200
+        }
+      ],
+      "verdict": "passed"
+    },
+    "capture_glitch_filter": {
+      "channel": 32,
+      "declared": {
+        "group": 0,
+        "min_ns": 25,
+        "max_ns": 1600,
+        "step_ns": 25
+      },
+      "runs": [
+        {
+          "filter_ns": 0,
+          "pulse_ns": 195,
+          "rate": 20000000.0,
+          "ones": 123,
+          "samples": 8192
+        },
+        {
+          "filter_ns": 375,
+          "pulse_ns": 195,
+          "rate": 20000000.0,
+          "ones": 0,
+          "samples": 8192
+        }
+      ],
+      "verdict": "passed"
+    },
+    "capture_analog_format_2": {
+      "channel": 17,
+      "rate": 1000,
+      "block": 64,
+      "bytes": 80,
+      "samples": 256,
+      "intervals": 16,
+      "bad": [],
+      "verdict": "passed"
+    },
+    "capture_analog": {
+      "channel": 17,
+      "rate": 1000,
+      "samples_asked": 16,
+      "frontend": 3,
+      "declared": {
+        "features": null,
+        "modes": {
+          "1": {
+            "max_samples": 16384,
+            "max_segments": 1
+          },
+          "3": {
+            "max_samples": 4096,
+            "max_segments": 8
+          }
+        },
+        "rate_range": {
+          "min_hz": 611,
+          "max_hz": 46000,
+          "exact": false
+        },
+        "channels": {
+          "max": 4
+        },
+        "frontends": {
+          "0": {
+            "min_mv": 0,
+            "max_mv": 950
+          },
+          "1": {
+            "min_mv": 0,
+            "max_mv": 1250
+          },
+          "2": {
+            "min_mv": 0,
+            "max_mv": 1750
+          },
+          "3": {
+            "min_mv": 0,
+            "max_mv": 3100
+          }
+        },
+        "optional": {
+          "69": "02",
+          "70": "070200000000010000"
+        }
+      },
+      "shared_with_gpio": "refused: Unavailable: rejected: unavailable",
+      "pull": null,
+      "configured": {
+        "actual_rate": 1000.0,
+        "samples": 16,
+        "segments": 1,
+        "bytes": 32,
+        "layout": {
+          "s": 16,
+          "o": 0,
+          "b": 12,
+          "order": [
+            0
+          ]
+        },
+        "zero": {
+          "0": 0
+        },
+        "scale_nv": {
+          "0": 757021
+        },
+        "frontend_used": {
+          "0": 3
+        },
+        "skew_ns": {
+          "0": 0
+        },
+        "reference": [
+          "internal",
+          1100,
+          false
+        ]
+      },
+      "calibration": {
+        "factory": [
+          [
+            0,
+            "com.espressif.esp32p4.rtc-calib",
+            13
+          ],
+          [
+            1,
+            "com.espressif.esp32p4.rtc-calib",
+            13
+          ],
+          [
+            2,
+            "com.espressif.esp32p4.rtc-calib",
+            13
+          ],
+          [
+            3,
+            "com.espressif.esp32p4.rtc-calib",
+            13
+          ]
+        ],
+        "vrefint": null,
+        "vrefint_nominal_mv": null
+      },
+      "values": {
+        "idle": {
+          "min": 414,
+          "max": 558,
+          "mean": 482.8,
+          "mean_mv": 365.5,
+          "full_scale": 4095,
+          "clipped": [
+            0,
+            0
+          ]
+        }
+      },
+      "captures": [
+        {
+          "done_s": 0.133,
+          "read_s": 0.001,
+          "window_s": 0.016,
+          "start_ns": 60943862000,
+          "start_uncertainty_ns": 200000,
+          "flags": 0,
+          "generation": 3
+        }
+      ],
+      "actual_rate": 1000.0,
+      "layout": {
+        "s": 16,
+        "o": 0,
+        "b": 12,
+        "order": [
+          0
+        ]
+      },
+      "samples": 16,
+      "seconds": 0.016,
+      "bands": "not checked: the probe shares an analog channel with nothing (oep-if-capture \u00a71.2), so no pull reaches it",
+      "verdict": "passed"
+    },
+    "capture_group": {
+      "logic_channels": [
+        32,
+        33
+      ],
+      "analog_channel": 17,
+      "declared": {
+        "tracks": [
+          7,
+          10
+        ],
+        "features": 1
+      },
+      "logic": {
+        "actual_rate": 627450.9803921569,
+        "samples": 6275,
+        "segments": 1,
+        "bytes": 1569,
+        "layout": {
+          "w": 2,
+          "pos": [
+            0,
+            1
+          ]
+        }
+      },
+      "analog": {
+        "actual_rate": 1000.0,
+        "samples": 16,
+        "segments": 1,
+        "bytes": 32,
+        "layout": {
+          "s": 16,
+          "o": 0,
+          "b": 12,
+          "order": [
+            0
+          ]
+        },
+        "zero": {
+          "0": 0
+        },
+        "scale_nv": {
+          "0": 757021
+        },
+        "frontend_used": {
+          "0": 3
+        },
+        "skew_ns": {
+          "0": 0
+        },
+        "reference": [
+          "internal",
+          1100,
+          false
+        ]
+      },
+      "start_ns": 61029570000,
+      "group_generation": 1,
+      "generations": {
+        "7": 9,
+        "10": 4
+      },
+      "done_s": 0.1315,
+      "state": 4,
+      "track_offset_ns": {
+        "oep.fixture.logic": 245000,
+        "oep.fixture.analog": 64399000
+      },
+      "window_s": 0.016,
+      "verdict": "passed"
+    }
+  }
+}
