@@ -179,11 +179,12 @@ A run on hardware: ArduinoCore-CH32's `tests/manual/oep_smoke/` (`oep_smoke.py`,
 
 ## Finding the pins (`oep pins`)
 
-`oep pins <probe> [--power CH] [--exclude CH,...] [--wire swio|rvswd|swd] [--steps ...] [--save] [--json]` finds where a
-target is wired to a probe whose pins the host chooses. Each step says what it did; the whole run stays under a minute and
-every plan is released at the end. The procedure is this client's own (oep-spec's host guide §5.3 says only how a line
+`oep pins <probe> [--power CH] [--exclude CH,...] [--wire swio|rvswd|swd] [--pairs D:C,...] [--all-pairs] [--budget S]
+[--steps ...] [--name PORT] [--save] [--json]` finds where a target is wired to a probe whose pins the host chooses. Each step
+says what it did; the whole run stays within `--budget` (default 55 s) and every plan is released at the end. The procedure is this client's own (oep-spec's host guide §5.3 says only how a line
 is looked up by its label); what each target family needs is in one table, `targets.FAMILIES` (wire, reset vector, the
-option-byte reader for the reset line, max_speed / idle_clock).
+option-byte reader for the reset line, max_speed / idle_clock, the GPIO block and the debug pads the map reads, the pads
+bonded to one lead, whether there is an NRST to look for).
 
 1. **classify**: every channel `oep.fixture.gpio` allows is read 16 times under pull-up, then pull-down: floating (1 under pull-up, 0 under pull-down - a pull weaker than the probe's, such as a reset line's weak
    pull-up, reads so too), driven-high / driven-low (the same level under both pulls: push-pull or a strong pull - an
@@ -191,17 +192,31 @@ option-byte reader for the reset line, max_speed / idle_clock).
    switched off: the channels that read otherwise follow its power. These are candidates only.
 2. **hold**: each floating channel is held low (open drain) while an active channel is watched; a channel that stops it
    is a reset-line candidate.
-3. **scan**: the wire over the floating channels (rvswd / swd: pairs, at most 600) - never over a driven or active
-   channel, the power channel or `--exclude`.
+3. **scan**: the wire over the floating channels (rvswd / swd: pairs, the nearest first - a jig most often puts the two
+   debug lines side by side) until one answers or the budget is spent; `--all-pairs` goes on to the last pair (a
+   second target shows), `--pairs` names the pairs instead. A driven-low channel is tried as SWDIO too, after the
+   floating pairs at the same distance: a target that was talked to may keep its SWDIO low. When nothing answers, the
+   lines are read again and the pairs the new reading allows are scanned. The report says when not every pair was tried
+   (`unique-in-partial`, `not-finished`). Never a driven-high or active channel, the power channel or `--exclude`.
 4. **identify**: attach (halt) on what answered; the target_id names the family; a CH32V00x's option bytes say whether
    NRST exists (read only, never written); then resume.
-5. **reset**: attach under reset through each candidate - the real line stops the hart at the reset vector.
-6. **labels**: the connection profile the host keeps (wire, pins, line settings: the probe keeps no wiring) and the
-   labels `<port>.nrst` / `<port>.power_hi` (the port: `--name`, else the one port the probe's labels name; neither:
+5. **map**: for a family whose GPIO block `targets.FAMILIES` knows, which target pad each channel reaches: the hart
+   halted, every pad but the debug ones a floating input, each channel driven high then low and the target's INDR read
+   (twice). A channel driven at classify is read again first (it may have been the target's output); only channels
+   floating then are driven; never the power channel, a reset candidate or the debug pair. A pad that seems to follow
+   two channels is tried again with the others held low (a line nothing drives keeps what a neighbour's edge coupled
+   into it); pads bonded to one lead in the package come out together (`PC16/PC11`). The target's registers are put
+   back and it runs again.
+6. **reset**: attach under reset through each candidate - the real line stops the hart at the reset vector (skipped for
+   a family with no NRST to look for).
+7. **labels**: the connection profile the host keeps (wire, pins, line settings: the probe keeps no wiring) and the
+   labels `<port>.swdio` / `<port>.swclk` (or `<port>.swio`), `<port>.nrst` / `<port>.power_hi` - with them the target
+   opens as `oep://<unit_id>/<port>` (the port: `--name`, else the one port the probe's labels name; neither:
    a note asks for `--name`), checked with `settings.find_line` against the probe's settings (a note when another channel already carries the name:
    the line would not be found); `--save` writes the labels (set + save). Nothing is written without `--save`.
 
-Safety: a driven or active channel is never driven, scanned or held; the power channel is touched only with `--power`;
+Safety: a driven-high or active channel is never driven, scanned or held (a driven-low one only as SWDIO in a scan);
+the map drives a channel only while the target's pads are floating inputs; the power channel is touched only with `--power`;
 holding low is open drain only. A new gpio plan lets every pin of the old one go first - the power channel too - so with
 `--power` each new plan is followed by a clean power cycle (`power_cycles` in the report).
 

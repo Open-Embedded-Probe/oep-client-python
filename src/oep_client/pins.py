@@ -14,16 +14,27 @@ Steps, each optional and each saying what it did:
    power (an unpowered target sinks the probe's pull-up). Only candidates: idle-high UART lines follow too.
 3. reset line, by activity: hold each floating channel low (open drain only) and see whether the active channels
    stop. Only candidates - the attach under reset (5) decides.
-4. scan the wire over the floating channels (swio: each; rvswd / swd: pairs, bounded) - never over a
-   driven or active channel (a scan drives the line: contention with a push-pull output), the power channel or
-   --exclude. Then attach (halt) to what answered: its target_id names the family (targets.FAMILIES); for a family
-   whose option bytes say whether the reset line exists (CH32V00x), read them (read-only), then resume.
+4. scan the wire over the floating channels (swio: each; rvswd / swd: pairs, the nearest first, until one answers
+   or the time is up - --all-pairs goes on to the last; the report says when not every pair was tried) - never over a
+   driven-high or active channel (a scan drives the line: contention with a push-pull output), the power channel or
+   --exclude; a driven-low channel only as SWDIO (rvswd / swd), after the floating pairs at the same distance - a
+   target that was talked to may keep its SWDIO low, the probe then drives against it for a scan's bits. When
+   nothing answers, read the lines again and scan the pairs the new reading allows: a scan clocks a
+   target's SWCLK with the wrong partner, and the target may then hold its SWDIO for a while - driven at the first
+   reading, floating at the second (CH32X035, 2026-10-30). --pairs names the pairs to try instead (the host's word:
+   no reading decides). Then attach (halt) to what answered: its target_id names the family (targets.FAMILIES); for
+   a family whose option bytes say whether the reset line exists (CH32V00x), read them (read-only), then resume.
 5. reset line, confirmed: attach under reset through each channel that stopped the activity (or, with nothing
    active, through each candidate) - the real line stops the hart at the reset vector.
-6. print the connection profile the host keeps (wire, pins, line settings: host guide §5.3 - the probe keeps no
-   wiring) and the labels that name the lines found: `<port>.nrst` on the reset line (5) and `<port>.power_hi` on
-   --power, the port being --name or the one port the probe's labels name; --save writes the labels
-   (settings set + save). Nothing is written otherwise.
+6. map (run before 5, so that the reset search's time does not crowd it out): for a family whose GPIO block targets.FAMILIES knows, which target pad each channel reaches - the hart
+   halted, every pad but the debug ones a floating input, each channel driven high then low in turn and the target's
+   INDR read (twice). Only channels that are floating with the target's pads floating are driven (a channel driven
+   at classify is read again first: it may have been the target's output); never the power channel, the reset line
+   or the debug pair. The target's registers are put back and it runs again.
+7. print the connection profile the host keeps (wire, pins, line settings: host guide §5.3 - the probe keeps no
+   wiring) and the labels that name the lines found: `<port>.swdio` / `<port>.swclk` (or `<port>.swio`) on the debug
+   pins, `<port>.nrst` on the reset line (5) and `<port>.power_hi` on --power, the port being --name or the one port
+   the probe's labels name; --save writes the labels (settings set + save). Nothing is written otherwise.
 
 Everything is bounded in time (the whole run under a minute) and every plan is released at the end. A plan_apply
 replaces the gpio's whole plan, and the probe lets every pin of the old plan go first (oep-core §8) - the power
@@ -43,11 +54,14 @@ from .fixture import Gpio
 
 FLOATING, DRIVEN_HIGH, DRIVEN_LOW, ACTIVE = "floating", "driven-high", "driven-low", "active"
 KINDS = (FLOATING, DRIVEN_HIGH, DRIVEN_LOW, ACTIVE)
-SAFE = (FLOATING,)                    # the only kind a scan, a hold or an attach may move
+SAFE = (FLOATING,)                    # the only kind a scan, a hold or an attach may move (and, last, a driven-low
+                                      # channel as SWDIO: a target holding its debug line, see scan)
 GPIO_MODES_TAG = reg.FIXTURE_GPIO.tlv["describe"]["modes"]
 ROLE_LINE, ROLE_SWDIO, ROLE_SWCLK, ROLE_RESET = 1, 1, 2, 3
-MAX_PAIRS = 600                       # rvswd / swd: the most pairs one run scans
-STEPS = ("classify", "hold", "scan", "identify", "reset", "labels")
+SCAN_CHUNK = 100                      # rvswd / swd: pairs a scan request batch holds (the time is checked between)
+SCAN_RESERVE_S = 10.0                 # the time a scan leaves for identify, map and labels
+STEPS = ("classify", "hold", "scan", "identify", "map", "reset", "labels")
+MAP_SETTLE_S = 0.002                  # map: a line driven, then the target's INDR read
 
 
 @dataclass
@@ -81,6 +95,7 @@ class Report:
     reset_dpc: int | None = None
     reset_how: str = ""
     profile: str = ""                 # the connection profile the host keeps (wire, pins, line settings)
+    wiring: dict = field(default_factory=dict)   # map: target pad ("PB6") -> the channels that reach it
     saved: bool = False
     power_cycles: int = 0
     notes: list[str] = field(default_factory=list)
@@ -141,12 +156,17 @@ class PinFinder:
 
     def __init__(self, hst: h.Host, wire: str = "swio", power: int | None = None, exclude=(),
                  say: Callable[[str], None] = print, budget_s: float = 55.0, sleep=time.sleep, clock=time.monotonic,
-                 probe: str = "<probe>", save: bool = False, name: str | None = None):
+                 probe: str = "<probe>", save: bool = False, name: str | None = None,
+                 pairs: list[tuple[int, int]] | None = None, all_pairs: bool = False):
         self.hst, self.say, self.sleep, self.clock = hst, say, sleep, clock
         self.power, self.exclude = power, sorted(set(exclude))
         self.started = clock()
         self.deadline = self.started + budget_s
         self.probe, self.save, self.name = probe, save, name
+        self.explicit = list(pairs) if pairs else None
+        self.partial = False           # scan: stopped before every pair was tried (found one, or the time ran out)
+        self.stopped_by = ""           # scan: "answer" / "time" when it stopped early
+        self.all_pairs = all_pairs     # scan: go on after an answer, to the last pair (ambiguity shows)
         self.report = Report(wire=wire, power=power, excluded=self.exclude)
         self.gpio = Gpio(hst)
         modes = catalog.first_fixed(core.describe(hst, self.gpio.fn), GPIO_MODES_TAG, 4)   # first copy, u32 (core §2.3)
@@ -377,12 +397,9 @@ class PinFinder:
         return stopped
 
     # ---- 4: scan, identify ----
-    def scan(self) -> list[riscv.Found]:
-        self.pins = None
-        self.report.found = []
-        self.report.scanned = []
-        cands = self.candidates()
-        self._plan([])                                     # nothing of the gpio's on the pins scanned (power stays)
+    def _pairs(self, cands: list[int]) -> list[tuple[int, int]]:
+        """The pairs (swio: (channel, 0xFFFF)) a scan over `cands` tries, the nearest first: a jig most often puts the
+        two debug lines side by side, so the pairs go by how far apart their channels are."""
         name = self.report.wire
         # the declared pairs (debug §1, core §7.4): with channel_groups, a pair matches one of them (and role_channels'
         # candidates for the roles it lists too) - never role_channels alone
@@ -390,51 +407,151 @@ class PinFinder:
         if name == "swio":
             allowed = ({d for d, _ in declared} if declared is not None
                        else set(role_channels(self.hst, self.wire.fn, ROLE_SWDIO)))
-            chans = sorted(c for c in cands if c in allowed)
-            pairs = [(c, 0xFFFF) for c in chans]
-            self.report.scanned = chans
-        else:
-            dio = set(role_channels(self.hst, self.wire.fn, ROLE_SWDIO))
-            clk = set(role_channels(self.hst, self.wire.fn, ROLE_SWCLK))
-            if dio or clk:
-                pool = cands
-                # with channel_groups the declared pairs decide alone: a role a group fixes need not be in
-                # role_channels (core §7.4: "channel_group に無い role は role_channels だけで決まる", and the converse)
-                pairs = [(d, c) for d in pool for c in pool if d != c
-                         and ((d, c) in declared if declared is not None else d in dio and c in clk)]
-                if len(pairs) > MAX_PAIRS:
-                    self.report.resolution = 'limit-exceeded'
-                    self.note(f"{len(pairs)} pairs exceed {MAX_PAIRS}; nothing scanned; narrow with --exclude or "
-                              f"--power")
-                    return []
-            else:                                          # fixed pairs (channel_group): those wholly safe
-                pairs = [pair for pair in self.wire.candidate_pairs()
-                         if all(p in self.kinds and self.kinds[p].kind in SAFE for p in pair if p != 0xFFFF)]
-            self.report.scanned = sorted({p for pr in pairs for p in pr if p != 0xFFFF})
-        unsafe = sorted(c for c, k in self.kinds.items() if k.kind not in SAFE)
+            return [(c, 0xFFFF) for c in sorted(c for c in cands if c in allowed)]
+        dio = set(role_channels(self.hst, self.wire.fn, ROLE_SWDIO))
+        clk = set(role_channels(self.hst, self.wire.fn, ROLE_SWCLK))
+        if dio or clk:
+            # with channel_groups the declared pairs decide alone: a role a group fixes need not be in
+            # role_channels (core §7.4: "channel_group に無い role は role_channels だけで決まる", and the converse)
+            pairs = [(d, c) for d in cands for c in cands if d != c
+                     and ((d, c) in declared if declared is not None else d in dio and c in clk)]
+            return sorted(pairs, key=lambda pr: (abs(pr[0] - pr[1]), pr))
+        return [pair for pair in self.wire.candidate_pairs()                   # fixed pairs (channel_group): those
+                if all(p in self.kinds and self.kinds[p].kind in SAFE for p in pair if p != 0xFFFF)]   # wholly safe
+
+    def _low_pairs(self) -> list[tuple[int, int]]:
+        """rvswd / swd: a driven-low channel as SWDIO with a floating SWCLK. A target that was talked to may keep its
+        SWDIO low after (CH32X035 on 4-2, 2026-10-30: driven low at every reading, yet it answered on that pin); the
+        probe drives SWDIO high against it for a scan's bits only. Never a driven-high or active channel."""
+        if self.report.wire == "swio" or self.wire._description().groups:
+            return []
+        low = [c for c, k in self.kinds.items() if k.kind == DRIVEN_LOW]
+        dio = set(role_channels(self.hst, self.wire.fn, ROLE_SWDIO))
+        clk = set(role_channels(self.hst, self.wire.fn, ROLE_SWCLK))
+        return [(d, c) for d in low if d in dio for c in self.candidates() if c in clk and c != d]
+
+    def _sweep(self, pairs: list[tuple[int, int]]) -> tuple[list[riscv.Found] | None, int]:
+        """Scan `pairs` in batches of SCAN_CHUNK, the time checked between: up to the batch something answered in
+        (all of them with all_pairs), or until SCAN_RESERVE_S is all that is left. -> (found; None: refused, pairs
+        tried)."""
         found: list[riscv.Found] = []
-        t0 = self.clock()
+        tried, per_pair = 0, 0.0
+        for i in range(0, len(pairs), SCAN_CHUNK):
+            batch = pairs[i:i + SCAN_CHUNK]
+            if self.left() < SCAN_RESERVE_S + per_pair * len(batch):   # the next batch would not fit
+                self.stopped_by = "time"
+                break
+            t0 = self.clock()
+            try:
+                found += self.wire.scan(batch)
+            except h.Rejected as e:
+                self.note(f"scan refused: {e}")
+                return None, tried
+            per_pair = max(per_pair, (self.clock() - t0) / len(batch))
+            tried += len(batch)
+            if found and not self.all_pairs:
+                self.stopped_by = "answer"
+                break
+        return found, tried
+
+    def _try(self, pairs: list[tuple[int, int]]) -> list[riscv.Found] | None:
+        """One scan over `pairs` (once more after a pause - or a power cycle - when nothing answered); None: refused."""
+        found: list[riscv.Found] = []
         for attempt in range(2):
             try:
                 found = self.wire.scan(pairs) if pairs else []
             except h.Rejected as e:
                 self.note(f"scan refused: {e}")
-                break
+                return None
             if found or not pairs or self.left() < 10:
                 break
             if self.power is not None:
                 self._power_cycle()                        # once more, from a clean power-on
             else:
                 self.sleep(0.5)
-        what = f"{len(pairs)} {'channels' if name == 'swio' else 'pairs'}"
-        self.say(f"scan {name}: {what} ({ranges(self.report.scanned)}; not {ranges(unsafe)}: driven / active) "
-                 f"in {self.clock() - t0:.2f} s -> "
+        return found
+
+    def scan(self) -> list[riscv.Found]:
+        self.pins = None
+        self.report.found = []
+        self.report.scanned = []
+        name = self.report.wire
+        unit = "channels" if name == "swio" else "pairs"
+        if self.explicit is not None:
+            bad = sorted({p for pr in self.explicit for p in pr if p in self.exclude or p == self.power})
+            if bad:
+                raise SystemExit(f"--pairs: {ranges(bad)} is the power channel or excluded")
+            self._plan([])
+            pairs = list(self.explicit)
+            self.report.scanned = sorted({p for pr in pairs for p in pr if p != 0xFFFF})
+            t0 = self.clock()
+            found = self._try(pairs) or []
+            self.say(f"scan {name}: {len(pairs)} {unit} as --pairs named in {self.clock() - t0:.2f} s -> "
+                     + (", ".join(self._pins_text(f.pins) for f in found) or "nothing answered"))
+            return self._settle(found)
+        self._plan([])                                     # nothing of the gpio's on the pins scanned (power stays)
+        low = self._low_pairs()
+        # the nearest first; at the same distance the floating pairs before those with a driven-low SWDIO
+        pairs = sorted(self._pairs(self.candidates()) + low,
+                       key=lambda pr: (abs(pr[0] - pr[1]) if pr[1] != 0xFFFF else 0, pr in low, pr))
+        unsafe = sorted(c for c, k in self.kinds.items() if k.kind not in SAFE
+                        and not any(c == d for d, _ in low))
+        t0 = self.clock()
+        found, tried = self._sweep(pairs)
+        if found is None:
+            self.report.resolution = 'no-match'
+            return []
+        if not found and tried == len(pairs) and pairs and self.left() > SCAN_RESERVE_S:
+            self.sleep(0.5)                                # once more over all of them, after a pause / power cycle
+            if self.power is not None:
+                self._power_cycle()
+            found, _ = self._sweep(pairs)
+            found = found or []
+        self.partial = tried < len(pairs)
+        self.report.scanned = sorted({p for pr in pairs[:tried] for p in pr if p != 0xFFFF})
+        self.say(f"scan {name}: {tried} of {len(pairs)} {unit}, the nearest first ({ranges(self.report.scanned)}; "
+                 f"not {ranges(unsafe)}: driven / active) in {self.clock() - t0:.2f} s -> "
                  + (", ".join(self._pins_text(f.pins) for f in found) or "nothing answered"))
+        if not found and unsafe and self.left() > SCAN_RESERVE_S:
+            # a scan clocks a target's SWCLK with the wrong partner, and the target may hold its SWDIO for a while
+            # after: driven when classify read it, floating now (CH32X035, 2026-10-30) - read again, scan what is new
+            done = set(pairs[:tried])
+            self.say("scan: nothing answered; the lines read again (a scan may have left the target holding a line)")
+            self.sleep(0.5)
+            self.classify()
+            self._plan([])
+            low2 = self._low_pairs()
+            again = sorted((pr for pr in self._pairs(self.candidates()) + low2 if pr not in done),
+                           key=lambda pr: (abs(pr[0] - pr[1]) if pr[1] != 0xFFFF else 0, pr in low2, pr))
+            if again:
+                t0 = self.clock()
+                found, n = self._sweep(again)
+                found = found or []
+                self.partial = self.partial or n < len(again)
+                self.report.scanned = sorted(set(self.report.scanned)
+                                             | {p for pr in again[:n] for p in pr if p != 0xFFFF})
+                self.say(f"scan {name} again: {n} of {len(again)} new {unit} in {self.clock() - t0:.2f} s -> "
+                         + (", ".join(self._pins_text(f.pins) for f in found) or "nothing answered"))
+            else:
+                self.say("scan: the second reading allows nothing new")
+        return self._settle(found)
+
+    def _settle(self, found: list[riscv.Found]) -> list[riscv.Found]:
         self.report.found = [f.pins for f in found]
-        self.report.resolution = 'no-match'
+        held = [f.pins for f in found if f.pins[0] in self.kinds and self.kinds[f.pins[0]].kind == DRIVEN_LOW]
+        if held:
+            self.note(f"answered on a SWDIO that read driven low ({', '.join(map(self._pins_text, held))}): the "
+                      f"target held its debug line")
+        self.report.resolution = 'not-finished' if self.partial else 'no-match'
+        if self.partial and self.stopped_by == "time":
+            self.note("the time ran out before every pair was tried: pairs further apart were not tried (a longer "
+                      "--budget, --exclude or --pairs)")
         if len(found) == 1:
             self.pins = found[0].pins
-            self.report.resolution = 'unique-candidate'
+            self.report.resolution = 'unique-in-partial' if self.partial else 'unique-candidate'
+            if self.partial and self.stopped_by == "answer":
+                self.note("the scan stopped at the first answer: pairs further apart were not tried (--all-pairs "
+                          "tries every one, and a second target would show)")
         elif found:
             self.report.resolution = 'ambiguous'
             self.note(f"{len(found)} answered; no candidate selected; identify/reset/labels are disabled")
@@ -499,6 +616,9 @@ class PinFinder:
         if self.report.nrst_enabled is False:
             self.say("reset line: none to find (the option bytes turn it off)")
             return None
+        if self.family is not None and not self.family.reset_line:
+            self.say(f"reset line: none to find ({self.family.name} has no NRST in targets.FAMILIES)")
+            return None
         allowed = set(role_channels(self.hst, self.wire.fn, ROLE_RESET))
         if not allowed:
             self.say(f"reset line: {self.wire.name} offers no reset channel (no attach under reset to confirm with)")
@@ -548,7 +668,137 @@ class PinFinder:
             self.say(f"  attach under reset through {c}: dpc {text} (not the vector {vector:#x})")
         return False
 
-    # ---- 6: the connection profile and the labels ----
+    # ---- 6: which target pad each channel reaches ----
+    def map_pads(self) -> dict[str, list[int]]:
+        r, fam = self.report, self.family
+        if self.pins is None or not self.riscv:
+            return {}
+        if fam is None or not fam.gpio_ports:
+            self.say("map: the family's GPIO block is not in targets.FAMILIES (nothing mapped)")
+            return {}
+        debug = set(self.pins) - {0xFFFF}
+        never = debug | {self.power, r.reset_channel} | set(self.exclude) | set(r.stopped)   # nor a reset candidate
+        self._plan([])
+        try:
+            halt = self.wire.attach_halt_offered()
+            conn, _ = self.wire.attach(halt=halt, pins=self.pins)
+        except h.OepError as e:
+            self.note(f"map: attach on {self._pins_text(self.pins)} did not get through: {e}")
+            return {}
+        self.mine.append(conn)
+        dm = riscv.RiscvDm(self.hst, conn)
+        saved: dict[tuple[str, int], int] = {}
+        clocks = None
+        words = (fam.gpio_pads + 7) // 8
+        wiring: dict[str, list[int]] = {}
+        t0 = self.clock()
+        try:
+            if not halt:
+                dm.halt()
+            clocks = dm.read32(targets.RCC_APB2PCENR)
+            dm.write32(targets.RCC_APB2PCENR, clocks | sum(targets.gpio_clock_bit(p) for p in fam.gpio_ports))
+            for port in fam.gpio_ports:
+                base = targets.gpio_base(port)
+                for w, off in enumerate(targets.GPIO_CFG[:words]):
+                    saved[(port, off)] = old = dm.read32(base + off)
+                    word = 0
+                    for k in range(8):
+                        keep = f"P{port}{w * 8 + k}" in fam.debug_pads
+                        word |= ((old >> (4 * k)) & 0xF if keep else targets.GPIO_FLOATING) << (4 * k)
+                    dm.write32(base + off, word)
+            # a channel classify found driven may have been the target's output: read it again, the pads floating
+            g = self.gpio
+            chans = [c for c, k in self.kinds.items() if c not in never and k.kind in SAFE]
+            again = [c for c, k in self.kinds.items() if c not in never and k.kind not in SAFE]
+            if again:
+                self._plan(again, cycle=False)
+                pu, pd = self._series(again, g.INPUT_PULLUP), self._series(again, g.INPUT_PULLDOWN)
+                g.set([(c, g.INPUT) for c in again])
+                freed = [c for c in again if classify(pu[c], pd[c])[0] == FLOATING]   # the whole series, as classify
+                if freed:
+                    self.say(f"map: {ranges(freed)} float with the target's pads floating (its outputs at classify)")
+                chans = sorted(chans + freed)
+
+            def levels() -> dict[str, int]:
+                return {p: dm.read32(targets.gpio_base(p) + targets.GPIO_INDR) for p in fam.gpio_ports}
+
+            for c in chans:
+                if self.left() < 2:
+                    self.note("time is up: the map stopped early")
+                    break
+                self._plan([c], cycle=False)
+                hits = None
+                for _ in range(2):
+                    g.set([(c, g.OUTPUT_HIGH)])
+                    self.sleep(MAP_SETTLE_S)
+                    hi = levels()
+                    g.set([(c, g.OUTPUT_LOW)])
+                    self.sleep(MAP_SETTLE_S)
+                    lo = levels()
+                    now = {f"P{p}{b}" for p in fam.gpio_ports for b in range(fam.gpio_pads)
+                           if (hi[p] >> b) & 1 and not (lo[p] >> b) & 1
+                           and f"P{p}{b}" not in fam.debug_pads}       # the debug line moves with every access
+                    hits = now if hits is None else hits & now
+                g.set([(c, g.INPUT)])
+                for pad in sorted(hits or ()):
+                    wiring.setdefault(pad, []).append(c)
+            # a line nothing drives keeps the charge a neighbour's edge coupled into it: a pad then seems to follow two
+            # channels (4-2, 2026-10-30: 26 seemed to reach PA10 too). Each candidate again with the others held low:
+            # only the channel that still moves the pad is wired to it (the bonded pads of a package stay together)
+            for pad, cs in list(wiring.items()):
+                if len(cs) < 2 or self.left() < 2:
+                    continue
+                port, bit = pad[1], int(pad[2:])
+                keep = []
+                for c in cs:
+                    others = [o for o in cs if o != c]
+                    self._plan(cs, cycle=False)
+                    g.set([(o, g.OUTPUT_LOW) for o in others])
+                    g.set([(c, g.OUTPUT_HIGH)])
+                    self.sleep(MAP_SETTLE_S)
+                    hi = (levels()[port] >> bit) & 1
+                    g.set([(c, g.OUTPUT_LOW)])
+                    self.sleep(MAP_SETTLE_S)
+                    lo = (levels()[port] >> bit) & 1
+                    g.set([(x, g.INPUT) for x in cs])
+                    if hi and not lo:
+                        keep.append(c)
+                if keep and keep != cs:
+                    self.say(f"map: {pad} followed {ranges(cs)}; with the others held low only {ranges(keep)} moves it")
+                    wiring[pad] = keep
+        except h.OepError as e:
+            self.note(f"map: {e}")
+        finally:
+            try:
+                for (port, off), v in saved.items():
+                    dm.write32(targets.gpio_base(port) + off, v)
+                if clocks is not None:
+                    dm.write32(targets.RCC_APB2PCENR, clocks)
+                dm.resume()
+            except h.OepError as e:
+                self.note(f"map: the target's registers not all put back ({e}); reset it")
+            self._detach(conn)
+            self._plan([], cycle=False)
+        for pads in fam.bonded:                            # one lead inside the package: named once, "PC16/PC11"
+            hit = [p for p in pads if p in wiring]
+            if len(hit) == len(pads) and all(wiring[p] == wiring[hit[0]] for p in hit):
+                wiring["/".join(pads)] = wiring[hit[0]]
+                for p in hit:
+                    del wiring[p]
+        order = sorted(wiring, key=lambda pad: (pad[1], int(pad[2:].split("/")[0])))
+        r.wiring = {pad: wiring[pad] for pad in order}
+        shared = sorted({c for pad in order for c in wiring[pad]
+                         if sum(c in v for v in wiring.values()) > 1})
+        self.say(f"map: {len(order)} pads reach {len({c for v in wiring.values() for c in v})} channels "
+                 f"({self.clock() - t0:.1f} s)")
+        width = max((len(pad) for pad in order), default=0) + 2
+        for pad in order:
+            self.say(f"  {pad:{width}}{', '.join(map(str, wiring[pad]))}")
+        if shared:
+            self.say(f"  {ranges(shared)} each reach more than one pad (joined on the board?)")
+        return r.wiring
+
+    # ---- 7: the connection profile and the labels ----
     def suggest(self) -> None:
         r = self.report
         if self.pins is None:
@@ -567,11 +817,13 @@ class PinFinder:
         port = self.name or self._only_port()
         labels = []
         if port is None:
-            if r.reset_channel is not None or self.power is not None:
-                self.note("labels: name the port with --name (a line is named <port>.<line>, host guide §5.3)")
+            self.note("labels: name the port with --name (a line is named <port>.<line>, host guide §5.3)")
             r.labels = labels
             return
         prefix = f"{port}."
+        lines = ("swio",) if r.wire == "swio" else ("swdio", "swclk")
+        for ch, line in zip(self.pins, lines):
+            labels.append((ch, f"{prefix}{line}"))
         if r.reset_channel is not None:
             labels.append((r.reset_channel, f"{prefix}nrst"))
         if self.power is not None:
@@ -639,6 +891,8 @@ class PinFinder:
                 self.scan()
             if "identify" in steps and self.left() > 4:
                 self.identify()
+            if "map" in steps and self.left() > 3:
+                self.map_pads()
             if "reset" in steps and self.left() > 3:
                 self.confirm_reset()
             if "labels" in steps:

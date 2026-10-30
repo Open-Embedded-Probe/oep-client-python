@@ -101,11 +101,19 @@ def main(argv=None) -> int:
                     "see which channels follow it (never touched without this)")
     pn.add_argument("--exclude", default="", help="channels never to read, scan or hold, comma-separated")
     pn.add_argument("--wire", choices=("swio", "rvswd", "swd"), default="swio")
-    pn.add_argument("--steps", default="classify,hold,scan,identify,reset,labels",
-                    help="the steps to run, comma-separated (default all: classify, hold, scan, identify, reset, labels)")
+    pn.add_argument("--pairs", default="",
+                    help="the pairs to scan instead of what classify allows: SWDIO:SWCLK,... (swio: SWIO,...); the host's "
+                    "word - no reading decides")
+    pn.add_argument("--steps", default="classify,hold,scan,identify,map,reset,labels",
+                    help="the steps to run, comma-separated (default all: classify, hold, scan, identify, map, reset, "
+                    "labels)")
+    pn.add_argument("--budget", type=float, default=55.0, help="seconds the whole run may take (default 55); a wider "
+                    "scan wants more (pairs go the nearest first: about 0.1 s each over rvswd)")
+    pn.add_argument("--all-pairs", action="store_true", help="scan every pair, not only up to the first that answers "
+                    "(a second target shows; needs the time)")
     pn.add_argument("--save", action="store_true", help="write the suggested labels (settings set, then save)")
-    pn.add_argument("--name", help="the host's connection profile name: labels <name>.nrst / <name>.power_hi (a probe "
-                    "serving several targets; default: nrst / power_hi)")
+    pn.add_argument("--name", help="the host's connection profile name: labels <name>.swdio / <name>.swclk (or "
+                    "<name>.swio), <name>.nrst, <name>.power_hi; the probe is then opened as oep://<unit_id>/<name>")
     pn.add_argument("--json", action="store_true", help="the report as JSON (the steps' lines go to stderr)")
     ck = sub.add_parser("clock", help="the probe's clock (fn 0 clock, core §7.6) against this host's: lock-free")
     ck.add_argument("probe", help="a probe: a serial port, tcp://HOST:PORT or usb[:VID:PID[:SERIAL]]")
@@ -238,8 +246,15 @@ def _pins_cmd(args) -> int:
     hst = _open_host(args.probe)
     try:
         core.take(hst, 10000, owner="oep pins")
+        pairs = None
+        if args.pairs:
+            pairs = []
+            for item in args.pairs.replace(" ", "").split(","):
+                dio, _, clk = item.partition(":")
+                pairs.append((int(dio, 0), int(clk, 0) if clk else 0xFFFF))
         finder = pins.PinFinder(hst, wire=args.wire, power=args.power, exclude=exclude, say=say, probe=args.probe,
-                                save=args.save, name=args.name)
+                                save=args.save, name=args.name, pairs=pairs, budget_s=args.budget,
+                                all_pairs=args.all_pairs)
         report = finder.run(steps=tuple(s for s in args.steps.split(",") if s))
         say(f"done in {report.elapsed_s:.1f} s")
         if args.json:
@@ -253,7 +268,7 @@ def _pins_cmd(args) -> int:
         return 2
     finally:
         hst.link.close()
-    return 0 if report.resolution == 'unique-candidate' else 1
+    return 0 if report.resolution in ('unique-candidate', 'unique-in-partial') else 1   # one target found
 
 
 # ---- oep linktest -------------------------------------------------------------------------------------------------

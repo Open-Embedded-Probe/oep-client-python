@@ -106,18 +106,37 @@ def test_multiple_candidates_are_all_preserved_without_attach_or_save(monkeypatc
     assert report.target_id is None
 
 
-def test_pair_budget_does_not_scan_a_prefix(monkeypatch):
+def test_a_scan_goes_the_nearest_first_and_says_when_the_time_ran_out(monkeypatch):
     ep, hst, t = bench(powered_by=None)
-    f = finder(hst, t, [])
+    f = finder(hst, t, [], budget_s=30)
     f.report.wire = 'rvswd'
     f.kinds = {c: pins.Channel(c, pins.FLOATING, '1', '0') for c in range(30)}
-    # Power-following candidates cannot silently narrow the requested pool either.
-    f.kinds[0].follows_power = f.kinds[1].follows_power = True
     monkeypatch.setattr(pins, 'role_channels', lambda *a: list(range(30)))
-    monkeypatch.setattr(f.wire, 'scan', lambda *a: pytest.fail('partial scan can hide ambiguity'))
+    tried = []
+
+    def scan(pairs, *a):
+        tried.extend(pairs)
+        t.sleep(0.1 * len(pairs))                        # about 0.1 s a pair, as rvswd on a P4
+        return []
+    monkeypatch.setattr(f.wire, 'scan', scan)
     assert f.scan() == []
-    assert f.report.resolution == 'limit-exceeded' and not f.report.scanned
-    assert f.pins is None
+    gaps = [abs(d - c) for d, c in tried]
+    assert gaps == sorted(gaps) and gaps[0] == 1         # side by side first, then further apart
+    assert len(tried) < 30 * 29 and f.report.resolution == 'not-finished' and f.pins is None
+    assert any("time ran out" in n for n in f.report.notes)
+
+
+def test_a_scan_stops_at_the_first_answer_unless_every_pair_is_asked_for(monkeypatch):
+    from oep_client import riscv
+    for all_pairs, resolution in ((False, 'unique-in-partial'), (True, 'unique-candidate')):
+        ep, hst, t = bench(powered_by=None)
+        f = finder(hst, t, [], budget_s=600, all_pairs=all_pairs)
+        f.report.wire = 'rvswd'
+        f.kinds = {c: pins.Channel(c, pins.FLOATING, '1', '0') for c in range(30)}
+        monkeypatch.setattr(pins, 'role_channels', lambda *a: list(range(30)))
+        monkeypatch.setattr(f.wire, 'scan', lambda pairs, *a: [riscv.Found(1, p, 2) for p in pairs if p == (15, 14)])
+        f.scan()
+        assert f.pins == (15, 14) and f.report.resolution == resolution
 
 
 def test_finds_the_swio_pin_and_the_reset_line_without_being_told():
@@ -145,7 +164,9 @@ def test_safety_never_drives_a_driven_or_active_channel_and_releases_every_plan(
     finder(hst, t, [], power=5).run()
     drives = {Gpio.OUTPUT_LOW, Gpio.OUTPUT_HIGH, Gpio.OPEN_DRAIN_LOW}
     assert not [(c, m) for c, m in ep.gpio_log if c in (3, 7, 21, 22, 23) and m in drives]
-    assert {c for c, m in ep.gpio_log if m in (Gpio.OUTPUT_LOW, Gpio.OUTPUT_HIGH)} == {5}   # only the power
+    driven = {c for c, m in ep.gpio_log if m in (Gpio.OUTPUT_LOW, Gpio.OUTPUT_HIGH)}
+    assert 5 in driven and not driven & {3, 4, 7, 19, 21, 22, 23}   # the map drives floating channels only: never a
+                                                                    # driven / active one, the reset line or the SWIO
     assert not ep.plan                                        # every plan released
     assert not ep.conns                                       # every connection closed
     assert not settings.labels(hst)                           # nothing written
@@ -177,12 +198,12 @@ def test_nothing_active_the_attach_under_reset_decides():
 
 def test_save_writes_the_lines_as_labels():
     """The probe keeps no wiring (core §13): --save writes the labels only; with a profile name
-    `<name>.nrst` / `<name>.power_hi` (host guide §5.3)."""
+    `<name>.swio` on the debug pin, `<name>.nrst` / `<name>.power_hi` (host guide §5.3)."""
     ep, hst, t = bench()
     r = finder(hst, t, [], power=5, save=True, name="v003").run()
     assert r.saved and "wire swio" in r.profile
     labels = settings.labels(hst)
-    assert set(labels) == {(4, "v003.nrst"), (5, "v003.power_hi")}
+    assert set(labels) == {(19, "v003.swio"), (4, "v003.nrst"), (5, "v003.power_hi")}
     assert settings.find_line(labels, "nrst", "v003") == 4
 
 
@@ -237,3 +258,72 @@ def test_suggested_labels_are_checked_by_the_line_lookup():
     r = finder(hst, t, [], power=5, name="v003").run()
     notes = [n for n in r.notes if "would find no" in n]
     assert len(notes) == 1 and "nrst" in notes[0] and "[9]" in notes[0]   # 4 itself is relabelled: no clash
+
+
+class Pads(dict):
+    """The target's memory with INDR worked out from the probe's lines: pad -> channel (a CH32V00x's GPIO block)."""
+
+    def __init__(self, ep, wired: dict[str, int], coupled: dict[str, int] | None = None, **words):
+        super().__init__(**words)
+        self.ep, self.wired, self.coupled = ep, wired, coupled or {}
+
+    def level(self, pad: str, ch: int) -> int:
+        modes = self.ep.gpio_modes
+        if modes.get(ch) in (Gpio.OUTPUT_HIGH, Gpio.OUTPUT_LOW):
+            return int(modes[ch] == Gpio.OUTPUT_HIGH)
+        # nothing drives the line: it keeps what a neighbour's edge coupled into it
+        return int(pad in self.coupled and modes.get(self.coupled[pad]) == Gpio.OUTPUT_HIGH)
+
+    def get(self, address, default=0):
+        for port in "ACD":
+            if address == targets.gpio_base(port) + targets.GPIO_INDR:
+                return sum(self.level(pad, ch) << int(pad[2:]) for pad, ch in self.wired.items() if pad[1] == port)
+        return super().get(address, default)
+
+
+def test_map_names_the_pad_each_channel_reaches_and_puts_the_target_back():
+    ep, hst, t = bench(powered_by=None)
+    tg = ep.targets[(WIRE, (19, 0xFFFF))]
+    tg.mem = Pads(ep, {"PC3": 6, "PD4": 9, "PA2": 11, "PC5": 11}, **{})
+    tg.mem.update({targets.V00X_OPTION: OPTION_ON, targets.RCC_APB2PCENR: 0x21,
+                   targets.gpio_base("C"): 0x88884444})
+    r = finder(hst, t, []).run()
+    assert r.wiring == {"PA2": [11], "PC3": [6], "PC5": [11], "PD4": [9]}
+    assert tg.mem.get(targets.RCC_APB2PCENR) == 0x21                   # the clocks as they were
+    assert tg.mem.get(targets.gpio_base("C")) == 0x88884444            # the pads' configuration as it was
+    assert not tg.halted and not ep.plan and not ep.conns
+
+
+def test_explicit_pairs_are_tried_whatever_classify_read():
+    ep, hst, t = bench(powered_by=None)
+    r = finder(hst, t, [], pairs=[(19, 0xFFFF)]).run(("scan", "identify"))
+    assert r.found == [(19, 0xFFFF)] and r.family == "ch32v00x"
+
+
+def test_map_holds_the_others_low_when_a_pad_seems_to_follow_two_channels():
+    ep, hst, t = bench(powered_by=None)
+    tg = ep.targets[(WIRE, (19, 0xFFFF))]
+    tg.mem = Pads(ep, {"PC3": 9, "PC4": 10}, coupled={"PC3": 10})   # 10's edges couple into the floating PC3 line
+    tg.mem.update({targets.V00X_OPTION: OPTION_ON})
+    lines = []
+    r = finder(hst, t, lines).run()
+    assert r.wiring == {"PC3": [9], "PC4": [10]}
+    assert any("only 9 moves it" in line for line in lines)
+
+
+def test_a_driven_low_channel_is_tried_as_swdio_after_the_floating_pairs_beside_it(monkeypatch):
+    from oep_client import riscv
+    ep, hst, t = bench(powered_by=None)
+    f = finder(hst, t, [], budget_s=600)
+    f.report.wire = 'rvswd'
+    f.kinds = {c: pins.Channel(c, pins.FLOATING, '1', '0') for c in range(30)}
+    f.kinds[15] = pins.Channel(15, pins.DRIVEN_LOW, '0', '0')
+    f.kinds[7] = pins.Channel(7, pins.DRIVEN_HIGH, '1', '1')
+    monkeypatch.setattr(pins, 'role_channels', lambda *a: list(range(30)))
+    tried = []
+    monkeypatch.setattr(f.wire, 'scan', lambda pairs, *a: tried.extend(pairs) or
+                        [riscv.Found(1, p, 2) for p in pairs if p == (15, 14)])
+    f.scan()
+    assert f.pins == (15, 14) and any("held its debug line" in n for n in f.report.notes)
+    assert not [pr for pr in tried if 7 in pr or pr[1] == 15]    # never driven-high; driven-low only as SWDIO
+    assert tried.index((15, 14)) > tried.index((13, 14))         # after the floating pairs one apart

@@ -167,28 +167,39 @@ TCP で OEP を運ぶ probe は DNS-SD で見つける（ネットワークの�
 
 ## ピンを探す（`oep pins`）
 
-`oep pins <probe> [--power CH] [--exclude CH,...] [--wire swio|rvswd|swd] [--steps ...] [--save] [--json]` は、ピンを host
-が選ぶ probe で、target がどこにつながっているかを探します。各段は何をしたかを出し、全体は 1 分以内に終わり、最後に plan を
-すべて解きます。手順はこの client のものです（oep-spec の host ガイド §5.3 が決めるのは label での線の探し方だけ）。target の系統ごとに
-要ること（線、リセットのベクタ、リセットの線の有無を読む option の読み方、max_speed / idle_clock）は 1 つの表 `targets.FAMILIES`
-にまとめます。
+`oep pins <probe> [--power CH] [--exclude CH,...] [--wire swio|rvswd|swd] [--pairs D:C,...] [--all-pairs] [--budget S]
+[--steps ...] [--name 口] [--save] [--json]` は、ピンを host が選ぶ probe で、target がどこにつながっているかを探します。各段は何をしたかを
+出し、全体は `--budget`（既定 55 秒）の中で終わり、最後に plan をすべて解きます。手順はこの client のものです（oep-spec の host ガイド §5.3 が決めるのは label での線の探し方だけ）。target の系統ごとに
+要ること（線、リセットのベクタ、リセットの線の有無を読む option の読み方、max_speed / idle_clock、map が読む GPIO の配置と debug の
+ピン、パッケージの中で 1 本のリードにつながる GPIO、探す NRST があるか）は 1 つの表 `targets.FAMILIES` にまとめます。
 
 1. **classify**: `oep.fixture.gpio` が許すすべての channel を、pull-up、pull-down の順に 16 回ずつ読む:
    floating（pull-up で 1、pull-down で 0。リセットの線の弱い pull-up のように probe のものより弱い pull もこう読める）、
    driven-high / driven-low（どちらの pull でも同じレベル: push-pull か強い pull。idle-high の UART の線はこう見える）、active
    （読むたびに変わる）。`--power CH` では先に target の電源を切って読み、違って読めた channel が電源に従う。どれも候補を出すだけ。
 2. **hold**: floating の channel を 1 本ずつオープンドレインで low に保ち、active の channel を見る。止まればリセットの線の候補。
-3. **scan**: floating の channel で線を scan する（rvswd / swd は組で、600 組まで）。driven / active の channel、電源の channel、
-   `--exclude` は scan しない。
+3. **scan**: floating の channel で線を scan する（rvswd / swd は組で、近い組から。治具は debug の 2 本を隣に並べることが多い）。
+   答えが出るか、時間を使い切るまで進む。`--all-pairs` は最後の組まで進み（2 つ目の target が見える）、`--pairs` は試す組を指定する。
+   low に駆動された channel も SWDIO として試す（同じ距離の floating の組の後）: 話しかけた後の target は SWDIO を low に保つことがある。
+   何も答えなければ線を読み直し、新しく許される組を scan する。全部の組を試していなければ報告がそう言う（`unique-in-partial`、
+   `not-finished`）。driven-high / active の channel、電源の channel、`--exclude` は scan しない。
 4. **identify**: 答えた線に attach（halt）し、target_id で系統を見る。CH32V00x は option bytes で NRST の有無を見る（読むだけ、
    書かない）。その後 resume。
-5. **reset**: 候補ごとにリセットをかけながら attach する。本物の線なら hart はリセットのベクタで止まる。
-6. **labels**: host が持つ接続プロファイル（線、ピン、線の設定。probe は配線を持たない）と、label `<口>.nrst` / `<口>.power_hi`
+5. **map**: GPIO の配置が `targets.FAMILIES` にある系統では、target のどのピンが各 channel につながるかを出す: hart を止め、debug の
+   ピン以外を浮いた入力にし、各 channel を high、low の順に出して target の INDR を読む（2 回）。classify で driven だった channel は先に
+   読み直し（target の出力だったかもしれない）、そのとき floating のものだけを駆動する。電源の channel、リセットの候補、debug の 2 本は
+   駆動しない。2 つの channel に追従するピンは、ほかを low に保って試し直す（何も駆動しない線は、隣の線の変化から拾った電荷を保つ）。
+   パッケージの中で 1 本のリードにつながる GPIO はまとめて出す（`PC16/PC11`）。target のレジスタは元に戻し、走らせ直す。
+6. **reset**: 候補ごとにリセットをかけながら attach する。本物の線なら hart はリセットのベクタで止まる（探す NRST が無い系統では
+   飛ばす）。
+7. **labels**: host が持つ接続プロファイル（線、ピン、線の設定。probe は配線を持たない）と、label `<口>.swdio` / `<口>.swclk`
+   （または `<口>.swio`）、`<口>.nrst` / `<口>.power_hi`（これで target を `oep://<unit_id>/<口>` で開ける）
    （口は `--name`、無ければ probe の label が名付ける口が 1 つのときその口。どちらも無ければ note で `--name` を求める）を勧める。label は probe の設定に
    対して `settings.find_line` で確かめる（別の channel がもうその名前を持っていれば、線が見つからなくなるので note で言う）。
    `--save` で label を書く（set + save）。`--save` が無ければ何も書かない。
 
-安全: driven / active の channel は駆動も scan も保持もしない。電源の channel は `--power` のときだけ触る。low に保つのは
+安全: driven-high / active の channel は駆動も scan も保持もしない（driven-low は scan の SWDIO としてだけ）。map は target のピンが
+浮いた入力の間だけ channel を駆動する。電源の channel は `--power` のときだけ触る。low に保つのは
 オープンドレインだけ。gpio の plan を新しくすると、probe は前の plan のピンを（電源の channel も）いったん離すので、`--power`
 では新しい plan のたびにきれいに電源を入れ直す（報告の `power_cycles`）。
 

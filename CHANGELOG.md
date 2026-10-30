@@ -1,6 +1,28 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) `oep pins` finds more and maps the wiring. The scan goes the nearest pairs first, in batches, until one answers
+  or `--budget` (new; default 55 s) is spent - the 600-pair limit is gone; `--all-pairs` goes on to the last pair;
+  the report says when not every pair was tried (`unique-in-partial`, `not-finished`), and exit 0 means one target
+  found. A driven-low channel is also tried as SWDIO (after the floating pairs at the same distance): a target that
+  was talked to may keep its SWDIO low. When nothing answers the lines are read again and the new pairs scanned.
+  `--pairs SWDIO:SWCLK,...` names the pairs to try. A new `map` step (before `reset`) says which target pad each
+  channel reaches: the hart halted, its pads floating inputs, each channel driven high and low and the target's INDR
+  read; a pad that seems to follow two channels is tried again with the others held low (a floating line keeps
+  what a neighbour coupled into it); pads bonded to one lead are named together ("PC16/PC11"). `--name` now labels
+  the debug lines too (`<name>.swdio` / `<name>.swclk`, or `<name>.swio`), so `oep://<unit>/<name>` opens the
+  target. `targets.FAMILIES` carries each family's GPIO block, debug pads, bonded pads and whether it has an NRST to
+  look for (the CH32X035: none).
+- (JA) `oep pins` がより広く探し、配線の対応を出す。スキャンは近い組から順に、まとまりごとに、答えが出るか `--budget`（新設。既定 55 秒）
+  を使い切るまで進む（600 組の上限はなくした）。`--all-pairs` は最後の組まで進む。全部の組を試していないときはレポートがそう言う
+  （`unique-in-partial`、`not-finished`）。終了コード 0 は、ターゲットが 1 つ見つかったこと。low に駆動された線も SWDIO として試す（同じ
+  距離の浮いた組の後）: 話しかけた後のターゲットは SWDIO を low に保つことがある。何も答えなければ線を読み直し、新しい組をスキャンする。
+  `--pairs SWDIO:SWCLK,...` で試す組を指定できる。新しい段階 `map`（`reset` の前）は、ターゲットのどのピンが各チャネルにつながるかを出す:
+  ハートを止め、ピンを浮いた入力にし、各チャネルを high と low に出してターゲットの INDR を読む。2 つのチャネルに追従するピンは、ほかを
+  low に保って試し直す（浮いた線は隣の線から拾った電荷を保つ）。パッケージの中で 1 本のリードにつながる GPIO はまとめて出す
+  （"PC16/PC11"）。`--name` は debug の線にもラベルを付ける（`<name>.swdio` / `<name>.swclk`、または `<name>.swio`）ので、
+  `oep://<unit>/<name>` でターゲットを開ける。`targets.FAMILIES` に、系列ごとの GPIO の配置、debug のピン、1 本のリードにつながる
+  GPIO、探す NRST があるか（CH32X035 は無い）を持たせた。
 - (EN) `probe_log`: a probe's own log (oep-probe-arduino's OepProbeLog.h) read as lines - each line's text cut at its
   mark, with the probe's clock -, `sample_of` placing a line in a capture segment (the same clock as its start_ns),
   `rows` giving the lines as a recorder's log rows (WireSkein's run.json: the host's time.monotonic() from Host.clock

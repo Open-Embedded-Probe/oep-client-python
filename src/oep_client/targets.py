@@ -37,6 +37,11 @@ class Family:
     max_speed: int | None = None    # Hz to attach / scan with (None: the wire's own)
     idle_clock: str | None = None   # rvswd: how SWCLK rests ("high" / "low"); None: the wire's default
     nrst: Callable | None = field(default=None, compare=False)   # nrst(dm) -> NrstState, the hart halted; None: unknown
+    gpio_ports: str = ""            # the GPIO ports the map step reads (letters, at GPIO_BASE + GPIO_STEP x index); "": none
+    gpio_pads: int = 0              # pads per port: 8 (CFGLR), 16 (+ CFGHR) or 24 (+ CFGXR)
+    debug_pads: tuple[str, ...] = ()   # the target's own debug pads: the map step never touches their configuration
+    reset_line: bool = True         # False: no NRST to look for (the reset step is skipped)
+    bonded: tuple[tuple[str, str], ...] = ()   # pads bonded to one lead inside the package: the map names them as one
     notes: str = ""
 
     def matches(self, target_id: tuple[int, bytes] | None) -> bool:
@@ -67,18 +72,40 @@ def v00x_nrst(dm) -> NrstState:
     return v00x_nrst_from_word(dm.read32(V00X_OPTION))
 
 
+# The CH32 GPIO block every family here shares: port k at GPIO_BASE + GPIO_STEP * k, its pads' 4-bit configuration in
+# CFGLR (0-7), CFGHR (8-15) and CFGXR (16-23, the CH32X035), its input levels in INDR; the port's clock enable is bit
+# 2 + k of RCC APB2PCENR. A pad's configuration 0x4 is a floating input.
+GPIO_BASE, GPIO_STEP = 0x40010800, 0x400
+GPIO_CFG = (0x00, 0x04, 0x1C)
+GPIO_INDR = 0x08
+GPIO_FLOATING = 0x4
+RCC_APB2PCENR = 0x40021018
+
+
+def gpio_base(port: str) -> int:
+    return GPIO_BASE + GPIO_STEP * (ord(port) - ord("A"))
+
+
+def gpio_clock_bit(port: str) -> int:
+    return 1 << (2 + ord(port) - ord("A"))
+
+
 # The families met on the OEP benches (oep-spec docs/target-scan-notes.ja.md §2). ids: the top 12 bits of the ESIG ID
 # name the series (CH32V003 0x003..., CH32X035 0x035...).
 FAMILIES: tuple[Family, ...] = (
     Family("ch32v00x", "swio", ids=tuple((0xFFF00000, s << 20) for s in (0x002, 0x003, 0x004, 0x005, 0x006, 0x007)),
-           nrst=v00x_nrst,
+           nrst=v00x_nrst, gpio_ports="ACD", gpio_pads=8, debug_pads=("PD1",),
            notes="NRST is PD7 and off as shipped (RST_MODE 11); the DM freezes DMSTATUS halt / running until "
                  "havereset is acknowledged; a power cycle then attach(halt) stops at dpc 0 ~15 ms after power-on"),
-    Family("ch32x035", "rvswd", ids=((0xFFF00000, 0x03500000),), idle_clock="high",
+    Family("ch32x035", "rvswd", ids=((0xFFF00000, 0x03500000),), idle_clock="high", gpio_ports="ABC", gpio_pads=24,
+           debug_pads=("PC18", "PC19"), reset_line=False,
+           bonded=(("PC16", "PC11"), ("PC17", "PC10")),   # datasheet note 4: one lead each except on F8U6 / D8U6
            notes="SWCLK resting low does not connect; reset is ndmreset only (no NRST on the benches)"),
-    Family("ch32l103", "rvswd", max_speed=1_000_000, idle_clock="low",
+    Family("ch32l103", "rvswd", max_speed=1_000_000, idle_clock="low", gpio_ports="ABCD", gpio_pads=16,
+           debug_pads=("PA13", "PA14"),
            notes="SWCLK resting high resets the debug link; over 1 MHz fails right after a reset; target_id not recorded"),
-    Family("ch32v203", "rvswd", idle_clock="low", notes="no OEP bench yet; target_id not recorded"),
+    Family("ch32v203", "rvswd", idle_clock="low", gpio_ports="ABCD", gpio_pads=16, debug_pads=("PA13", "PA14"),
+           notes="no OEP bench yet; target_id not recorded"),
 )
 
 
