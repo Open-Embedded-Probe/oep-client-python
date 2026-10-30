@@ -193,7 +193,9 @@ TCP で OEP を運ぶ probe は DNS-SD で見つける（ネットワークの�
 6. **reset**: 候補ごとにリセットをかけながら attach する。本物の線なら hart はリセットのベクタで止まる（探す NRST が無い系統では
    飛ばす）。
 7. **labels**: host が持つ接続プロファイル（線、ピン、線の設定。probe は配線を持たない）と、label `<口>.swdio` / `<口>.swclk`
-   （または `<口>.swio`）、`<口>.nrst` / `<口>.power_hi`（これで target を `oep://<unit_id>/<口>` で開ける）
+   （または `<口>.swio`）、`<口>.nrst` / `<口>.power_hi`（これで target を `oep://<unit_id>/<口>` で開ける）。分かる所はつながる
+   target のピンを添える（`<口>.nrst@pa21`。host ガイド §5.3）: debug と NRST のピンは `targets.FAMILIES` から、ほかは map から。
+   役目の無いピンは `<口>@pb6`、口のラベルが役目（`rx` など）を持つ線はそれを保つ
    （口は `--name`、無ければ probe の label が名付ける口が 1 つのときその口。どちらも無ければ note で `--name` を求める）を勧める。label は probe の設定に
    対して `settings.find_line` で確かめる（別の channel がもうその名前を持っていれば、線が見つからなくなるので note で言う）。
    `--save` で label を書く（set + save）。`--save` が無ければ何も書かない。

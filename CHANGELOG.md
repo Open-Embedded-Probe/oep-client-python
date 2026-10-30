@@ -1,6 +1,14 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Labels may carry the target pin a line reaches (oep-spec host guide §5.3): `S.N@P`, and `S@P` for a line with no
+  role. `settings.parse_label`, `pin_from_labels`, `label_text`, `pin_name`; `port_line` / `find_line` read `S.N@P` as
+  `S.N`, `ports_named` counts `S@P`. `oep pins --save` writes the pins: the debug and NRST pins from
+  `targets.FAMILIES` (`nrst_pad`), the rest from the map (`x035@pb6`; a role the port's labels give is kept).
+- (JA) label に、線がつながる target のピンを持たせられる（oep-spec host ガイド §5.3）: `S.N@P`、役目の無い線は `S@P`。
+  `settings.parse_label`、`pin_from_labels`、`label_text`、`pin_name`。`port_line` / `find_line` は `S.N@P` を `S.N` として読み、
+  `ports_named` は `S@P` も数える。`oep pins --save` はピンも書く: debug と NRST のピンは `targets.FAMILIES`（`nrst_pad`）から、
+  ほかは map から（`x035@pb6`。口の label が持つ役目は保つ）。
 - (EN) `oep pins` leaves alone a channel labelled for something else (another port's line, or a name only such as
   `rgb_led`); the `--name` port's own lines stay in. The CH32X035's NRST (PA21) is read from its option bytes as the
   V00x's (RST_MODE 11: none); with an NRST on, the reset step runs before the map and the map never drives the reset

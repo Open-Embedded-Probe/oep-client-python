@@ -154,7 +154,7 @@ def test_finds_the_swio_pin_and_the_reset_line_without_being_told():
     assert r.family == "ch32v00x" and r.target_id.startswith("00310510") and r.nrst_enabled is True
     assert r.reset_channel == 4 and r.reset_dpc == 0
     assert "wire swio, pins 19" in r.profile and not r.saved
-    assert any("label" in line and "channel.GPIO4.label=v003.nrst" in line for line in lines)   # the reset line as a label (host guide §5.3)
+    assert any("label" in line and "channel.GPIO4.label=v003.nrst@pd7" in line for line in lines)   # the reset line as a label (host guide §5.3)
     assert any(".label=v003.power_hi" in line for line in lines) and any(".idle=high" in line for line in lines)
     assert r.elapsed_s < 60
 
@@ -203,7 +203,7 @@ def test_save_writes_the_lines_as_labels():
     r = finder(hst, t, [], power=5, save=True, name="v003").run()
     assert r.saved and "wire swio" in r.profile
     labels = settings.labels(hst)
-    assert set(labels) == {(19, "v003.swio"), (4, "v003.nrst"), (5, "v003.power_hi")}
+    assert set(labels) == {(19, "v003.swio@pd1"), (4, "v003.nrst@pd7"), (5, "v003.power_hi")}   # the pins from FAMILIES
     assert settings.find_line(labels, "nrst", "v003") == 4
 
 
@@ -342,3 +342,14 @@ def test_a_channel_labelled_for_something_else_is_left_alone():
     r = finder(hst, t, [], name="v003").run()
     assert not [c for c, _ in ep.gpio_log if c in (11, 12)]
     assert r.wiring == {} and any("11 (rgb_led)" in n for n in r.notes)
+
+
+def test_labels_carry_the_target_pin_and_the_lookups_read_them():
+    """S.N@P names the line N as S.N does; S@P is a line of S with only its pin (host guide §5.3)."""
+    labels = [(15, "x035.swdio@pc18"), (32, "X035.NRST@PA21"), (2, "x035@pb6"), (51, "rgb_led"), (6, "x035.rx")]
+    assert settings.ports_named(labels) == ["x035"]
+    assert settings.find_line(labels, "nrst", "x035") == 32 and settings.find_line(labels, "rx", "x035") == 6
+    assert settings.pin_from_labels(labels, "pb6", "x035") == 2 and settings.pin_from_labels(labels, "PA21", "x035") == 32
+    assert settings.parse_label("x035@pb6") == ("x035", None, "pb6") and settings.port_line("x035@pb6") is None
+    assert settings.parse_label("rgb_led") is None and settings.parse_label("x035.a@b@c") is None
+    assert settings.label_text("x035", None, settings.pin_name("PC16/PC11")) == "x035@pc16-pc11"

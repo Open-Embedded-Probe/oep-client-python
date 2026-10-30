@@ -211,7 +211,9 @@ bonded to one lead, whether there is an NRST to look for).
    a family with no NRST to look for).
 7. **labels**: the connection profile the host keeps (wire, pins, line settings: the probe keeps no wiring) and the
    labels `<port>.swdio` / `<port>.swclk` (or `<port>.swio`), `<port>.nrst` / `<port>.power_hi` - with them the target
-   opens as `oep://<unit_id>/<port>` (the port: `--name`, else the one port the probe's labels name; neither:
+   opens as `oep://<unit_id>/<port>` - each with the target pin it reaches where that is known (`<port>.nrst@pa21`;
+   host guide §5.3): the debug and NRST pins from `targets.FAMILIES`, the rest from the map; a mapped pin with no role
+   becomes `<port>@pb6`, a role a label of the port already gives (`rx`) keeps it (the port: `--name`, else the one port the probe's labels name; neither:
    a note asks for `--name`), checked with `settings.find_line` against the probe's settings (a note when another channel already carries the name:
    the line would not be found); `--save` writes the labels (set + save). Nothing is written without `--save`.
 
@@ -239,7 +241,7 @@ attach swio 19: target_id 00310510 (WCH DMI 0x7F) -> ch32v00x, halted at dpc 0x1
   option bytes (read only): RST_MODE 10 (USER 0xf7): NRST on PD7, 12 ms ignore window
   attach under reset through 4 (held 20 ms): dpc 0x0 -> the reset line
 profile: wire swio, pins 19   (the host's to keep: the probe keeps no wiring)
-label: oep settings set ... core channel.GPIO4.label=v003.nrst   (not written)
+label: oep settings set ... core channel.GPIO4.label=v003.nrst@pd7   (not written)
 label: oep settings set ... core channel.GPIO5.label=v003.power_hi   (not written)
 idle:  oep settings set ... core channel.GPIO5.idle=high   (keeps the target powered while no plan holds channel 5; not written by this tool)
 released every plan (channel 5 is back to its idle state: the target is powered only while something drives it)

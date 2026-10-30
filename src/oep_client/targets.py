@@ -41,6 +41,7 @@ class Family:
     gpio_pads: int = 0              # pads per port: 8 (CFGLR), 16 (+ CFGHR) or 24 (+ CFGXR)
     debug_pads: tuple[str, ...] = ()   # the target's own debug pads: the map step never touches their configuration
     reset_line: bool = True         # False: no NRST to look for (the reset step is skipped)
+    nrst_pad: str = ""              # the pad that is NRST (when the target's settings make it so): its label's @P
     bonded: tuple[tuple[str, str], ...] = ()   # pads bonded to one lead inside the package: the map names them as one
     notes: str = ""
 
@@ -102,11 +103,11 @@ def gpio_clock_bit(port: str) -> int:
 # name the series (CH32V003 0x003..., CH32X035 0x035...).
 FAMILIES: tuple[Family, ...] = (
     Family("ch32v00x", "swio", ids=tuple((0xFFF00000, s << 20) for s in (0x002, 0x003, 0x004, 0x005, 0x006, 0x007)),
-           nrst=v00x_nrst, gpio_ports="ACD", gpio_pads=8, debug_pads=("PD1",),
+           nrst=v00x_nrst, gpio_ports="ACD", gpio_pads=8, debug_pads=("PD1",), nrst_pad="PD7",
            notes="NRST is PD7 and off as shipped (RST_MODE 11); the DM freezes DMSTATUS halt / running until "
                  "havereset is acknowledged; a power cycle then attach(halt) stops at dpc 0 ~15 ms after power-on"),
     Family("ch32x035", "rvswd", ids=((0xFFF00000, 0x03500000),), idle_clock="high", gpio_ports="ABC", gpio_pads=24,
-           debug_pads=("PC18", "PC19"), nrst=x035_nrst,
+           debug_pads=("PC18", "PC19"), nrst=x035_nrst, nrst_pad="PA21",
            bonded=(("PC16", "PC11"), ("PC17", "PC10")),   # datasheet note 4: one lead each except on F8U6 / D8U6
            notes="SWCLK resting low does not connect; NRST on PA21 only while the option bytes' RST_MODE turns it on "
                  "(11, no NRST, as shipped)"),

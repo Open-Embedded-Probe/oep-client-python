@@ -267,7 +267,7 @@ class PinFinder:
             named = []
         mine = settings.fold_name(self.name) if self.name else None
         others = {ch: text for ch, text in named
-                  if not ((pl := settings.port_line(text)) and mine and settings.fold_name(pl[0]) == mine)}
+                  if not ((pl := settings.parse_label(text)) and mine and settings.fold_name(pl[0]) == mine)}
         others.pop(self.power, None)
         if others and not self.labelled_noted:
             self.note("labelled for something else, left alone: "
@@ -849,14 +849,33 @@ class PinFinder:
             self.note("labels: name the port with --name (a line is named <port>.<line>, host guide §5.3)")
             r.labels = labels
             return
-        prefix = f"{port}."
+        # each line with the target pin it reaches where that is known (`@P`, host guide §5.3): the debug pads and the
+        # NRST pad from targets.FAMILIES, the rest from the map
+        fam = self.family
+        pad_of = {ch: settings.pin_name(pad) for pad, chs in r.wiring.items() for ch in chs}
         lines = ("swio",) if r.wire == "swio" else ("swdio", "swclk")
-        for ch, line in zip(self.pins, lines):
-            labels.append((ch, f"{prefix}{line}"))
+        for i, (ch, line) in enumerate(zip(self.pins, lines)):
+            pin = settings.pin_name(fam.debug_pads[i]) if fam and i < len(fam.debug_pads) else pad_of.get(ch)
+            labels.append((ch, settings.label_text(port, line, pin)))
         if r.reset_channel is not None:
-            labels.append((r.reset_channel, f"{prefix}nrst"))
+            pin = settings.pin_name(fam.nrst_pad) if fam and fam.nrst_pad else pad_of.get(r.reset_channel)
+            labels.append((r.reset_channel, settings.label_text(port, "nrst", pin)))
         if self.power is not None:
-            labels.append((self.power, f"{prefix}power_hi"))
+            labels.append((self.power, settings.label_text(port, "power_hi", None)))
+        # the port's other lines: a role a label already gives keeps it, the pin added; a mapped pad with no label
+        # becomes "S@P"
+        try:
+            have = dict(settings.labels(self.hst))
+        except (LookupError, h.OepError):
+            have = {}
+        done = {ch for ch, _ in labels}
+        for ch, pin in sorted(pad_of.items()):
+            if ch in done:
+                continue
+            pl = settings.parse_label(have[ch]) if ch in have else None
+            if ch in have and not (pl and settings.fold_name(pl[0]) == settings.fold_name(port)):
+                continue                                   # labelled for something else: left as it is
+            labels.append((ch, settings.label_text(port, pl[1] if pl else None, pin)))
         r.labels = labels
         for ch, text in labels:
             self.say(f"label: oep settings set {self.probe} core channel.{self._name(ch)}.label={text}"
@@ -898,10 +917,13 @@ class PinFinder:
         relabelled = {ch for ch, _ in labels}
         after = [(ch, t) for ch, t in have if ch not in relabelled] + list(labels)
         for ch, text in labels:
-            port, _, line = text.partition(".")
+            port, line, _ = settings.parse_label(text)
+            if line is None:                               # "S@P": no role to look up
+                continue
             found = settings.find_line(after, line, port)
             if found != ch:
-                clash = sorted(c for c, t in after if c != ch and settings.fold_name(t) == settings.fold_name(text))
+                clash = sorted(c for c, t in after if c != ch and (pl := settings.port_line(t))
+                               and settings.fold_name(f"{pl[0]}.{pl[1]}") == settings.fold_name(f"{port}.{line}"))
                 self.note(f"label {text}: the settings already name channel(s) {clash} the same way - a host would "
                           f"find no {line} line; relabel or remove those first")
 

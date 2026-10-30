@@ -511,7 +511,8 @@ def plan_import(cat: Catalog, current: list[Value], doc: dict) -> ImportPlan:
 
 # ---- ports and lines by label (host guide §5.3) -----------------------------------------------------------
 # A label "S.N" names port S's line N: S 1-16 of letters, digits and '-', a letter first; N letters, digits, '-' and '_';
-# one '.' between. Other labels are a pin's names only. Kept as written, compared ignoring ASCII case; a probe keeps its
+# one '.' between. "@P" may follow, the target pin the line reaches (P as N): "S.N@P", and "S@P" for a line of S with
+# no role. Other labels are a pin's names only. Kept as written, compared ignoring ASCII case; a probe keeps its
 # labels unique that way (core §13.8). Line names: `swdio`, `swclk`, `swio`, `rx`, `tx`, `nrst`, `power_hi`, `power_lo`.
 LINE_NAMES = tuple(_C.line_names)
 _ASCII_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
@@ -525,22 +526,50 @@ def fold_name(text: str) -> str:
     return text.translate(_ASCII_LOWER)
 
 
-def port_line(text: str) -> tuple[str, str] | None:
-    """(S, N) of a label that names a port's line, as written; None for any other label."""
-    port, dot, line = text.partition(".")
-    if not dot or not _PORT.fullmatch(port) or not _LINE.fullmatch(line):
+def parse_label(text: str) -> tuple[str, str | None, str | None] | None:
+    """(S, N or None, P or None) of a label of a port's line - "S.N", "S.N@P" or "S@P" (host guide §5.3) - as written;
+    None for any other label."""
+    head, at, pin = text.partition("@")
+    if at and not _LINE.fullmatch(pin):
         return None
-    return port, line
+    port, dot, line = head.partition(".")
+    if not _PORT.fullmatch(port) or (dot and not _LINE.fullmatch(line)) or (not dot and not at):
+        return None
+    return port, line if dot else None, pin if at else None
+
+
+def port_line(text: str) -> tuple[str, str] | None:
+    """(S, N) of a label that names a port's line by its role ("S.N" or "S.N@P"), as written; None for any other."""
+    parsed = parse_label(text)
+    return (parsed[0], parsed[1]) if parsed and parsed[1] else None
+
+
+def pin_name(pad: str) -> str:
+    """A target pin as a label's P: "PC16/PC11" (one lead, two pins) -> "pc16-pc11"."""
+    return pad.replace("/", "-").lower()
+
+
+def label_text(port: str, line: str | None, pin: str | None) -> str:
+    """The label of port's line `line` (None: no role) reaching target pin `pin` (None: not known)."""
+    return port + (f".{line}" if line else "") + (f"@{pin}" if pin else "")
 
 
 def ports_named(labels) -> list[str]:
     """The ports the labels name (host guide §5.3): each S once (ignoring case), as written, in order."""
     out: list[str] = []
     for _, text in labels:
-        pl = port_line(text)
+        pl = parse_label(text)
         if pl and fold_name(pl[0]) not in {fold_name(p) for p in out}:
             out.append(pl[0])
     return out
+
+
+def pin_from_labels(labels, pin: str, port: str) -> int | None:
+    """The channel of port `port`'s line that reaches target pin `pin` ("pa21"), or None. Ignoring ASCII case."""
+    found = {ch for ch, text in labels
+             if (pl := parse_label(text)) and pl[2] and fold_name(pl[0]) == fold_name(port)
+             and fold_name(pl[2]) == fold_name(pin)}
+    return found.pop() if len(found) == 1 else None
 
 
 def line_from_labels(labels, name: str, port: str | None = None) -> int | None:
