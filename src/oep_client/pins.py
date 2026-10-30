@@ -62,6 +62,9 @@ SCAN_CHUNK = 100                      # rvswd / swd: pairs a scan request batch 
 SCAN_RESERVE_S = 10.0                 # the time a scan leaves for identify, map and labels
 STEPS = ("classify", "hold", "scan", "identify", "map", "reset", "labels")
 MAP_SETTLE_S = 0.002                  # map: a line driven, then the target's INDR read
+MAP_TRIES = 4                         # map: a pad must follow its channel high and low on every try
+MAP_QUIET_READS = 16                  # map: INDR read this often with nothing driven - a pad that moves meanwhile is
+                                      # someone else's (4-3's USB host on an X035's PC16/PC17): never mapped
 
 
 @dataclass
@@ -751,13 +754,22 @@ class PinFinder:
             def levels() -> dict[str, int]:
                 return {p: dm.read32(targets.gpio_base(p) + targets.GPIO_INDR) for p in fam.gpio_ports}
 
+            first, restless = levels(), {p: 0 for p in fam.gpio_ports}
+            for _ in range(MAP_QUIET_READS):
+                self.sleep(MAP_SETTLE_S)
+                for p, v in levels().items():
+                    restless[p] |= v ^ first[p]
+            moving = {f"P{p}{b}" for p in fam.gpio_ports for b in range(fam.gpio_pads) if (restless[p] >> b) & 1}
+            if moving:
+                self.note(f"map: {', '.join(sorted(moving))} moved with nothing driven (another device drives them): "
+                          "not mapped")
             for c in chans:
                 if self.left() < 2:
                     self.note("time is up: the map stopped early")
                     break
                 self._plan([c], cycle=False)
                 hits = None
-                for _ in range(2):
+                for _ in range(MAP_TRIES):
                     g.set([(c, g.OUTPUT_HIGH)])
                     self.sleep(MAP_SETTLE_S)
                     hi = levels()
@@ -766,7 +778,8 @@ class PinFinder:
                     lo = levels()
                     now = {f"P{p}{b}" for p in fam.gpio_ports for b in range(fam.gpio_pads)
                            if (hi[p] >> b) & 1 and not (lo[p] >> b) & 1
-                           and f"P{p}{b}" not in fam.debug_pads}       # the debug line moves with every access
+                           and f"P{p}{b}" not in fam.debug_pads        # the debug line moves with every access
+                           and f"P{p}{b}" not in moving}
                     hits = now if hits is None else hits & now
                 g.set([(c, g.INPUT)])
                 for pad in sorted(hits or ()):

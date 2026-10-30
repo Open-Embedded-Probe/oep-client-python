@@ -294,6 +294,32 @@ def test_map_names_the_pad_each_channel_reaches_and_puts_the_target_back():
     assert not tg.halted and not ep.plan and not ep.conns
 
 
+class RestlessPads(Pads):
+    """Pads with one that another device moves: it flips on every INDR read, whatever the probe's lines do."""
+
+    def __init__(self, *a, restless: str, **k):
+        super().__init__(*a, **k)
+        self.restless, self.flip = restless, 0
+
+    def get(self, address, default=0):
+        v = super().get(address, default)
+        port, bit = self.restless[1], int(self.restless[2:])
+        if address == targets.gpio_base(port) + targets.GPIO_INDR:
+            self.flip ^= 1
+            v = (v & ~(1 << bit)) | (self.flip << bit)
+        return v
+
+
+def test_map_leaves_out_a_pad_another_device_moves():
+    ep, hst, t = bench(powered_by=None)
+    tg = ep.targets[(WIRE, (19, 0xFFFF))]
+    tg.mem = RestlessPads(ep, {"PC3": 6}, restless="PC6")
+    tg.mem.update({targets.V00X_OPTION: OPTION_ON})
+    r = finder(hst, t, []).run()
+    assert r.wiring == {"PC3": [6]}
+    assert any("PC6 moved with nothing driven" in n for n in r.notes)
+
+
 def test_explicit_pairs_are_tried_whatever_classify_read():
     ep, hst, t = bench(powered_by=None)
     r = finder(hst, t, [], pairs=[(19, 0xFFFF)]).run(("scan", "identify"))

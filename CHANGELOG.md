@@ -1,6 +1,12 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Fixed: `oep pins`' map named pads another device moves as wired - an X035's PC16/PC17, held by a USB host,
+  "followed" different channels on every run. The map now reads the target's pads first with nothing driven and leaves
+  out those that move (a note names them), and a pad must follow its channel on 4 tries (was 2).
+- (JA) 修正: `oep pins` の map が、ほかの機器が動かすピンを「つながっている」としていた（USB ホストにつながる X035 の PC16/PC17 が、
+  走らせるたびに違うチャネルに追従した）。map は、まず何も駆動しないで target のピンを読み、動くピンを外す（note に出す）。チャネルに
+  追従するかは 4 回確かめる（前は 2 回）。
 
 ## 0.0.40
 - (EN) Labels may carry the target pin a line reaches (oep-spec host guide §5.3): `S.N@P`, and `S@P` for a line with no
