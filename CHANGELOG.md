@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 0.0.40
 - (EN) Labels may carry the target pin a line reaches (oep-spec host guide §5.3): `S.N@P`, and `S@P` for a line with no
   role. `settings.parse_label`, `pin_from_labels`, `label_text`, `pin_name`; `port_line` / `find_line` read `S.N@P` as
   `S.N`, `ports_named` counts `S@P`. `oep pins --save` writes the pins: the debug and NRST pins from
