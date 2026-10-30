@@ -74,7 +74,7 @@ names starting with `_`, may change. Check probe/client compatibility using the 
 ```python
 from oep_client import core, link, riscv, ch32_flash
 
-hst = link.open_host("/run/board-identify/by-id/esp32-series-30eda0e31108")   # pipelined
+hst = link.open_host("/dev/ttyACM0")   # pipelined
 # a serial port (always COBS), "tcp://127.0.0.1:PORT" (a broker), "usb:<unit id>" (the device whose USB serial it is;
 # describe's unit_id must match), "usb" (every device on the project's VID:PID 1209:4F45, each counted once: exactly
 # one -> vendor, then HID, else its CDC port; several -> link.SeveralProbes lists them, name one) /
@@ -208,7 +208,7 @@ holding low is open drain only. A new gpio plan lets every pin of the old one go
 An example (ESP32-P4 with a CH32V003, power on GPIO5):
 
 ```
-$ oep pins /run/board-identify/by-id/esp32-series-30eda0ea068b --power 5 --wire swio --name v003
+$ oep pins /dev/ttyACM0 --power 5 --wire swio --name v003
 power: channel 5 low 300 ms (target off: read), then high 400 ms before the reads
 classify: 52 channels, 16 reads each under pull-up, pull-down
   floating     0-3,6,9-20,26-34,36-50,52-54

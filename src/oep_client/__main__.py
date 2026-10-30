@@ -1,6 +1,6 @@
 """The oep command: what a probe offers (dump) and its settings (settings, core §13).
 
-  oep dump --port /run/board-identify/by-id/<probe>        oep dump --virtual p4-x035 --prefix oep.target --json
+  oep dump --port /dev/ttyACM0                              oep dump --virtual p4-x035 --prefix oep.target --json
   oep settings show <probe>               (every value, the storage state; lock-free)
   oep settings items <probe>              (what each owner declares: names, forms, choices)
   oep settings set <probe> core channel.GPIO23.label=v003.nrst channel.GPIO20.idle=pull-up [--save]
