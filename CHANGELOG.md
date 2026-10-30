@@ -1,6 +1,15 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) `oep pins` leaves alone a channel labelled for something else (another port's line, or a name only such as
+  `rgb_led`); the `--name` port's own lines stay in. The CH32X035's NRST (PA21) is read from its option bytes as the
+  V00x's (RST_MODE 11: none); with an NRST on, the reset step runs before the map and the map never drives the reset
+  line (or the port's labelled `nrst`); a pad the option bytes leave a GPIO is mapped like any other. The reset search
+  tries the port's labelled `nrst` first.
+- (JA) `oep pins` は、ほかのもののラベルが付いたチャネル（別の口の線、または `rgb_led` のような名前だけのもの）を触らない。`--name` の
+  口の線は対象に残る。CH32X035 の NRST（PA21）は、V00x と同じく option bytes で有無を読む（RST_MODE 11 は無し）。NRST が有効なら
+  reset の段階を map の前に走らせ、map はリセットの線（と口のラベル `nrst`）を駆動しない。option bytes がふつうの GPIO にしているピンは
+  ほかと同じに対応を調べる。リセットの線の探索は、口のラベル `nrst` を最初に試す。
 - (EN) `oep pins` finds more and maps the wiring. The scan goes the nearest pairs first, in batches, until one answers
   or `--budget` (new; default 55 s) is spent - the 600-pair limit is gone; `--all-pairs` goes on to the last pair;
   the report says when not every pair was tried (`unique-in-partial`, `not-finished`), and exit 0 means one target

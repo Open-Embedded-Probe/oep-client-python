@@ -164,6 +164,7 @@ class PinFinder:
         self.deadline = self.started + budget_s
         self.probe, self.save, self.name = probe, save, name
         self.explicit = list(pairs) if pairs else None
+        self.labelled_noted = False
         self.partial = False           # scan: stopped before every pair was tried (found one, or the time ran out)
         self.stopped_by = ""           # scan: "answer" / "time" when it stopped early
         self.all_pairs = all_pairs     # scan: go on after an answer, to the last pair (ambiguity shows)
@@ -258,7 +259,21 @@ class PinFinder:
             pass
         if held:
             self.note(f"a live connection holds {ranges(held)}: left out (oep settings show)")
-        chans = [c for c in allowed if c != self.power and c not in self.exclude and c not in held]
+        # a channel labelled for something else (another port's line, or a name only: "rgb_led") is left alone; the
+        # lines of the port being looked for (--name) are what this run finds again
+        try:
+            named = settings.labels(self.hst)
+        except (LookupError, h.OepError):
+            named = []
+        mine = settings.fold_name(self.name) if self.name else None
+        others = {ch: text for ch, text in named
+                  if not ((pl := settings.port_line(text)) and mine and settings.fold_name(pl[0]) == mine)}
+        others.pop(self.power, None)
+        if others and not self.labelled_noted:
+            self.note("labelled for something else, left alone: "
+                      + "; ".join(f"{ch} ({text})" for ch, text in sorted(others.items())))
+            self.labelled_noted = True
+        chans = [c for c in allowed if c != self.power and c not in self.exclude and c not in held and c not in others]
         chans = self._plan(chans, cycle=False)
         g = self.gpio
         off_pu = off_pd = None
@@ -637,7 +652,11 @@ class PinFinder:
                 return stopped[0]
             return None
         rest = [c for c in self.candidates() if c in allowed and c not in pins and c not in stopped]
-        rest.sort(key=lambda c: (not self.kinds[c].follows_power, c))
+        try:                                               # the line the port's labels already name, first
+            known = settings.find_line(self.hst, "nrst", self.name) if self.name else None
+        except (LookupError, h.OepError):
+            known = None
+        rest.sort(key=lambda c: (c != known, not self.kinds[c].follows_power, c))
         self.say(f"reset line: attach under reset through each of {len(rest)} candidates (dpc = {vector:#x})")
         t0 = self.clock()
         for c in rest:
@@ -677,7 +696,17 @@ class PinFinder:
             self.say("map: the family's GPIO block is not in targets.FAMILIES (nothing mapped)")
             return {}
         debug = set(self.pins) - {0xFFFF}
-        never = debug | {self.power, r.reset_channel} | set(self.exclude) | set(r.stopped)   # nor a reset candidate
+        try:                                               # the line the port's labels name nrst, found or not
+            labelled_nrst = settings.find_line(self.hst, "nrst", self.name) if self.name else None
+        except (LookupError, h.OepError):
+            labelled_nrst = None
+        # a pad the option bytes leave a GPIO (RST_MODE 11) is mapped like any other, its nrst label or not
+        nrst_line = labelled_nrst if r.nrst_enabled is not False else None
+        never = (debug | {self.power, r.reset_channel, nrst_line} | set(self.exclude)
+                 | set(r.stopped))                         # nor a reset candidate
+        if r.nrst_enabled and r.reset_channel is None and labelled_nrst is None:
+            self.note("map: the option bytes turn NRST on and its line is not known: a channel driven low may reset "
+                      "the target (the map then stops)")
         self._plan([])
         try:
             halt = self.wire.attach_halt_offered()
@@ -891,9 +920,14 @@ class PinFinder:
                 self.scan()
             if "identify" in steps and self.left() > 4:
                 self.identify()
+            # with an NRST the option bytes turn on, the reset line first: the map drives every channel low in turn
+            # and must know which one would reset the target (4-2, 2026-10-30)
+            reset_first = self.report.nrst_enabled is True
+            if reset_first and "reset" in steps and self.left() > 3:
+                self.confirm_reset()
             if "map" in steps and self.left() > 3:
                 self.map_pads()
-            if "reset" in steps and self.left() > 3:
+            if not reset_first and "reset" in steps and self.left() > 3:
                 self.confirm_reset()
             if "labels" in steps:
                 self.suggest()

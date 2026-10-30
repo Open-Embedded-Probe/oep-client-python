@@ -254,7 +254,7 @@ def test_suggested_labels_are_checked_by_the_line_lookup():
     r = finder(hst, t, [], power=5, name="v003").run()
     assert not any("would find no" in n for n in r.notes)        # nothing else named so: found as suggested
     ep, hst, t = bench()
-    settings.Settings(hst).set_named(settings.CORE_CATEGORY, {"channel.GPIO9.label": "V003.NRST", "channel.GPIO4.label": "x"})
+    settings.Settings(hst).set_named(settings.CORE_CATEGORY, {"channel.GPIO9.label": "V003.NRST", "channel.GPIO4.label": "v003.old"})
     r = finder(hst, t, [], power=5, name="v003").run()
     notes = [n for n in r.notes if "would find no" in n]
     assert len(notes) == 1 and "nrst" in notes[0] and "[9]" in notes[0]   # 4 itself is relabelled: no clash
@@ -327,3 +327,18 @@ def test_a_driven_low_channel_is_tried_as_swdio_after_the_floating_pairs_beside_
     assert f.pins == (15, 14) and any("held its debug line" in n for n in f.report.notes)
     assert not [pr for pr in tried if 7 in pr or pr[1] == 15]    # never driven-high; driven-low only as SWDIO
     assert tried.index((15, 14)) > tried.index((13, 14))         # after the floating pairs one apart
+
+
+def test_a_channel_labelled_for_something_else_is_left_alone():
+    """A label that is not the --name port's line (another port's, or a name only such as a board's LED) keeps the
+    run off that channel: not read, scanned, held or driven."""
+    ep, hst, t = bench(powered_by=None)
+    settings.Settings(hst).set_named(settings.CORE_CATEGORY, {"channel.GPIO11.label": "rgb_led",
+                                                              "channel.GPIO12.label": "other.swio"})
+    tg = ep.targets[(WIRE, (19, 0xFFFF))]
+    tg.mem = Pads(ep, {"PC3": 11})
+    tg.mem.update({targets.V00X_OPTION: OPTION_ON})
+    ep.gpio_log.clear()
+    r = finder(hst, t, [], name="v003").run()
+    assert not [c for c, _ in ep.gpio_log if c in (11, 12)]
+    assert r.wiring == {} and any("11 (rgb_led)" in n for n in r.notes)

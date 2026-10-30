@@ -55,21 +55,29 @@ V00X_OPTION = 0x1FFFF800            # word0 = RDPR, nRDPR, USER, nUSER (bytes, l
 V00X_RST_MODE = {0: "128 us", 1: "1 ms", 2: "12 ms"}   # USER bits[4:3]: the NRST ignore window; 3 = PD7 is a GPIO
 
 
-def v00x_nrst_from_word(word: int) -> NrstState:
-    """CH32V00x: USER (byte 2 of the option word) bits[4:3] = RST_MODE: 11 = PD7 is a GPIO, no NRST (as shipped);
-    00 / 01 / 10 = NRST on, ignored for 128 us / 1 ms / 12 ms. USER and nUSER must be complements."""
+def v00x_nrst_from_word(word: int, pin: str = "PD7") -> NrstState:
+    """CH32V00x (and the CH32X035, its NRST on PA21): USER (byte 2 of the option word) bits[4:3] = RST_MODE: 11 = the
+    pin is a GPIO, no NRST (as shipped); 00 / 01 / 10 = NRST on, ignored for 128 us / 1 ms / 12 ms. USER and nUSER
+    must be complements."""
     user, nuser = (word >> 16) & 0xFF, (word >> 24) & 0xFF
     if user ^ nuser != 0xFF:
         return NrstState(False, f"option bytes unreadable as such (USER {user:#04x}, nUSER {nuser:#04x})", word)
     mode = (user >> 3) & 3
     if mode == 3:
-        return NrstState(False, f"RST_MODE 11 (USER {user:#04x}): PD7 is a GPIO, no NRST", word)
-    return NrstState(True, f"RST_MODE {mode:02b} (USER {user:#04x}): NRST on PD7, {V00X_RST_MODE[mode]} ignore window", word)
+        return NrstState(False, f"RST_MODE 11 (USER {user:#04x}): {pin} is a GPIO, no NRST", word)
+    return NrstState(True, f"RST_MODE {mode:02b} (USER {user:#04x}): NRST on {pin}, {V00X_RST_MODE[mode]} ignore window",
+                     word)
 
 
 def v00x_nrst(dm) -> NrstState:
     """Read (never write) the CH32V00x option word through a halted hart's riscv-dm."""
     return v00x_nrst_from_word(dm.read32(V00X_OPTION))
+
+
+def x035_nrst(dm) -> NrstState:
+    """The CH32X035's option word: the V00x's layout, NRST on PA21 (lead 7 of the LQFP48; 4-2, 2026-10-30: RST_MODE 01
+    reset it through PA21, 11 left PA21 a GPIO)."""
+    return v00x_nrst_from_word(dm.read32(V00X_OPTION), "PA21")
 
 
 # The CH32 GPIO block every family here shares: port k at GPIO_BASE + GPIO_STEP * k, its pads' 4-bit configuration in
@@ -98,9 +106,10 @@ FAMILIES: tuple[Family, ...] = (
            notes="NRST is PD7 and off as shipped (RST_MODE 11); the DM freezes DMSTATUS halt / running until "
                  "havereset is acknowledged; a power cycle then attach(halt) stops at dpc 0 ~15 ms after power-on"),
     Family("ch32x035", "rvswd", ids=((0xFFF00000, 0x03500000),), idle_clock="high", gpio_ports="ABC", gpio_pads=24,
-           debug_pads=("PC18", "PC19"), reset_line=False,
+           debug_pads=("PC18", "PC19"), nrst=x035_nrst,
            bonded=(("PC16", "PC11"), ("PC17", "PC10")),   # datasheet note 4: one lead each except on F8U6 / D8U6
-           notes="SWCLK resting low does not connect; reset is ndmreset only (no NRST on the benches)"),
+           notes="SWCLK resting low does not connect; NRST on PA21 only while the option bytes' RST_MODE turns it on "
+                 "(11, no NRST, as shipped)"),
     Family("ch32l103", "rvswd", max_speed=1_000_000, idle_clock="low", gpio_ports="ABCD", gpio_pads=16,
            debug_pads=("PA13", "PA14"),
            notes="SWCLK resting high resets the debug link; over 1 MHz fails right after a reset; target_id not recorded"),
