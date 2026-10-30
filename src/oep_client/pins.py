@@ -759,7 +759,8 @@ class PinFinder:
                 self.sleep(MAP_SETTLE_S)
                 for p, v in levels().items():
                     restless[p] |= v ^ first[p]
-            moving = {f"P{p}{b}" for p in fam.gpio_ports for b in range(fam.gpio_pads) if (restless[p] >> b) & 1}
+            moving = {f"P{p}{b}" for p in fam.gpio_ports for b in range(fam.gpio_pads)
+                      if (restless[p] >> b) & 1 and f"P{p}{b}" not in fam.debug_pads}   # those move with every access
             if moving:
                 self.note(f"map: {', '.join(sorted(moving))} moved with nothing driven (another device drives them): "
                           "not mapped")
