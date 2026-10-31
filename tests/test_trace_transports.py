@@ -371,8 +371,10 @@ def test_the_framing_follows_the_kind_of_transport_not_the_vid_pid(monkeypatch):
     monkeypatch.setattr(link, "_open_usb_stream", lambda kind, vid, pid, serial, *sizes: Stream())
     assert link.open_host("/dev/ttyUSB9", keep_session=False).link.framing == "cobs"
     assert link.open_host("tcp://127.0.0.1:7450", keep_session=False).link.framing == "length"
-    for target in ("usb:1209:4f45", "usb:303a:1001"):
-        assert link.open_host(target, keep_session=False).link.framing == "length"
+    monkeypatch.setattr(link, "check_unit_id", lambda hst, unit_id: None)   # no describe here
+    for vid_pid in ((0x1209, 0x4f45), (0x303a, 0x1001)):
+        monkeypatch.setattr(link, "find_usb", lambda unit_id, vid_pid=vid_pid: vid_pid)
+        assert link.open_host("oep://30eda0e3b001?via=usb", keep_session=False).link.framing == "length"
 
 
 def test_the_virtual_bench_listens_on_the_local_host_unless_told():
@@ -596,7 +598,7 @@ def test_a_named_unit_id_is_compared_without_letter_case(monkeypatch):
     asked = []
     monkeypatch.setattr(link, "find_usb", lambda unit_id: asked.append(unit_id) or (0x1234, 0x5678))
     monkeypatch.setattr(link, "_open_usb_stream", lambda kind, vid, pid, serial, *sizes: s)
-    hst = link.open_host("usb:30EDA0E3B001")
+    hst = link.open_host("oep://30EDA0E3B001?via=usb")
     assert not s.closed and hst.limits is not None and m.OP_DESCRIBE in ops(s.sent)
 
 
@@ -807,7 +809,7 @@ def test_a_tcp_probe_named_by_unit_id_is_matched_without_letter_case(monkeypatch
     try:
         monkeypatch.setattr(discovery, "browse", lambda timeout=2.0, engine="auto":
                             [discovery.Found("OEP x", txt, "oep-x.local.", port, ["127.0.0.1"])])
-        hst = link.open_host(f"tcp:{named}", keep_session=False)          # describe says fafe00000003
+        hst = link.open_host(f"oep://{named}?via=net", keep_session=False)          # describe says fafe00000003
         try:
             assert hst.limits is not None and hst.link.transport == "tcp"
         finally:

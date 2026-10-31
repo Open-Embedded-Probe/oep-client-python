@@ -1397,7 +1397,7 @@ class UsbProbe:
 
 class SeveralProbes(ValueError):
     """A bare usb target found more than one probe on the project's VID:PID and does not guess which: name one
-    (usb:<unit_id>, or its serial port). `probes` lists them (UsbProbe)."""
+    (as oep://<unit_id>, or its serial port). `probes` lists them (UsbProbe)."""
 
     def __init__(self, message: str, probes: list[UsbProbe]):
         super().__init__(message)
@@ -1546,7 +1546,7 @@ def check_unit_id(hst, unit_id: str) -> None:
 
 def find_usb(unit_id: str) -> tuple[int, int]:
     """The VID:PID of the USB device whose serial number is `unit_id` (transports §3, core §7.5) - how a host that kept a probe's
-    unit_id (oep://<unit_id>/<slot>, usb:<unit_id>) finds it again whatever VID:PID it enumerates with. The serial alone
+    unit_id (oep://<unit_id>) finds it again whatever VID:PID it enumerates with. The serial alone
     decides (no iProduct or class check): the device is a named one, opened without identification, probed by confirm
     and checked by describe's unit_id (open_host does both, check_unit_id)."""
     want = unit_id.lower()
@@ -1609,17 +1609,17 @@ def open_host(target: str, timeout: float | None = None, resend: bool | None = N
     """A Host on `target`, with the link's pipelining bound to the probe's limits (core confirm): Host.pipeline and
     everything built on it (flash, capture reads) then keep several requests in flight.
 
-    target: a serial port path (COM3 on Windows); tcp://HOST:PORT for a probe or a local broker listening on TCP (length
-    frames) - tcp://HOST without a port takes the port DNS-SD finds for that host, and tcp:UNIT_ID the probe whose
-    `_oep._tcp` TXT unit_id is that (`discovery`; describe's unit_id must then say the same, or it is closed:
-    UnitIdMismatch); usb[:VID:PID[:SERIAL]]
-    (hex) for the probe's USB device, vendor bulk then HID (transports §3) - a bare `usb` looks at every device on the
-    project's VID:PID (usb_probes; one device counts once whatever ways in it has): exactly one -> it is opened, vendor
-    bulk then HID, else its CDC port; several -> SeveralProbes listing them (unit id, ways in), nothing opened: name one;
-    none -> FileNotFoundError; usb:UNIT_ID for the device whose USB serial
-    is that unit id, whatever its VID:PID (fn 0's describe must then say the same unit_id, or it is closed:
-    UnitIdMismatch). Every target is probed first by the confirm-only rule (transports §3): no valid confirm answer, the link
-    is closed and NotOepProbe raised (a serial port retries its confirms for port_speed_idle_ms + host_wait_add_ms first).
+    target: an OEP address, oep://<unit_id>[/<port>[/<target>]][?via=<route>] (host guide §5.3; parse_address): without
+    via the probe's USB device (found by its USB serial = unit_id, whatever VID:PID: vendor bulk, then HID, then its one
+    CDC port), else the TCP probe DNS-SD finds by its `_oep._tcp` TXT unit_id; via=usb / bulk / hid / cdc / net keeps to
+    that route, via=tcp:<host>:<port> and via=tty:<path> name it. On every route describe's unit_id must be the one named,
+    or the link is closed (UnitIdMismatch); the address is kept as `hst.address`. Short forms for a probe whose unit_id is
+    not known (a tool's convenience, not an address): a serial port path (COM3 on Windows); tcp://HOST[:PORT] (without a
+    port, the one DNS-SD finds for that host); a bare `usb` - every device on the project's VID:PID (usb_probes; one
+    device counts once whatever ways in it has): exactly one -> it is opened, vendor bulk then HID, else its CDC port;
+    several -> SeveralProbes listing them, nothing opened; none -> FileNotFoundError. Every target is probed first by
+    the confirm-only rule (transports §3): no valid confirm answer, the link is closed and NotOepProbe raised (a serial
+    port retries its confirms for port_speed_idle_ms + host_wait_add_ms first).
 
     timeout: seconds to wait for a reply (default 3; TCP 15). resend: send a request once more with the same corr when
     its reply was lost (default on; off for TCP, where a broker retries towards the probe itself and a second copy from
@@ -1678,48 +1678,126 @@ def _kept(hst, keep_session: bool):
     return hst
 
 
+ROUTES = ("usb", "bulk", "hid", "cdc", "net")   # the named routes; tcp:<host>:<port> and tty:<path> carry a value
+
+
+@dataclass(frozen=True)
+class Address:
+    """An OEP address, oep://<probe>[/<port>[/<target>]][?via=<route>] (host guide §5.3): the place - the probe (its
+    unit_id), the port (a label's S) and the target - and the route to it (None: the host's choice)."""
+    probe: str
+    port: str | None = None
+    target: str | None = None
+    via: str | None = None
+
+    @property
+    def place(self) -> str:
+        """The address without its route, as two addresses are compared (case aside) and device locks are keyed."""
+        return "oep://" + "/".join(s for s in (self.probe, self.port, self.target) if s)
+
+
+def _segment_ok(s: str) -> bool:
+    return bool(s) and all(c.isascii() and (c.isalnum() or c in "-.") for c in s)
+
+
+def parse_address(text: str) -> Address:
+    """oep://<probe>[/<port>[/<target>]][?via=<route>] -> Address (host guide §5.3). The query comes off first (a tty
+    route's path has '/'), then the place splits on '/'. One query only, via; an unknown or repeated one is refused, as is
+    an x- unit_id (it names no unit, core §7.5). ValueError for anything else."""
+    from urllib.parse import unquote
+    if not text.lower().startswith("oep://"):
+        raise ValueError(f"{text}: not an oep:// address")
+    rest, _, query = text[len("oep://"):].partition("?")
+    via = None
+    if query:
+        for item in query.split("&"):
+            name, eq, value = item.partition("=")
+            if name != "via" or not eq or via is not None:
+                raise ValueError(f"{text}: the only query is one via=<route> (host guide §5.3)")
+            via = unquote(value)
+        if not (via in ROUTES or via.startswith(("tcp:", "tty:")) and len(via) > 4):
+            raise ValueError(f"{text}: via={via}: a route is one of {', '.join(ROUTES)}, tcp:<host>:<port> or tty:<path>")
+    segs = rest.split("/")
+    if len(segs) > 3 or not all(_segment_ok(s) for s in segs):
+        raise ValueError(f"{text}: the place is <probe>[/<port>[/<target>]], each of letters, digits, '-' and '.'")
+    if segs[0].lower().startswith("x-"):
+        raise ValueError(f"{text}: an x- unit_id names no unit (core §7.5), so no probe is found by it")
+    return Address(*segs, via=via)
+
+
+def _open_address(addr: Address, timeout: float | None, baud: int = BASE_BAUD):
+    """The link to addr's probe by its route (host guide §5.3); the caller checks describe's unit_id on every route."""
+    from . import host
+    via, unit = addr.via, addr.probe
+    if via == "net" or (via or "").startswith("tcp:"):
+        from . import discovery
+        if via == "net":
+            where = lambda: tcp_address(discovery.find_unit(unit).target)   # browsed again after a restart (§4.1)
+        else:
+            fixed = tcp_address("tcp://" + via[len("tcp:"):])
+            where = lambda: fixed
+        lk = SerialLink.on_stream(TcpStream(*where()), "length", TCP_TIMEOUT if timeout is None else timeout)
+        lk.resend = False
+        lk.transport = "tcp"
+        lk.reopener = lambda: TcpStream(*where())
+        hst = host.Host(lk.send)
+        lk.attach_host(hst)
+        return hst
+    if (via or "").startswith("tty:"):
+        lk = SerialLink(via[len("tty:"):], 3.0 if timeout is None else timeout, baud)
+        lk.transport = "serial"
+        hst = host.Host(lk.send)
+        lk.attach_host(hst)
+        return hst
+    try:
+        vid, pid = find_usb(unit)
+    except FileNotFoundError:
+        if via is None:                                  # not on USB: the host's next choice is DNS-SD
+            return _open_address(Address(unit, addr.port, addr.target, "net"), timeout, baud)
+        raise
+    timeout = 3.0 if timeout is None else timeout
+    if via in (None, "usb", "bulk", "hid"):
+        kinds = {"bulk": ("vendor",), "hid": ("hid",)}.get(via, ("vendor", "hid"))
+        try:
+            return open_usb_host(vid, pid, unit, timeout, kinds)
+        except FileNotFoundError:
+            if via in ("bulk", "hid"):
+                raise
+    ports = next((p.ports for p in usb_probes(vid, pid) if (p.unit_id or "").lower() == unit.lower()), [])
+    if len(ports) != 1:
+        raise FileNotFoundError(f"{addr.place}: {'no' if not ports else len(ports)} CDC port(s) of this USB device "
+                                f"to open{'' if not ports else ': name one with via=tty:<path>'}")
+    lk = SerialLink(ports[0], timeout, baud)
+    lk.transport = "serial"
+    hst = host.Host(lk.send)
+    lk.attach_host(hst)
+    return hst
+
+
 def _open_host(target: str, timeout: float | None, resend: bool | None, *, baud: int, keep_session: bool):
     """open_host without its port_speed step."""
     from . import host
-    named_unit = None
-    if target.startswith("tcp:") and not target.startswith("tcp://"):   # tcp:UNIT_ID: found by DNS-SD (transports §3)
-        from . import discovery
-        named_unit = target[len("tcp:"):]
-        if not named_unit or named_unit.lower().startswith("x-"):
-            raise ValueError(f"{target}: name a unit_id (an x- unit_id names no unit, core §7.5)")
-        target = discovery.find_unit(named_unit).target
-    if target.startswith("tcp://"):
+    if target.lower().startswith("oep://"):
+        addr = parse_address(target)
+        hst = _open_address(addr, timeout, baud)
+        if resend is not None:
+            hst.link.resend = resend
+        hst.address = addr
+        check_unit_id(hst, addr.probe)                   # on every route: describe's unit_id is the one named
+        return _kept(hst, keep_session)
+    if target.startswith("tcp://"):                     # the tool's short forms (host guide §5.3): unit_id not known
         addr, port = tcp_address(target)
         lk = SerialLink.on_stream(TcpStream(addr, port), "length", TCP_TIMEOUT if timeout is None else timeout)
         lk.resend = False if resend is None else resend
         lk.transport = "tcp"
         lk.reopener = lambda: TcpStream(addr, port)
-        if named_unit is not None:
-            from . import discovery, host
-            # after a restart or a new Wi-Fi link the address may change: browse again by unit_id (host guide §4.1)
-            lk.reopener = lambda: TcpStream(*tcp_address(discovery.find_unit(named_unit).target))
-            hst = host.Host(lk.send)
-            lk.attach_host(hst)
-            check_unit_id(hst, named_unit)                     # describe's unit_id must be the one named, else closed
-            return _kept(hst, keep_session)
-    elif target == "usb" or target.startswith("usb:"):
+    elif target == "usb":
         timeout = 3.0 if timeout is None else timeout
-        parts = target.split(":")[1:]
-        if len(parts) == 1:                                   # usb:UNIT_ID (any length: a VID comes with its PID)
-            if parts[0].lower().startswith("x-"):
-                raise ValueError(f"usb:{parts[0]}: an x- unit_id names no unit (core §7.5), so no probe is found by it")
-            vid, pid = find_usb(parts[0])
-            hst = open_usb_host(vid, pid, parts[0], timeout)
-            check_unit_id(hst, parts[0])
-            return _kept(hst, keep_session)
-        if parts:
-            vid, pid = int(parts[0], 16), int(parts[1], 16) if len(parts) > 1 else USB_PID
-            return _kept(open_usb_host(vid, pid, parts[2] if len(parts) > 2 else None, timeout), keep_session)
         vid, pid = USB_VID, USB_PID
         probes = usb_probes(vid, pid)                        # every device on the project's VID:PID, each once
         if len(probes) > 1:
             raise SeveralProbes(f"{len(probes)} probes on {vid:04x}:{pid:04x} ({'; '.join(map(str, probes))}); not "
-                                "choosing one: name one with usb:<unit_id> or its serial port", probes)
+                                "choosing one: name one as oep://<unit_id>", probes)
         one = probes[0] if probes else None
         if one is None or "vendor" in one.ways or "hid" in one.ways:
             try:
@@ -1736,6 +1814,8 @@ def _open_host(target: str, timeout: float | None, resend: bool | None, *, baud:
             raise FileNotFoundError(f"the probe on {vid:04x}:{pid:04x} ({one}) has no serial port this host can open")
         lk = SerialLink(one.ports[0], timeout, baud)
         lk.transport = "serial"
+    elif target.startswith(("tcp:", "usb:")):
+        raise ValueError(f"{target}: name the probe as oep://<unit_id>[?via=net|usb|tcp:<host>:<port>] (host guide §5.3)")
     else:
         lk = SerialLink(target, 3.0 if timeout is None else timeout, baud)
         lk.transport = "serial"

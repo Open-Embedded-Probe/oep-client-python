@@ -178,7 +178,7 @@ def test_c24_raise_speed_records_nothing_for_an_x_unit_id(tmp_path):
 
 def test_c24_usb_by_an_x_unit_id_is_refused():
     with pytest.raises(ValueError, match="x-"):
-        link.open_host("usb:x-esp32")
+        link.open_host("oep://x-esp32?via=usb")
 
 
 # ---- C-07 / transports §5: TCP and the resync wait ------------------------------------------------------------------------

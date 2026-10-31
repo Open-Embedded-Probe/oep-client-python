@@ -20,8 +20,8 @@
                                            host's time - the reading with the shortest round trip of n)
   oep restart <probe> [--reopen-s S]      (oep.probe.restart: the probe restarts; waits until it is back, its new boot_id)
 
-<probe>: a serial port, tcp://HOST[:PORT] (no port: the one DNS-SD finds), tcp:UNIT_ID (found by DNS-SD) or
-usb[:VID:PID[:SERIAL]]. A change takes the lock (owner "oep settings") and
+<probe>: an OEP address, oep://UNIT_ID[?via=usb|bulk|hid|cdc|net|tcp:HOST:PORT|tty:PATH] (host guide §5.3), or, for a
+probe whose unit_id is not known, a serial port, tcp://HOST[:PORT] (no port: the one DNS-SD finds) or usb (the only one). A change takes the lock (owner "oep settings") and
 ends the session after it; it takes effect at once, and stays over a restart only after `save` (or --save).
 """
 
@@ -47,7 +47,7 @@ def _open_host(target: str, **kw):
         return link.open_host(target, **kw)
     except (OSError, ValueError, ImportError, host.OepError) as e:
         why = " ".join(str(e).split()).rstrip(".") or type(e).__name__
-        hint = f" Hint: {USB_HINT}." if isinstance(e, FileNotFoundError) and (target == "usb" or target.startswith("usb:")) \
+        hint = f" Hint: {USB_HINT}." if isinstance(e, FileNotFoundError) and (target == "usb" or target.lower().startswith("oep://")) \
             else ""
         raise SystemExit(f"oep: cannot open {target}: {why}.{hint}") from None
 
@@ -81,7 +81,7 @@ def main(argv=None) -> int:
     sp.add_argument("--baud", type=int, default=link.BASE_BAUD, help="the boot speed (default 115200)")
     sp.add_argument("--json", action="store_true")
     lt = sub.add_parser("linktest", help="measure the link: traffic patterns at rates the host asks for, what breaks")
-    lt.add_argument("probe", help="a probe: a serial port, tcp://HOST:PORT or usb[:VID:PID]")
+    lt.add_argument("probe", help="a probe: oep://UNIT_ID[?via=...], a serial port, tcp://HOST:PORT or usb")
     lt.add_argument("--rates", default="", help="comma-separated rates to switch to with port_speed and measure at "
                     "(each on its own; 0 or 'now' = the speed in force). Default: only the speed in force")
     lt.add_argument("--patterns", default="in,out,duplex", help="in (probe->host), out (host->probe), duplex")
@@ -96,7 +96,7 @@ def main(argv=None) -> int:
     lt.add_argument("--json", action="store_true", help="one JSON object per cell")
     pn = sub.add_parser("pins", help="find where a target is wired: classify the channels, scan the wire, find the "
                         "reset line, suggest labels (writes nothing without --save)")
-    pn.add_argument("probe", help="a probe: a serial port, tcp://HOST:PORT or usb[:VID:PID[:SERIAL]]")
+    pn.add_argument("probe", help="a probe: oep://UNIT_ID[?via=...], a serial port, tcp://HOST:PORT or usb")
     pn.add_argument("--power", type=int, help="the gpio channel that powers the target: switched off, then on, to "
                     "see which channels follow it (never touched without this)")
     pn.add_argument("--exclude", default="", help="channels never to read, scan or hold, comma-separated")
@@ -116,11 +116,11 @@ def main(argv=None) -> int:
                     "<name>.swio), <name>.nrst, <name>.power_hi; the probe is then opened as oep://<unit_id>/<name>")
     pn.add_argument("--json", action="store_true", help="the report as JSON (the steps' lines go to stderr)")
     ck = sub.add_parser("clock", help="the probe's clock (fn 0 clock, core §7.6) against this host's: lock-free")
-    ck.add_argument("probe", help="a probe: a serial port, tcp://HOST:PORT or usb[:VID:PID[:SERIAL]]")
+    ck.add_argument("probe", help="a probe: oep://UNIT_ID[?via=...], a serial port, tcp://HOST:PORT or usb")
     ck.add_argument("-n", type=int, default=8, help="readings; the one with the shortest round trip is kept (default 8)")
     ck.add_argument("--json", action="store_true")
     rs = sub.add_parser("restart", help="restart the probe (oep.probe.restart, optional) and wait until it is back")
-    rs.add_argument("probe", help="a probe: a serial port, tcp://HOST:PORT or usb[:VID:PID[:SERIAL]]")
+    rs.add_argument("probe", help="a probe: oep://UNIT_ID[?via=...], a serial port, tcp://HOST:PORT or usb")
     rs.add_argument("--force", action="store_true", help="take the lock from its holder")
     rs.add_argument("--reopen-s", type=float, default=0.0, metavar="S",
                     help="when the probe is not back within its restart_max_ms, open it again for up to S more seconds "
@@ -138,7 +138,7 @@ def main(argv=None) -> int:
     d = sub.add_parser("dump", help="list and describe every interface a probe offers")
     src = d.add_mutually_exclusive_group(required=True)
     src.add_argument("--virtual", choices=sorted(virtual_bench.PROFILES), help="an in-process virtual bench (no hardware)")
-    src.add_argument("--port", help="a probe: a serial port, tcp://HOST:PORT or usb[:VID:PID] (lock-free reads only)")
+    src.add_argument("--port", help="a probe: oep://UNIT_ID[?via=...], a serial port, tcp://HOST:PORT or usb (lock-free reads only)")
     d.add_argument("--prefix", default="", help="only names under this namespace (label boundaries)")
     d.add_argument("--exact", action="store_true", help="the prefix is a whole name")
     d.add_argument("--json", action="store_true", help="machine-readable output")

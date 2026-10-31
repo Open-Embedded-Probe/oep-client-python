@@ -7,7 +7,7 @@
 A probe listening on TCP advertises a DNS-SD (RFC 6763) instance of `_oep._tcp` over mDNS (RFC 6762) while it listens
 (oep-spec transports §3): the port is the SRV record's (none is fixed), the TXT record carries `unit_id=<unit_id>`
 (fn 0's describe's; other keys are ignored here), the instance and host names are the probe's. A host uses a named
-probe only when describe's unit_id after opening is the one it named (`link.open_host("tcp:UNIT_ID")` checks it; host
+probe only when describe's unit_id after opening is the one it named (`link.open_host("oep://UNIT_ID?via=net")` checks it; host
 guide §4.1). The service name `oep` is not registered, so another service may advertise `_oep._tcp`: `verify` (and
 `find_unit`, `oep find` by default) connects to each instance found, sends confirm and describe, keeps those whose
 describe unit_id is their TXT unit_id and drops the rest (host guide §4.1). The reference probe (oep-probe-arduino) announces host `oep-<unit_id>.local`, instance `OEP <unit_id>`,

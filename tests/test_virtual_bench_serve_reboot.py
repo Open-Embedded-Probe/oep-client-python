@@ -42,7 +42,10 @@ def _stderr_line(proc, timeout=5.0) -> str:
 def _command(proc, text: str) -> str:
     proc.stdin.write(text.encode() + b"\n")
     proc.stdin.flush()
-    return _stderr_line(proc)
+    line = _stderr_line(proc)
+    while line.startswith("virtual_bench_serve: no inotify"):     # the startup notice when inotify is used up
+        line = _stderr_line(proc)
+    return line
 
 
 def _tcp_send(sock):

@@ -2522,10 +2522,10 @@ def test_with_both_declared_the_pins_match_a_group_and_the_role_channels(pins, o
 
 
 def test_an_x_unit_id_names_no_probe_and_keeps_no_session(tmp_path):
-    """core §7.5: the host does not name a probe by an `x-` unit_id (tcp:x-... / usb:x-... refused before anything is
+    """core §7.5: the host does not name a probe by an `x-` unit_id (oep://x-... refused before anything is
     opened) nor keep anything across sessions under it (kept_session keeps nothing)."""
     from oep_client import kept_session
-    for target in ("tcp:x-esp32", "usb:x-esp32"):
+    for target in ("oep://x-esp32?via=net", "oep://x-esp32?via=usb"):
         with pytest.raises(ValueError, match="x- unit_id names no unit"):
             link.open_host(target)
     ep = build(lambda: vb.with_unit_id(vb.p4_x035(), "x-board"))

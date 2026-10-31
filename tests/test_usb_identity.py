@@ -152,11 +152,11 @@ def test_a_bare_usb_target_with_no_probe_says_none(monkeypatch):
         link.open_host("usb")
 
 
-def test_a_named_vid_pid_has_no_cdc_fallback_and_no_listing(monkeypatch):
-    monkeypatch.setattr(link, "_open_usb_stream", no_stream)
-    monkeypatch.setattr(link, "usb_probes", lambda *a: pytest.fail("listed"))
-    with pytest.raises(FileNotFoundError):
-        link.open_host("usb:1209:4f45")
+def test_the_old_usb_and_tcp_forms_name_the_oep_address_instead(monkeypatch):
+    monkeypatch.setattr(link, "_open_usb_stream", lambda *a: pytest.fail("opened"))
+    for target in ("usb:1209:4f45", "usb:30eda0e3b001", "tcp:30eda0e3b001"):
+        with pytest.raises(ValueError, match="oep://<unit_id>"):
+            link.open_host(target)
 
 
 @pytest.mark.parametrize("devices", [
@@ -174,7 +174,7 @@ def test_a_bare_usb_target_with_several_probes_opens_none_and_lists_them(monkeyp
         link.open_host("usb")
     assert not tried and len(e.value.probes) == len(devices)
     text = str(e.value)
-    assert text.startswith(f"{len(devices)} probes on 1209:4f45 (") and "name one with usb:<unit_id> or its serial port" in text
+    assert text.startswith(f"{len(devices)} probes on 1209:4f45 (") and "name one as oep://<unit_id>" in text
     for unit_id, ways, ports in devices:
         assert f"{unit_id}: " in text
     if devices[0][0] == "30eda0e343c6":
@@ -189,8 +189,8 @@ def test_the_oep_command_lists_several_usb_probes_in_one_line(monkeypatch):
     with pytest.raises(SystemExit) as e:
         cli.main(["dump", "--port", "usb"])
     assert str(e.value.code) == ("oep: cannot open usb: 2 probes on 1209:4f45 (30eda0e343c6: vendor, hid, cdc "
-                                 "/dev/ttyACM0; 9489dd2ae0953650: cdc /dev/ttyACM1); not choosing one: name one with "
-                                 "usb:<unit_id> or its serial port.")
+                                 "/dev/ttyACM0; 9489dd2ae0953650: cdc /dev/ttyACM1); not choosing one: name one as "
+                                 "oep://<unit_id>.")
 
 
 def test_usb_probes_counts_each_device_once_whatever_its_ways_in():
@@ -296,7 +296,7 @@ def test_usb_unit_id_matches_the_serial_and_checks_describe(monkeypatch):
         return s
 
     monkeypatch.setattr(link, "_open_usb_stream", opened)
-    hst = link.open_host("usb:30eda0e3b001")
+    hst = link.open_host("oep://30eda0e3b001?via=usb")
     assert seen == [(0x1234, 0x5678, "30eda0e3b001")]
     assert ops(s.sent)[0] == m.OP_CONFIRM and set(ops(s.sent)[1:]) == {m.OP_DESCRIBE} and not s.closed
     assert hst.limits is not None
@@ -307,7 +307,7 @@ def test_usb_unit_id_whose_describe_says_another_unit_is_closed(monkeypatch):
     monkeypatch.setattr(link, "find_usb", lambda unit_id: (0x1234, 0x5678))
     monkeypatch.setattr(link, "_open_usb_stream", lambda kind, vid, pid, serial, *sizes: s)
     with pytest.raises(link.UnitIdMismatch):
-        link.open_host("usb:30eda0e3b001")
+        link.open_host("oep://30eda0e3b001?via=usb")
     assert s.closed and set(ops(s.sent)) <= {m.OP_CONFIRM, m.OP_DESCRIBE}
 
 

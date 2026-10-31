@@ -69,10 +69,11 @@ GitHub Release、PyPI（Trusted Publishing）へ出す。変更は CHANGELOG.md 
 from oep_client import core, link, riscv, ch32_flash
 
 hst = link.open_host("/dev/ttyACM0")   # pipelining つき
-# a serial port (always COBS), "tcp://127.0.0.1:PORT" (a broker), "usb:<unit id>" (the device whose USB serial it is;
-# describe's unit_id must match), "usb" (every device on the project's VID:PID 1209:4F45, each counted once: exactly
-# one -> vendor, then HID, else its CDC port; several -> link.SeveralProbes lists them, name one) /
-# "usb:VID:PID[:SERIAL]" (vendor, then HID). Each is probed first with a
+# an OEP address "oep://<unit id>[?via=usb|bulk|hid|cdc|net|tcp:HOST:PORT|tty:PATH]" (host guide §5.3; without via
+# its USB device, else the probe DNS-SD finds; describe's unit_id must match on any route), or, when the unit id is not
+# known, a serial port (always COBS), "tcp://127.0.0.1:PORT" (a broker), "usb" (every device on the project's VID:PID
+# 1209:4F45, each counted once: exactly one -> vendor, then HID, else its CDC port; several -> link.SeveralProbes lists
+# them, name one). Each is probed first with a
 # confirm only (transports §3): no valid answer -> closed, link.NotOepProbe
 core.take(hst, 30000, owner="flash script")   # the only way in: force; else wait out the lease, name the holder
 wire = riscv.Wire(hst, "oep.wire.rvswd")
@@ -118,8 +119,9 @@ oep find [--timeout 2] [--json] [--no-verify]  # _oep._tcp を広告する probe
 oep linktest <probe> ...                     # --timeout: 既定は応答 1 つに 0.3 秒、TCP では 3 秒
 ```
 
-`<probe>` はシリアルの口、`tcp://HOST:PORT`、`tcp://HOST`（その host に DNS-SD が見つけた port）、`tcp:UNIT_ID`（TXT の unit_id で
-DNS-SD が見つけた probe。describe の unit_id が同じでなければ閉じる）、`usb[:VID:PID[:SERIAL]]`。変更はロックを取り（owner "oep settings"）、終わったら
+`<probe>` は OEP のアドレス `oep://UNIT_ID[?via=経路]`（oep-spec の host ガイド §5.3。via が無ければ USB のデバイス、無ければ
+DNS-SD が見つけた probe。どの経路でも describe の unit_id が同じでなければ閉じる）。unit_id を知らないときは、シリアルの口、
+`tcp://HOST:PORT`、`tcp://HOST`（その host に DNS-SD が見つけた port）、`usb`（ただ 1 つの probe）でもよい。変更はロックを取り（owner "oep settings"）、終わったら
 セッションを閉じる。変更はすぐ効き、`save` の後は再起動しても残る。
 
 ### 走り直す host: 残したセッションの id
@@ -150,7 +152,7 @@ TCP で OEP を運ぶ probe は DNS-SD で見つける（ネットワークの�
   `oep` は登録した名前ではないので、別のサービスが `_oep._tcp` を広告しうる: どの instance もまず確かめる（`discovery.verify`、
   すべて同時に、答え 1 つあたり 1 秒、`--verify-timeout`）。TCP でつなぎ、confirm（`OEP!` の答え）と fn 0 の describe を送り、
   describe の unit_id が TXT の unit_id と同じものだけを残す。session は開かない。確かめられないものは、その接続先と言ったことを
-  stderr に警告して外す。`--no-verify` は広告されたものをすべてそのまま並べる。`discovery.find_unit`（つまり `tcp:UNIT_ID`）も
+  stderr に警告して外す。`--no-verify` は広告されたものをすべてそのまま並べる。`discovery.find_unit`（つまり `oep://UNIT_ID?via=net`）も
   同じく確かめ、確かめられない instance は飛ばす。そのあと `open_host` は開いた経路で confirm と describe の unit_id をもう一度
   確かめる。port はいつも SRV
   のもの（決まった port は無い。参照の probe の 7450 は例）。python-zeroconf があれば（`pip install 'oep-client-python[mdns]'`）それで、
@@ -159,7 +161,7 @@ TCP で OEP を運ぶ probe は DNS-SD で見つける（ネットワークの�
   アドレスごとに IP_MULTICAST_IF。`discovery.interface_addresses`: ifaddr があればそれ、無ければ Linux は各インターフェースのアドレス、
   ほかは host 名のアドレス）。一度の送信は 1 つのインターフェースからしか出ず（Windows ではよく仮想アダプタ）、別のアダプタの probe には届かない。mDNS は同じリンクの
   中だけ: WSL 2 の既定の NAT、VM、ルーターの向こうからは見つからない。そのときは `tcp://HOST:PORT` で名指す。
-- `tcp:UNIT_ID` はその unit_id で DNS-SD が見つけた probe を開き、describe の unit_id を確かめる（違えば UnitIdMismatch で閉じる）。
+- `oep://UNIT_ID?via=net` はその unit_id で DNS-SD が見つけた probe を開き、describe の unit_id を確かめる（違えば UnitIdMismatch で閉じる）。
   再起動の後は browse し直す（アドレスは変わりうる）。TCP に認証は無い: 信頼するネットワークかトンネルの中で使う（transports §1）。
 - `oep linktest` は TCP では応答を 3 秒待つ（ほかは 0.3 秒）: Wi-Fi の再送でときどき 1〜4 秒止まり、それでも答えは来る。
 
@@ -409,7 +411,7 @@ python -m oep_client.virtual_bench_serve --tcp 0 --announce --profile esp32-v003
 問い合わせの multicast は出ていったインターフェースでこの host に戻り、応答器はすべてのインターフェースで group に入っている。
 multicast の経路が無い host では `--announce-on 127.0.0.1` にし、問い合わせを IP_MULTICAST_IF 127.0.0.1 で送る。並んで動く job は
 `--unit-id` を変えれば分かれる（instance の名前にも port が入る）。コンテナや VM は自分のネットワークの中でだけ答える。
-tests/test_virtual_bench_announce.py がこれを `oep find`、`discovery.find_unit`、`tcp:UNIT_ID`（両方の engine）で試す（同じ process の responder が、OEP でない TCP の
+tests/test_virtual_bench_announce.py がこれを `oep find`、`discovery.find_unit`、`oep://UNIT_ID?via=net`（両方の engine）で試す（同じ process の responder が、OEP でない TCP の
 サービスと違う TXT の unit_id を並べて広告し、確かめでそれが外れることも見る）。multicast が
 戻らない所では skip する。
 

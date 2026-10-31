@@ -1,6 +1,19 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Changed (breaking): a probe is named by its OEP address, `oep://<unit_id>[/<port>[/<target>]][?via=<route>]`
+  (oep-spec host guide §5.3; `link.parse_address`, `link.Address`, `hst.address`). Without via: its USB device (found by
+  its USB serial, any VID:PID: vendor bulk, then HID, then its one CDC port), else the TCP probe DNS-SD finds; via=usb /
+  bulk / hid / cdc / net keeps to that route, via=tcp:<host>:<port> and via=tty:<path> name it. On every route
+  describe's unit_id must be the one named. `tcp:UNIT_ID`, `usb:UNIT_ID` and `usb:VID:PID[:SERIAL]` are gone
+  (`oep://UNIT_ID?via=net`, `?via=usb`); a serial port path, `tcp://HOST[:PORT]` and a bare `usb` stay as short forms for a
+  probe whose unit_id is not known.
+- (JA) 変更（壊す変更）: probe は OEP のアドレス `oep://<unit_id>[/<port>[/<target>]][?via=<経路>]` で名指す（oep-spec の host
+  ガイド §5.3。`link.parse_address`、`link.Address`、`hst.address`）。via が無ければ USB のデバイス（USB の serial で探す。
+  VID:PID は問わない。vendor bulk、HID、ただ 1 つの CDC の順）、無ければ DNS-SD が見つけた TCP の probe。via=usb / bulk / hid / cdc /
+  net はその経路だけ、via=tcp:<host>:<port> と via=tty:<path> は経路を名指す。どの経路でも describe の unit_id が名指したものと
+  同じでなければならない。`tcp:UNIT_ID`、`usb:UNIT_ID`、`usb:VID:PID[:SERIAL]` は無くした（`oep://UNIT_ID?via=net`、`?via=usb`）。
+  unit_id を知らない probe には、シリアルの口の path、`tcp://HOST[:PORT]`、ただの `usb` を短い形として残す。
 - (EN) Changed: `virtual_bench_serve --pty` says so on stderr when it gets no inotify instance (a user's
   fs.inotify.max_user_instances used up by editors and file watchers): it then cannot see the close of a host that ended
   without closing the port, and the pty stays busy. The test of that case skips with this reason instead of failing.

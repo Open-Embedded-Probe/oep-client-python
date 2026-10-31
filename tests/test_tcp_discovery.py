@@ -92,7 +92,7 @@ def test_tcp_unit_id_opens_the_probe_dns_sd_names_and_checks_describe(tcp_bench,
     unit = "fafe00000003"                                                  # the esp32-v003 profile's unit_id
     monkeypatch.setattr(discovery, "browse", lambda timeout=2.0, engine="auto":
                         [discovery.Found("OEP x", unit, "oep-x.local.", port, ["127.0.0.1"])])
-    hst = link.open_host(f"tcp:{unit}", keep_session=False)
+    hst = link.open_host(f"oep://{unit}?via=net", keep_session=False)
     try:
         assert hst.link.transport == "tcp" and linktest.default_timeout(hst) == linktest.TCP_TIMEOUT
         cfg = settings.Settings(hst)
@@ -104,11 +104,11 @@ def test_tcp_unit_id_opens_the_probe_dns_sd_names_and_checks_describe(tcp_bench,
     monkeypatch.setattr(discovery, "browse", lambda timeout=2.0, engine="auto":
                         [discovery.Found("OEP y", "0000aaaa", "oep-y.local.", port, ["127.0.0.1"])])
     with pytest.raises(LookupError, match="says unit_id 'fafe00000003'"):  # TXT says 0000aaaa, describe does not:
-        link.open_host("tcp:0000aaaa", keep_session=False)                 # dropped by find_unit's verify
+        link.open_host("oep://0000aaaa?via=net", keep_session=False)       # dropped by find_unit's verify
     monkeypatch.setattr(discovery, "find_unit", lambda unit_id, *a, **k:   # and open_host checks it on its own link
                         discovery.Found("OEP y", "0000aaaa", "oep-y.local.", port, ["127.0.0.1"]))
     with pytest.raises(link.UnitIdMismatch):
-        link.open_host("tcp:0000aaaa", keep_session=False)
+        link.open_host("oep://0000aaaa?via=net", keep_session=False)
     hst = link.open_host(f"tcp://127.0.0.1:{port}", keep_session=False)   # explicit address and port
     hst.link.close()
 

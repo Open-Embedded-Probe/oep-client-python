@@ -97,7 +97,7 @@ def test_oep_find_lists_the_announcing_virtual_bench(bench, engine, capsys):
 
 def test_tcp_unit_id_opens_it(bench):
     _, unit, port = bench
-    hst = link.open_host(f"tcp:{unit}", keep_session=False)        # find_unit, connect, describe's unit_id checked
+    hst = link.open_host(f"oep://{unit}?via=net", keep_session=False)        # find_unit, connect, describe's unit_id checked
     try:
         assert hst.link.transport == "tcp"
     finally:
@@ -372,7 +372,7 @@ def test_find_unit_and_tcp_unit_id_pass_over_an_impostor_with_the_same_txt(bench
     _, unit, port = bench
     for _ in range(3):                                   # whichever instance the browse lists first
         assert discovery.find_unit(unit, timeout=2.0).port == port
-    hst = link.open_host(f"tcp:{unit}", keep_session=False)
+    hst = link.open_host(f"oep://{unit}?via=net", keep_session=False)
     try:
         assert hst.link.transport == "tcp"
     finally:

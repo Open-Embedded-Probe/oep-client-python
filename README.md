@@ -75,10 +75,11 @@ names starting with `_`, may change. Check probe/client compatibility using the 
 from oep_client import core, link, riscv, ch32_flash
 
 hst = link.open_host("/dev/ttyACM0")   # pipelined
-# a serial port (always COBS), "tcp://127.0.0.1:PORT" (a broker), "usb:<unit id>" (the device whose USB serial it is;
-# describe's unit_id must match), "usb" (every device on the project's VID:PID 1209:4F45, each counted once: exactly
-# one -> vendor, then HID, else its CDC port; several -> link.SeveralProbes lists them, name one) /
-# "usb:VID:PID[:SERIAL]" (vendor, then HID). Each is probed first with a
+# an OEP address "oep://<unit id>[?via=usb|bulk|hid|cdc|net|tcp:HOST:PORT|tty:PATH]" (host guide §5.3; without via
+# its USB device, else the probe DNS-SD finds; describe's unit_id must match on any route), or, when the unit id is not
+# known, a serial port (always COBS), "tcp://127.0.0.1:PORT" (a broker), "usb" (every device on the project's VID:PID
+# 1209:4F45, each counted once: exactly one -> vendor, then HID, else its CDC port; several -> link.SeveralProbes lists
+# them, name one). Each is probed first with a
 # confirm only (transports §3): no valid answer -> closed, link.NotOepProbe
 core.take(hst, 30000, owner="flash script")   # the only way in: force; else wait out the lease, name the holder
 wire = riscv.Wire(hst, "oep.wire.rvswd")
@@ -125,9 +126,9 @@ oep find [--timeout 2] [--json] [--no-verify]  # probes announcing _oep._tcp (ea
 oep linktest <probe> ...                     # --timeout: 0.3 s an answer by default, 3 s over TCP
 ```
 
-`<probe>` is a serial port, `tcp://HOST:PORT`, `tcp://HOST` (the port DNS-SD finds for that host), `tcp:UNIT_ID` (the
-probe DNS-SD finds by its TXT unit_id; describe's unit_id must say the same, else it is closed) or
-`usb[:VID:PID[:SERIAL]]`. A change takes the lock (owner "oep settings") and
+`<probe>` is an OEP address `oep://UNIT_ID[?via=route]` (oep-spec host guide §5.3; without via its USB device, else the
+probe DNS-SD finds; on any route describe's unit_id must say the same, else it is closed) or, when the unit_id is not
+known, a serial port, `tcp://HOST:PORT`, `tcp://HOST` (the port DNS-SD finds for that host) or `usb` (the only probe). A change takes the lock (owner "oep settings") and
 ends the session after it; it takes effect at once and, after `save`, stays over a restart.
 
 ### A host run again: the kept session id
@@ -160,7 +161,7 @@ A probe that serves OEP over TCP is found by DNS-SD (its network settings are th
   (`discovery.verify`, all at once, 1 s per answer, `--verify-timeout`): a TCP connection, confirm (an `OEP!` answer)
   and fn 0's describe, whose unit_id must be the TXT unit_id - no session is opened. One that fails is dropped with a
   warning on stderr naming its endpoint and what it said; `--no-verify` lists every instance as announced.
-  `discovery.find_unit` (and so `tcp:UNIT_ID`) verifies the same way and passes over an instance it cannot verify;
+  `discovery.find_unit` (and so `oep://UNIT_ID?via=net`) verifies the same way and passes over an instance it cannot verify;
   `open_host` then checks confirm and describe's unit_id again on the link it opens. The port
   is always the SRV record's (none is fixed - the reference probe's 7450 is an example). With python-zeroconf installed
   (`pip install 'oep-client-python[mdns]'`) it browses with it (every interface: InterfaceChoice.All), else with a
@@ -169,7 +170,7 @@ A probe that serves OEP over TCP is found by DNS-SD (its network settings are th
   installed, else each interface's address on Linux, else the host name's addresses) - one send leaves by one
   interface only, on Windows often a virtual adapter's, and a probe on another adapter never hears it. mDNS stays on the local link: from WSL 2's
   default NAT network, a VM or across a router nothing is found - name the probe as `tcp://HOST:PORT`.
-- `tcp:UNIT_ID` opens the probe DNS-SD finds by that unit_id and checks describe's (UnitIdMismatch, closed, otherwise);
+- `oep://UNIT_ID?via=net` opens the probe DNS-SD finds by that unit_id and checks describe's (UnitIdMismatch, closed, otherwise);
   after a restart it browses again (the address may change). TCP has no authentication: use it on a trusted network or
   a tunnel (transports §1).
 - `oep linktest` waits 3 s an answer over TCP (0.3 s elsewhere): Wi-Fi retransmissions stall answers for 1-4 s now and
@@ -470,6 +471,6 @@ The query's multicast loops back to this host on the interface it left by, and t
 every interface. A host with no multicast route needs `--announce-on 127.0.0.1` and the query sent with
 IP_MULTICAST_IF 127.0.0.1. A different `--unit-id` per job keeps parallel jobs apart (the port is in the instance
 name too). A container or VM answers only on its own network. tests/test_virtual_bench_announce.py does this with
-`oep find`, `discovery.find_unit` and `tcp:UNIT_ID` (both engines) - with in-process responders announcing a non-OEP
+`oep find`, `discovery.find_unit` and `oep://UNIT_ID?via=net` (both engines) - with in-process responders announcing a non-OEP
 TCP service and a wrong TXT unit_id beside it, which the verify drops - skipped where multicast does not loop back.
 
