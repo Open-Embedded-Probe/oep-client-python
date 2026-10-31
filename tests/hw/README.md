@@ -124,14 +124,14 @@ The current `boards.py` is a legacy table combining physical devices, profiles a
 | RP2040 / RP2350 | BOOTSEL with picotool, or an explicit UF2 drive |
 | TCP | No update through this entry; test installed firmware over the explicit network path |
 
-`OEP_HW_BOARDS=tcp:<unit_id>` or `tcp://<host>:<port>` explicitly selects a TCP probe. Generic TCP entries have no expected model or free channel defaults. Confirm wiring before specifying fixture channels. `OEP_HW_NOFLASH` selects installed firmware; it does not prohibit settings or power operations.
+`OEP_HW_BOARDS=oep://<unit_id>?via=net` or `tcp://<host>:<port>` explicitly selects a TCP probe. Generic TCP entries have no expected model or free channel defaults. Confirm wiring before specifying fixture channels. `OEP_HW_NOFLASH` selects installed firmware; it does not prohibit settings or power operations.
 
 ## Environment
 
 | Variable | Meaning |
 |---|---|
-| `OEP_HW_BOARDS` | comma list of board ids (required; nothing runs without it); `tcp:<unit_id>` / `tcp://<host>[:<port>]` names a TCP probe without a table entry |
-| `OEP_HW_ATOM_TCP` | the ATOM's TCP target for `esp32-pico-d4-50029191fe34-tcp` (default `tcp:50029191fe34`, by DNS-SD) |
+| `OEP_HW_BOARDS` | comma list of board ids (required; nothing runs without it); `oep://<unit_id>?via=net` / `tcp://<host>[:<port>]` names a TCP probe without a table entry |
+| `OEP_HW_ATOM_TCP` | the ATOM's TCP target for `esp32-pico-d4-50029191fe34-tcp` (default `oep://50029191fe34?via=net`, by DNS-SD) |
 | `OEP_PROBE_DIR` / `OEP_PROBE_VERSION` / `OEP_HW_NOFLASH` | the firmware source (one of them) |
 | `OEP_HW_TARGET`, `OEP_HW_RESET`, `OEP_HW_TARGET_ADDR`, `OEP_HW_LOOPS` | the wire test: a target is wired (and where), its reset line, the block address, the loop count |
 | `OEP_HW_REOPEN_S` | seconds more to open a restarted probe again once its restart_max_ms has passed (the user's reopen, above; WSL / usbipd). Default 0: none - the probe is gone after restart_max_ms |

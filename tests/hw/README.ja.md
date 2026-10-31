@@ -121,16 +121,16 @@ oep settings save <probe>      # 走る前に何も保存されていなけれ�
 | RP2040 / RP2350 | BOOTSEL と picotool、または明示した UF2 drive |
 | TCP | この入口では更新しない。指定されたネットワーク経路で設置済み firmware を検証 |
 
-TCP は `OEP_HW_BOARDS=tcp:<unit_id>` または `tcp://<host>:<port>` を明示できます。汎用 TCP 指定では期待 model や空き channel が未設定です。配線確認なく fixture の channel を追加しません。`OEP_HW_NOFLASH` は設置済み firmware の試験を選び、設定や power 操作の禁止を意味しません。
+TCP は `OEP_HW_BOARDS=oep://<unit_id>?via=net` または `tcp://<host>:<port>` を明示できます。汎用 TCP 指定では期待 model や空き channel が未設定です。配線確認なく fixture の channel を追加しません。`OEP_HW_NOFLASH` は設置済み firmware の試験を選び、設定や power 操作の禁止を意味しません。
 
 ## 環境変数
 
 | 変数 | 意味 |
 |---|---|
-| `OEP_HW_BOARDS` | ボード id のコンマ区切り（必須。無ければ何も回らない）。`tcp:<unit_id>` / `tcp://<host>[:<port>]` は表に無い TCP の probe |
+| `OEP_HW_BOARDS` | ボード id のコンマ区切り（必須。無ければ何も回らない）。`oep://<unit_id>?via=net` / `tcp://<host>[:<port>]` は表に無い TCP の probe |
 | `OEP_WIFI_SSID_<n>`、`OEP_WIFI_PASS_<n>` | `wifi` の試験が使うベンチの Wi-Fi（n は entry の index。PASS が無ければ開いたネットワーク）。環境変数から読み、表示せず、`(set)` とだけ記録する。手で入れるなら `oep settings set <probe> core wifi.<n>.ssid=... wifi.<n>.passphrase=...`（passphrase は表示されない） |
 | `OEP_HW_WIFI_WAIT_S` | `wifi` の試験がつながりを待つ秒数（既定 30） |
-| `OEP_HW_ATOM_TCP` | `esp32-pico-d4-50029191fe34-tcp` の TCP の行き先（既定 `tcp:50029191fe34`、DNS-SD） |
+| `OEP_HW_ATOM_TCP` | `esp32-pico-d4-50029191fe34-tcp` の TCP の行き先（既定 `oep://50029191fe34?via=net`、DNS-SD） |
 | `OEP_PROBE_DIR` / `OEP_PROBE_VERSION` / `OEP_HW_NOFLASH` | firmware の出所（どれか 1 つ） |
 | `OEP_HW_TARGET`、`OEP_HW_RESET`、`OEP_HW_TARGET_ADDR`、`OEP_HW_LOOPS` | wire の試験: target が繋がっている（どこに）、reset の線、block の番地、回数 |
 | `OEP_HW_REOPEN_S` | 再起動した probe を、restart_max_ms が過ぎた後さらに何秒まで開き直すか（利用者が開き直す。上。WSL / usbipd）。既定 0: しない - restart_max_ms の後 probe は無くなったものとする |

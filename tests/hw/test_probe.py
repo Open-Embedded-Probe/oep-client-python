@@ -47,7 +47,7 @@ import json
 from oep_client import (capture, capture_blocks, catalog, stimulus, console as console_mod, core, dump, fixture, host as h, link, linktest,
                         message as m, registry as reg, riscv, settings)
 
-from . import firmware as fwmod, flash, record
+from . import boards, firmware as fwmod, flash, record
 
 pytestmark = pytest.mark.hw
 
@@ -103,7 +103,10 @@ def test_flash(run: record.Run):
             elif board.kind == "esp32p4":
                 rec.update(flash.flash_p4(board.unit_id, fw.image_for("esp32p4"), board.usbip_busid))
             elif board.kind == "rp2":
-                cdc = run.port if run.port.startswith("/") else None      # none: the board is in BOOTSEL already
+                try:                                                      # the CDC port of the USB serial = unit_id
+                    cdc = boards.cdc_port(board.unit_id)
+                except FileNotFoundError:
+                    cdc = None                                            # none: the board is in BOOTSEL already
                 rec.update(flash.flash_rp2(cdc, fw.image_for("rp2"), board.unit_id))
             else:
                 pytest.fail(f"no flasher for board kind {board.kind!r}")

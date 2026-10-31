@@ -9,17 +9,17 @@ channel is free when the board wires it to nothing; 0 = none, and the tests that
 
 Port forms (see oep_client.link.open_host):
   /run/board-identify/by-id/<id>   a serial port: a USB-UART bridge (classic ESP32) - also where esptool flashes
-  usb:<unit_id>                    the probe whose USB serial is the unit id (ESP32-P4: vendor bulk, then HID)
-  cdc:<unit_id>                    the CDC serial port of the USB device whose serial is the unit id (RP2040 / RP2350),
-                                   found with pyserial's list_ports (the kernel names it /dev/ttyACMn as it pleases);
+  oep://<unit_id>?via=usb          the probe whose USB serial is the unit id (ESP32-P4: vendor bulk, then HID)
+  oep://<unit_id>?via=cdc          the CDC serial port of the USB device whose serial is the unit id (RP2040 / RP2350),
+                                   found by open_host (the kernel names it /dev/ttyACMn as it pleases);
                                    also the port the 1200-baud touch goes to before a flash
-  tcp:<unit_id>                    a probe on the network, found by DNS-SD (_oep._tcp, TXT unit_id; transports §3)
+  oep://<unit_id>?via=net          a probe on the network, found by DNS-SD (_oep._tcp, TXT unit_id; transports §3)
   tcp://<host>:<port>              a probe on the network at that address (where mDNS does not reach: WSL 2's NAT, a
                                    router between; tcp://<host> alone takes the port DNS-SD finds)
 
 A TCP board (kind tcp) is never flashed: put the firmware on and give it its network through the board's serial / USB
 entry first (its own run). OEP_HW_BOARDS
-may also name a TCP probe directly - `tcp:<unit_id>` or `tcp://<host>:<port>` - as a board of kind tcp with no table
+may also name a TCP probe directly - `oep://<unit_id>?via=net` or `tcp://<host>:<port>` - as a board of kind tcp with no table
 entry (no expected model, no free channels unless OEP_HW_GPIO / OEP_HW_UART / OEP_HW_DISABLE give them).
 """
 from __future__ import annotations
@@ -97,29 +97,29 @@ TABLE: dict[str, Board] = {b.id: b for b in (
     Board("esp32-d0wd-v3-0070070d9394", "esp32", "esp32", "esp32", f"{BY_ID}/esp32-d0wd-v3-0070070d9394",
           flash_port=f"{BY_ID}/esp32-d0wd-v3-0070070d9394", notes="V003 jig (classic ESP32 + CH340): the bench's; ask first",
           **_ESP32_V003_JIG),
-    Board("esp32-series-30eda0e31108", "esp32p4", "esp32p4", "esp32p4", "usb:30eda0e31108", unit_id="30eda0e31108",
+    Board("esp32-series-30eda0e31108", "esp32p4", "esp32p4", "esp32p4", "oep://30eda0e31108?via=usb", unit_id="30eda0e31108",
           usbip_busid=os.environ.get("TEST_BENCH_CH32X035_USBIP_BUSID", "12-4"),
           notes="X035 jig (ESP32-P4, HS USB): the bench's; ask first", **_P4),
-    Board("esp32-series-30eda0e343c6", "esp32p4", "esp32p4", "esp32p4", "usb:30eda0e343c6", unit_id="30eda0e343c6",
+    Board("esp32-series-30eda0e343c6", "esp32p4", "esp32p4", "esp32p4", "oep://30eda0e343c6?via=usb", unit_id="30eda0e343c6",
           usbip_busid="11-4", notes="second P4 (ESP32-P4, HS USB), the user's: free for dev-oep, nothing wired but its LED "
                 "(an older firmware's USB serial is 30eda0e343c6-hs)",
           **_P4),
-    Board("esp32-series-30eda0ea068b", "esp32p4-usj", "esp32p4", "esp32p4", "usb:30eda0ea068b",
+    Board("esp32-series-30eda0ea068b", "esp32p4-usj", "esp32p4", "esp32p4", "oep://30eda0ea068b?via=usb",
           unit_id="30eda0ea068b", flash_port=f"{BY_ID}/esp32-series-30eda0ea068b",
           notes="third P4 (ESP32-P4, FS USB-Serial/JTAG port only): the OEP probe of ArduinoCore-CH32RV's bench, its ports "
                 "v003 (a CH32V003 on SWIO 19, NRST 4, power from 5 - the idle high its settings keep -, its UART on 22 / 23, "
                 "its app's output on 21) and v407 (SWIO 31) that bench's targets: the tests never drive 4 / 5 / 19 / 21-23 "
                 "nor turn them into ADC inputs", **_P4),
-    Board("e8f60ae84e28", "esp32p4", "esp32p4x", "esp32p4x", "usb:e8f60ae84e28", unit_id="e8f60ae84e28",
+    Board("e8f60ae84e28", "esp32p4", "esp32p4x", "esp32p4x", "oep://e8f60ae84e28?via=usb", unit_id="e8f60ae84e28",
           notes="P4X (ESP32-P4 silicon v3, HS USB), ours: an M030 (ArduinoCore-CH32RV's bench) on GPIO30 (its rx, label "
                 "m030.rx) and GPIO31 (its swio, m030.swio); keyed by unit id", **_P4),
-    Board("9489dd2ae0953650", "rp2", "promicrorp2350", "rp2350", "cdc:9489dd2ae0953650", unit_id="9489dd2ae0953650",
+    Board("9489dd2ae0953650", "rp2", "promicrorp2350", "rp2350", "oep://9489dd2ae0953650?via=cdc", unit_id="9489dd2ae0953650",
           notes="SparkFun Pro Micro RP2350 (the firmware enumerates as the project's 1209:4F45); no board-identify id: keyed by unit id",
           **_RP2350),
     # The ATOM over Wi-Fi / TCP: the same board and firmware as above, flashed and given its networks through its bridge
     # entry (OEP_WIFI_SSID_<n> / OEP_WIFI_PASS_<n> on that run); found by DNS-SD unless OEP_HW_ATOM_TCP names it
     # (tcp://HOST:PORT - from WSL 2's NAT mDNS does not reach the board; `oep settings network` over the bridge shows its ip)
-    Board("esp32-pico-d4-50029191fe34-tcp", "tcp", "esp32", "esp32", os.environ.get("OEP_HW_ATOM_TCP", "tcp:50029191fe34"),
+    Board("esp32-pico-d4-50029191fe34-tcp", "tcp", "esp32", "esp32", os.environ.get("OEP_HW_ATOM_TCP", "oep://50029191fe34?via=net"),
           unit_id="50029191fe34", notes="M5Stack ATOM over Wi-Fi / TCP (reference firmware: port 7450); free for OEP tests",
           **{k: v for k, v in _ESP32_ATOM.items() if k != "rates"}),
     # No hardware: the virtual bench on a pty (oep_client.virtual_bench_serve). A dry run of the test logic, never a release test.
@@ -133,20 +133,21 @@ def selected() -> list[Board]:
     ids = [s.strip() for s in os.environ.get("OEP_HW_BOARDS", "").split(",") if s.strip()]
     out = []
     for i in ids:
-        if i not in TABLE and i.startswith("tcp:"):
+        if i not in TABLE and i.startswith(("oep://", "tcp://")):
             out.append(_override(tcp_board(i)))
             continue
         if i not in TABLE:
-            raise KeyError(f"OEP_HW_BOARDS: {i!r} is not in tests/hw/boards.py ({', '.join(TABLE)}), nor tcp:<unit_id> / "
-                           "tcp://<host>:<port>")
+            raise KeyError(f"OEP_HW_BOARDS: {i!r} is not in tests/hw/boards.py ({', '.join(TABLE)}), nor "
+                           "oep://<unit_id>?via=net / tcp://<host>:<port>")
         out.append(_override(TABLE[i]))
     return out
 
 
 def tcp_board(target: str) -> Board:
-    """A probe on the network named in OEP_HW_BOARDS (tcp:<unit_id> or tcp://<host>[:<port>]): kind tcp, nothing
-    expected of its model, no free channels but the environment's."""
-    unit = target[4:] if not target.startswith("tcp://") else None
+    """A probe on the network named in OEP_HW_BOARDS (oep://<unit_id>?via=net or tcp://<host>[:<port>]): kind tcp,
+    nothing expected of its model, no free channels but the environment's."""
+    from oep_client import link
+    unit = link.parse_address(target).probe if target.startswith("oep://") else None
     return Board(target, "tcp", "", "", target, unit_id=unit, notes="a TCP probe named in OEP_HW_BOARDS")
 
 
@@ -172,9 +173,7 @@ def _override(b: Board) -> Board:
 
 
 def resolve_port(b: Board) -> str:
-    """The target string for oep_client.link.open_host: a cdc:<unit> form is looked up now (the device path moves)."""
-    if b.port.startswith("cdc:"):
-        return cdc_port(b.port[4:])
+    """The target string for oep_client.link.open_host (an oep:// address finds its route itself)."""
     return b.port
 
 
