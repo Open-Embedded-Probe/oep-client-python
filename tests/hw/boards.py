@@ -85,10 +85,6 @@ _ESP32_V003_JIG = dict(label=35, disable=34, rates=(921600, 500000))
 # 9-15, 46-50, 52, 53; the third P4 4, 5, 19, 21-23: none of these. 34-38 are the P4 straps, read only at a chip
 # reset, when the probe drives no pin: disable 34 is never driven, TX 37 only while planned.
 _P4 = dict(gpio=(32, 33), disable=34, uart=(36, 37), analog=17)
-# Pro Micro RP2350: GP19 is the PSRAM CS; GP0 / GP1 carry the bench's L103 (tests/benches/l103-rp2350.toml: nothing
-# else wired). The fixture UART is Serial1 = UART0, whose pins arduino-pico accepts are TX 0 / 12 / 16 / 28, RX 1 / 13 /
-# 17 / 29 (GP4 / GP5 hung the probe, 2026-10-02).
-_RP2350 = dict(gpio=(26, 27), disable=28, uart=(13, 12))
 
 TABLE: dict[str, Board] = {b.id: b for b in (
     Board("esp32-pico-d4-50029191fe34", "esp32", "esp32", "esp32", f"{BY_ID}/esp32-pico-d4-50029191fe34",
@@ -113,9 +109,6 @@ TABLE: dict[str, Board] = {b.id: b for b in (
     Board("e8f60ae84e28", "esp32p4", "esp32p4x", "esp32p4x", "oep://e8f60ae84e28?via=usb", unit_id="e8f60ae84e28",
           notes="P4X (ESP32-P4 silicon v3, HS USB), ours: an M030 (ArduinoCore-CH32RV's bench) on GPIO30 (its rx, label "
                 "m030.rx) and GPIO31 (its swio, m030.swio); keyed by unit id", **_P4),
-    Board("9489dd2ae0953650", "rp2", "promicrorp2350", "rp2350", "oep://9489dd2ae0953650?via=cdc", unit_id="9489dd2ae0953650",
-          notes="SparkFun Pro Micro RP2350 (the firmware enumerates as the project's 1209:4F45); no board-identify id: keyed by unit id",
-          **_RP2350),
     # The ATOM over Wi-Fi / TCP: the same board and firmware as above, flashed and given its networks through its bridge
     # entry (OEP_WIFI_SSID_<n> / OEP_WIFI_PASS_<n> on that run); found by DNS-SD unless OEP_HW_ATOM_TCP names it
     # (tcp://HOST:PORT - from WSL 2's NAT mDNS does not reach the board; `oep settings network` over the bridge shows its ip)
