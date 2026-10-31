@@ -569,11 +569,12 @@ def _channels(core, hst, lines: list[str]) -> list[int]:
         return []
     from . import registry, settings
     tag = registry.CORE.tlv["describe"]["channel_name"]
-    names = {}
+    names, shown = {}, []
     for t, v in _describe(core, hst, 0):
         if t == tag and len(v) >= 2:
-            names.setdefault(settings.fold_name(v[2:].decode("utf-8", "replace")), []).append(
-                struct.unpack_from("<H", v)[0])
+            name = v[2:].decode("utf-8", "replace")
+            names.setdefault(settings.fold_name(name), []).append(struct.unpack_from("<H", v)[0])
+            shown.append(name)
     labels = None
     out = []
     for line in lines:
@@ -587,7 +588,7 @@ def _channels(core, hst, lines: list[str]) -> list[int]:
         else:
             found = names.get(settings.fold_name(line), [])
             if len(found) != 1:
-                known = ", ".join(sorted({k for k in names}))[:200]
+                known = ", ".join(shown[:8]) + (", ..." if len(shown) > 8 else "")
                 raise ValueError(f"{line}: {'no channel' if not found else 'several channels'} of that name "
                                  f"(the probe's channel names: {known or 'none'}; or a line label S.N)")
             ch = found[0]
