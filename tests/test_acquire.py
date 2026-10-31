@@ -93,3 +93,35 @@ def test_format_1_lines_as_their_changes(probe):
     assert isinstance(a, acquire.Bits) and isinstance(b, acquire.Changes)
     ks, lv, ct = b.decode()
     assert ct == [1] * len(ks) and ks[:2] == [2, 4]        # B (bit 1 of the counter) changes every second sample
+
+
+def test_uart_link_speed_is_asked_for_unless_turned_off():
+    import types
+    calls = []
+
+    class Link:
+        @staticmethod
+        def raise_speed(hst, rates, *, flows=None, record=False, max_tries=None):
+            calls.append((rates, record, max_tries))
+            assert flows == acquire.FLOWS                                 # a capture verifies the read-back way
+
+    assert acquire._raise(Link, "H", [1_500_000, 921_600]) == [1_500_000, 921_600]
+    assert acquire._raise(Link, "H", []) == []
+    assert calls == [([1_500_000, 921_600], False, None)]                  # asked rates: tried as given
+    calls.clear()
+    hst = types.SimpleNamespace(link=types.SimpleNamespace(speed=types.SimpleNamespace(skipped=[1_500_000], retried=None)))
+    assert acquire._raise_default(Link, hst, "/dev/X") == (acquire.FAST, True)     # the record shaped them
+    assert calls == [(acquire.FAST, True, acquire.PER_SESSION)]            # the default: the client's record decides
+    assert acquire._raise_default(Link, hst, None) == ([], False)          # not a serial port this host opened
+    assert acquire.FAST[0] == 1_500_000
+
+
+def test_probe_clock_against_the_host():
+    import types
+    r = lambda host, up, unc, boot=7: types.SimpleNamespace(host_ns=host, uptime_ns=up, boot_id=boot, uncertainty_ns=unc)  # noqa: E731
+    info = acquire._clock_info(r(1_000_000_000, 5_000_000_000, 50_000), r(2_000_000_000, 6_000_100_000, 50_000))
+    assert info["before"]["uptime_ns"] == 5_000_000_000 and info["after"]["host_ns"] == 2_000_000_000
+    assert abs(info["rate_ppm"] - 100) < 1e-6 and abs(info["rate_ppm_uncertainty"] - 100) < 1e-6
+    assert "rate_ppm" not in acquire._clock_info(r(1, 5, 1), r(2, 6, 1, boot=8))   # restarted between: no rate
+    assert acquire._clock_info(None, None) == {}
+    assert acquire._clock(types.SimpleNamespace()) is None                 # no reading: the capture goes on
