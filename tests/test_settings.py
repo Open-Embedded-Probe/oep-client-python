@@ -589,11 +589,11 @@ def test_the_network_op_only_with_netifs():
 def test_export_and_import_through_another_probe():
     ep, hst, st = open_bench(virtual_bench.p4_x035)
     st.set_named(CORE, {label(14): "NRST", idle(14): "pull-up", disable(30): True})
-    st.set_named("oep.wire.rvswd/0", {"hold.GPIO2": False})
+    st.set_named("oep.wire.rvswd/0", {"channel.GPIO2.hold": False})
     doc = st.export()
     assert doc["settings"] == {CORE: {label(2): "x035.swdio", label(14): "NRST", label(54): "x035.swclk", idle(14): "pull-up",
                                       disable(30): True},                     # every value, the initial ones too
-                               "oep.wire.rvswd/0": {"hold.GPIO2": False}}
+                               "oep.wire.rvswd/0": {"channel.GPIO2.hold": False}}
     assert doc["probe"]["unit_id"] == "fafe00000035"
     ep2, hst2, st2 = open_bench(virtual_bench.p4_x035)
     st2.set_named(CORE, {label(15): "OLD"})

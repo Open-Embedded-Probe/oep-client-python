@@ -321,8 +321,8 @@ NETWORK_ITEMS = (Item("wifi.{}.ssid", "text", "index", WIFI_ENTRIES, reg.LIMITS[
                  Item("ipv4.{}.address", "ipv4", "netif"), Item("ipv4.{}.prefix", "u32", "netif"),
                  Item("ipv4.{}.gateway", "ipv4", "netif"), Item("ipv4.{}.dns", "ipv4", "netif"))
 assert {i.name for i in CORE_ITEMS + NETWORK_ITEMS} == set(_CS), "the core's items as the registry names them"
-HOLD = Item("hold.{}", "bool", "channel")
-REST = Item("rest.{}", "enum", "channel", choices=tuple(choices_of(reg.WIRE_RVSWD.enum["rest"]).items()))
+HOLD = Item("channel.{}.hold", "bool", "channel")
+REST = Item("channel.{}.rest", "enum", "channel", choices=tuple(choices_of(reg.WIRE_RVSWD.enum["rest"]).items()))
 
 
 def uart_items(formats) -> tuple[Item, ...]:

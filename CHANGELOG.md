@@ -1,6 +1,10 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Changed (breaking): follows oep-spec a6a4374 - the debug wires' settings are `channel.{}.rest` and
+  `channel.{}.hold` (were `rest.{}` / `hold.{}`, debug §2, §3.1); the virtual bench declares them so.
+- (JA) 変更（壊す変更）: oep-spec a6a4374 に従う。debug の線の設定の項目名は `channel.{}.rest` と `channel.{}.hold`
+  （`rest.{}` / `hold.{}` だった。debug §2、§3.1）。仮想ベンチもその名前で宣言する。
 
 ## 0.0.41
 - (EN) Added: `oep_client.acquire`, one capture put together. A line is named by the probe's channel name (fn 0's channel_name, `GPIO47`) or a port's line label (`x035.swdio`), looked up on the session; a stream's length is `seconds` (as `LogicCapture.stream`). `capture_at(address, Request)` opens the probe, takes its lease, raises a UART link and lets it all go; `capture(hst, Request)` runs on a session the caller holds (with ProbeLog, the target's control). Modes oneshot / repeat / stream, logic and analog in a capture-group with a trigger on either track (capture §4.4), format 1 lines as their changes. The `Result` has the tick rate, the parts (`tick0`, `meta`: start_ns, start_uncertainty_ns, trigger_tick, ...), their channels as the probe gave them (`Bits`, `Changes`, `Analog`), the losses (any makes the capture a failure) and `meta["probe"]` (model, firmware, unit_id, `address` = the probe's place without the route, boot_id, clock, calibration, link). Moved from wireskein's oep source, which now writes this result as a file. numpy (extra `acquire`) puts streams and format 1 blocks together.

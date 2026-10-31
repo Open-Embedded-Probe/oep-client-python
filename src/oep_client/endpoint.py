@@ -2381,7 +2381,7 @@ class Endpoint(FixtureDrive):
                 tg.havereset, flags = False, flags | ATTACH_FLAGS["havereset_acked"]
             c = self.conns[cid]
             if rvswd:                                              # the host's TLV, the setting, else from target_id (§3.1)
-                setting = (self._value(fn, "rest.{}", pair[1]) or bytes([REST_MODE["auto"]]))[0]
+                setting = (self._value(fn, "channel.{}.rest", pair[1]) or bytes([REST_MODE["auto"]]))[0]
                 c.idle_clock = (idle_clock if idle_clock is not None
                                 else _IDLE_CLOCK["high"] if setting == REST_MODE["high"]
                                 else _IDLE_CLOCK["low"] if setting == REST_MODE["low"] else rvswd_rest(c.tid))
@@ -2508,8 +2508,8 @@ class Endpoint(FixtureDrive):
             tg.halted = False                                      # its debug module dropped the link: the hart runs
 
     def _may_hold(self, pair: tuple[int, int], fn: int | None = None) -> bool:
-        """debug §2: hold.{} not false (no value: hold) for the port's SWDIO, and no idle / disable on its pins."""
-        holds = [self._value(f, "hold.{}", pair[0]) for f in ([fn] if fn is not None else self.pairs)]
+        """debug §2: channel.{}.hold not false (no value: hold) for the port's SWDIO, and no idle / disable on its pins."""
+        holds = [self._value(f, "channel.{}.hold", pair[0]) for f in ([fn] if fn is not None else self.pairs)]
         pins = [p for p in pair if p != 0xFFFF]
         return (b"\x00" not in holds and not any(self._idle_mode(p) is not None for p in pins)
                 and not any(p in self.disabled for p in pins))
