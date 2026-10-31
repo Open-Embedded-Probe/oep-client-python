@@ -1,6 +1,12 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Changed: `virtual_bench_serve --pty` says so on stderr when it gets no inotify instance (a user's
+  fs.inotify.max_user_instances used up by editors and file watchers): it then cannot see the close of a host that ended
+  without closing the port, and the pty stays busy. The test of that case skips with this reason instead of failing.
+- (JA) 変更: `virtual_bench_serve --pty` は、inotify を作れないとき（エディタやファイルの見張りが、ユーザーの
+  fs.inotify.max_user_instances を使い切ったときなど）に、その旨を stderr に出す。このとき、口を閉じずに終わった host の
+  close が見えないので、pty は使用中のまま残る。その場合の試験は、落ちる代わりにこの理由で skip する。
 - (EN) Fixed: `oep pins`' map named pads another device moves as wired - an X035's PC16/PC17, held by a USB host,
   "followed" different channels on every run. The map now reads the target's pads first with nothing driven and leaves
   out those that move (a note names them), and a pad must follow its channel on 4 tries (was 2).

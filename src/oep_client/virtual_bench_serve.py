@@ -413,6 +413,9 @@ def serve_pty(a, ep, console, commands: Commands) -> None:
     openers = _Openers(path, slave)
     if openers.keeper is None:
         os.close(slave)
+        if sys.platform == "linux":                      # inotify refused (the user's instances used up, say)
+            print("virtual_bench_serve: no inotify on the pty: a host that ends without closing it leaves it busy",
+                  file=sys.stderr, flush=True)
     print(f"PTY {path}", flush=True)
     os.set_blocking(master, False)
     port = commands.port = virtual_bench_serial.VirtualSerialPort(ep, a.port_index, _filter(a))

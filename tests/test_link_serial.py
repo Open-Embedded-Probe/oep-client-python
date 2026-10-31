@@ -237,8 +237,24 @@ if sys.argv[2] == "hard":
 """
 
 
+def _inotify_available() -> bool:
+    """The virtual bench sees a hard exit's close through inotify; a user whose inotify instances are used up
+    (fs.inotify.max_user_instances, editors and file watchers hold them) gets none."""
+    try:
+        import ctypes
+        fd = ctypes.CDLL(None, use_errno=True).inotify_init1(os.O_CLOEXEC)
+    except (OSError, AttributeError):
+        return False
+    if fd < 0:
+        return False
+    os.close(fd)
+    return True
+
+
 @pytest.mark.skipif(sys.platform != "linux", reason="pty and TIOCEXCL as on Linux")
-@pytest.mark.parametrize("exit_mode", ["normal", "hard"])
+@pytest.mark.parametrize("exit_mode", ["normal", pytest.param("hard", marks=pytest.mark.skipif(
+    sys.platform == "linux" and not _inotify_available(),
+    reason="no inotify instance left for this user: the virtual bench cannot see a hard exit's close"))])
 def test_a_host_that_ends_without_closing_leaves_the_pty_free_for_the_next(exit_mode):
     """A pty slave's tty lives on while virtual_bench_serve holds the master, so a TIOCEXCL left set refused every later open
     (EBUSY) - a real port clears it at its last close. Now the client clears it at exit, and virtual_bench_serve at the last
