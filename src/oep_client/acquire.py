@@ -2,19 +2,21 @@
 probe's facts out.
 
     from oep_client import acquire
-    res = acquire.capture_at("oep://30eda0ea068b", acquire.Request([("SDA", "47"), ("SCL", "48")], 20_000_000, 200_000))
+    res = acquire.capture_at("oep://30eda0ea068b", acquire.Request([("SDA", "GPIO47"), ("SCL", "x035.scl")], 20_000_000,
+                                                                   200_000))
     res = acquire.capture(hst, req)          # on a session the caller holds (with ProbeLog, the target's control)
     for part in res.parts:                   # a timeline cut by its gaps, or one part per triggered segment
         part.tick0, part.meta["start_ns"], [c.name for c in part.channels]
     res.lost                                 # what was lost while capturing: any makes the capture a failure
 
 Logic channels go to oep.fixture.logic, analog ones to oep.fixture.analog; with both, oep.fixture.capture-group
-starts them together, a trigger on either track as the group's trigger source (capture §4.4). Channel ids are the
-probe's channel numbers; a track's channels are its plan roles 0..C-1 in the order given. The plans are released
-afterwards.
+starts them together, a trigger on either track as the group's trigger source (capture §4.4). A line is named as a
+script keeps it - the probe's channel name (fn 0's channel_name, core §7.5) or a port's line label (S.N, host guide
+§5.3) - and looked up on the session (a channel number holds for one boot only); a track's channels are its plan roles
+0..C-1 in the order given. The plans are released afterwards.
 
 Modes: "oneshot" (the probe's memory), "repeat" (`segments` acquisitions read and released as they come: with a
-trigger one part each, layout "segments"; without, a timeline), "stream" (for `duration` seconds, sent as taken,
+trigger one part each, layout "segments"; without, a timeline), "stream" (for `seconds`, sent as taken,
 put together on disk while it runs: a timeline, cut where data was lost).
 
 Times: tick 0 of a part is its first logic sample, `start_ns` on the probe's clock; an analog channel starts at
@@ -47,7 +49,8 @@ ANALOG_TRIGGERS = ("high", "low", "rise", "fall")
 
 @dataclass
 class Request:
-    channels: list[tuple[str, str]]          # logic: (name, the probe's channel number), in this order
+    channels: list[tuple[str, str]]          # logic: (name to record, the line): the probe's channel name (fn 0's
+                                             # channel_name, GPIO47) or a port's line label (S.N, x035.swdio), in order
     rate: int                                # logic samples per second asked for (the probe may answer another)
     samples: int
     trigger: tuple | None = None             # (logic channel, one of TRIGGERS) or (analog channel, rise / fall / high /
@@ -55,12 +58,12 @@ class Request:
     pretrigger: int | None = None            # samples kept before the trigger
     arm: str = "pretrigger"                  # when the trigger is looked for: "pretrigger" (once it is there) or "now"
     timeout: float = 10.0                    # seconds to wait for the capture to finish
-    analog: list[tuple[str, str, int | None]] = field(default_factory=list)   # (name, channel number, frontend)
+    analog: list[tuple[str, str, int | None]] = field(default_factory=list)   # (name, the line as above, frontend)
     analog_rate: int | None = None           # analog samples per second (default: `rate`)
     analog_samples: int | None = None        # default: as long as the logic capture
     resolution: dict[str, int] = field(default_factory=dict)   # logic lines as their changes (format 1): name -> D
-    mode: str = "oneshot"                    # "oneshot", "stream" (for `duration` seconds) or "repeat"
-    duration: float | None = None
+    mode: str = "oneshot"                    # "oneshot", "stream" (for `seconds`) or "repeat"
+    seconds: float | None = None             # stream: how long (as LogicCapture.stream(seconds=...))
     segments: int | None = None              # repeat: how many acquisitions
     on_loss: str = "stop"                    # stream: "stop" at the first loss, or "continue" to the end
     spool_dir: str | None = None             # stream: where its channels are put together on disk while it runs
@@ -87,8 +90,8 @@ class Request:
                 raise ValueError("repeat: logic channels only")
         elif self.segments is not None:
             raise ValueError("segments is for repeat only")
-        if self.mode == "stream" and not (self.duration and self.duration > 0):
-            raise ValueError("a stream needs a duration (seconds)")
+        if self.mode == "stream" and not (self.seconds and self.seconds > 0):
+            raise ValueError("a stream needs seconds (how long)")
         if self.arm not in ("pretrigger", "now"):
             raise ValueError(f"arm {self.arm!r}: pretrigger or now")
         logic = {n for n, _ in self.channels}
@@ -375,16 +378,10 @@ def _run(target: str, req: Request, fast, hst, owner, link) -> Result:
     from . import capture as oc
     from . import core, message
     from . import host as oh
-    try:
-        ids = [int(cid) for _, cid in req.channels]
-        aids = [int(cid) for _, cid, _ in req.analog]
-    except ValueError:
-        raise ValueError("channel ids are the probe's channel numbers: "
-                         f"{[c for _, c in req.channels] + [c for _, c, _ in req.analog]}") from None
     if req.mode == "stream" and req.trigger:
         raise ValueError("a stream is started at once: no trigger")
     try:
-        res = _capture(link, core, oc, oh, message, target, req, ids, aids, fast, hst,
+        res = _capture(link, core, oc, oh, message, target, req, None, None, fast, hst,
                        owner or "oep_client.acquire")
         if isinstance(res, (_Streamed, _GroupStreamed)):   # put together after the session closed: it may take a while
             res = res.result()
@@ -565,6 +562,39 @@ def _describe(core, hst, fn: int) -> list[tuple[int, bytes]]:
         return []
 
 
+def _channels(core, hst, lines: list[str]) -> list[int]:
+    """The probe's channel numbers (valid for this boot) of lines named as kept in scripts: a channel name (fn 0's
+    channel_name, core §7.5; GPIO47) or a port's line label (S.N, host guide §5.3; x035.swdio). ASCII case aside."""
+    if not lines:
+        return []
+    from . import registry, settings
+    tag = registry.CORE.tlv["describe"]["channel_name"]
+    names = {}
+    for t, v in _describe(core, hst, 0):
+        if t == tag and len(v) >= 2:
+            names.setdefault(settings.fold_name(v[2:].decode("utf-8", "replace")), []).append(
+                struct.unpack_from("<H", v)[0])
+    labels = None
+    out = []
+    for line in lines:
+        port_line = settings.port_line(line)
+        if port_line is not None:
+            if labels is None:
+                labels = settings.labels(hst)
+            ch = settings.line_from_labels(labels, port_line[1], port_line[0])
+            if ch is None:
+                raise ValueError(f"{line}: no channel carries that label (host guide §5.3)")
+        else:
+            found = names.get(settings.fold_name(line), [])
+            if len(found) != 1:
+                known = ", ".join(sorted({k for k in names}))[:200]
+                raise ValueError(f"{line}: {'no channel' if not found else 'several channels'} of that name "
+                                 f"(the probe's channel names: {known or 'none'}; or a line label S.N)")
+            ch = found[0]
+        out.append(ch)
+    return out
+
+
 def _probe_info(core, hst, boot_id) -> dict:
     info = {}
     for tag, value in _describe(core, hst, 0):
@@ -668,6 +698,7 @@ def _capture(link, core, oc, oh, message, target: str, req: Request, ids: list[i
         if boot_id is None and clock_before is not None:
             boot_id = clock_before.boot_id
         probe = _probe_info(core, hst, boot_id)
+        ids, aids = _channels(core, hst, [c for _, c in req.channels]), _channels(core, hst, [c for _, c, _ in req.analog])
         cap = oc.LogicCapture(hst) if ids else None
         an = oc.AnalogCapture(hst) if aids else None
         plan = [(cap.fn, k, ch) for k, ch in enumerate(ids)] if cap else []
@@ -1106,7 +1137,7 @@ def _collect_group(group, tracks, link, req: Request, oc, spool=None):
         t.subscribe(STREAM_MIN_BYTES, STREAM_MAX_DELAY_MS)
     group.start(tracks)
     t_read = time.monotonic()
-    deadline, got = t_read + req.duration, {t.fn: oc.Received() for t in tracks}
+    deadline, got = t_read + req.seconds, {t.fn: oc.Received() for t in tracks}
     lead = tracks[0].fn
     while True:
         now = time.monotonic()
@@ -1147,13 +1178,13 @@ def _analog_runs(an, acfg, got) -> tuple[list, list]:
 
 
 def _collect(track, link, req: Request, oc, spool=None):
-    """Subscribe, start, collect for req.duration, stop and collect the rest -> (Received, seconds). A loss stops it
+    """Subscribe, start, collect for req.seconds, stop and collect the rest -> (Received, seconds). A loss stops it
     at once with on_loss "stop"."""
     import time
     track.subscribe(STREAM_MIN_BYTES, STREAM_MAX_DELAY_MS)   # batched: a capture wants bandwidth, not a frame per block
     track.start()
     t_read = time.monotonic()
-    deadline, got = t_read + req.duration, oc.Received()
+    deadline, got = t_read + req.seconds, oc.Received()
     while True:                                  # stream() renews the lease across calls on the same Received
         now = time.monotonic()
         if now >= deadline:
@@ -1208,7 +1239,7 @@ def _group_stream_result(cap, an, hst, cfg, acfg, req: Request, names, ids, aids
                                 for fe, scheme, raw in calib.factory]
     meta = {"probe_channels": {**dict(zip(names, ids)), **dict(zip([n for n, *_ in req.analog], aids))},
             "probe": probe,
-            "stream": {"duration_s": req.duration, "on_loss": req.on_loss, "frames": lg.frames + ag.frames,
+            "stream": {"duration_s": req.seconds, "on_loss": req.on_loss, "frames": lg.frames + ag.frames,
                        "bytes": received, "read_s": round(read_s, 3)}}
     logic = _Streamed(cap, cfg, lg, st, names, ids, req, meta, oc, spool, tail)
     aend = (ag.start or 0) + len(ag.data) + sum(n for _, n in ag.gaps)
@@ -1294,7 +1325,7 @@ def _analog_stream_result(an, hst, acfg, req: Request, aids, probe, fast, open_s
                                 for fe, scheme, raw in calib.factory]
     names = [n for n, *_ in req.analog]
     meta = {"probe_channels": dict(zip(names, aids)), "probe": probe,
-            "stream": {"duration_s": req.duration, "on_loss": req.on_loss, "frames": got.frames,
+            "stream": {"duration_s": req.seconds, "on_loss": req.on_loss, "frames": got.frames,
                        "bytes": len(got.data), "read_s": round(read_s, 3)}}
 
     def build():
@@ -1336,7 +1367,7 @@ def _analog_stream_result(an, hst, acfg, req: Request, aids, probe, fast, open_s
 
 
 def _stream_result(cap, hst, cfg, req: Request, names, ids, probe, fast, open_s, clock_before, oc) -> Result:
-    """A stream (capture §2.1 mode 3): subscribe, start, collect for req.duration, stop and collect the rest. A loss
+    """A stream (capture §2.1 mode 3): subscribe, start, collect for req.seconds, stop and collect the rest. A loss
     (a skipped position: the probe dropped a segment it had no room to send) stops it at once with on_loss "stop"
     (the default), else it goes on; either way the capture is incomplete, a failure (parts and losses)."""
     import time
@@ -1370,7 +1401,7 @@ def _stream_result(cap, hst, cfg, req: Request, names, ids, probe, fast, open_s,
     if cap.generation is not None:
         probe["generation"] = {"logic": cap.generation}
     meta = {"probe_channels": dict(zip(names, ids)), "probe": probe,
-            "stream": {"duration_s": req.duration, "on_loss": req.on_loss, "frames": got.frames,
+            "stream": {"duration_s": req.seconds, "on_loss": req.on_loss, "frames": got.frames,
                        "bytes": received, "read_s": round(read_s, 3)}}
     return _Streamed(cap, cfg, got, st, names, ids, req, meta, oc, spool, tail)
 

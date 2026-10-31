@@ -34,7 +34,7 @@ def levels(c):
 
 
 def test_one_shot_lines_and_the_probes_facts(probe):
-    res = acquire.capture_at(probe(), acquire.Request([("A", "10"), ("B", "11"), ("C", "12")], 20_000_000, 1000))
+    res = acquire.capture_at(probe(), acquire.Request([("A", "GPIO10"), ("B", "GPIO11"), ("C", "GPIO12")], 20_000_000, 1000))
     assert res.complete and res.tick_hz == Fraction(20_000_000) and res.parts is None
     (part,) = res.all_parts
     i = np.arange(1000)
@@ -50,7 +50,7 @@ def test_on_a_session_the_caller_holds(probe):
     hst = link.open_host(probe())
     try:
         core.take(hst, 30_000, owner="test")
-        req = acquire.Request([("A", "10")], 20_000_000, 200)
+        req = acquire.Request([("A", "GPIO10")], 20_000_000, 200)
         first, second = acquire.capture(hst, req), acquire.capture(hst, req)    # the session stays the caller's
         assert first.complete and second.complete and first.meta["probe"]["boot_id"] == second.meta["probe"]["boot_id"]
         assert np.array_equal(levels(first.channels[0]), np.arange(200) & 1)
@@ -60,8 +60,8 @@ def test_on_a_session_the_caller_holds(probe):
 
 
 def test_trigger_logic_and_analog_in_a_group(probe):
-    req = acquire.Request([("A", "10"), ("B", "11")], 20_000_000, 2000, trigger=("B", "rise"), pretrigger=100,
-                          analog=[("SQ", "16", None)], analog_rate=48_000, analog_samples=64)
+    req = acquire.Request([("A", "GPIO10"), ("B", "GPIO11")], 20_000_000, 2000, trigger=("B", "rise"), pretrigger=100,
+                          analog=[("SQ", "GPIO16", None)], analog_rate=48_000, analog_samples=64)
     res = acquire.capture_at(probe(), req)
     a, b, sq = res.channels
     t = res.meta["trigger_tick"]
@@ -71,14 +71,14 @@ def test_trigger_logic_and_analog_in_a_group(probe):
 
 
 def test_repeat_gives_one_part_per_segment(probe):
-    req = acquire.Request([("A", "10")], 20_000_000, 100, mode="repeat", segments=5)
+    req = acquire.Request([("A", "GPIO10")], 20_000_000, 100, mode="repeat", segments=5)
     res = acquire.capture_at(probe(), req)
     assert res.complete and res.layout == "timeline" and len(res.parts) == 5
     assert [p.tick0 for p in res.parts] == sorted(p.tick0 for p in res.parts)
 
 
 def test_a_stream_is_put_together_on_a_timeline(probe, tmp_path):
-    req = acquire.Request([("A", "10"), ("B", "11")], 1_000_000, 0, mode="stream", duration=0.2,
+    req = acquire.Request([("A", "GPIO10"), ("B", "GPIO11")], 1_000_000, 0, mode="stream", seconds=0.2,
                           spool_dir=str(tmp_path))
     res = acquire.capture_at(probe(), req)
     assert res.complete and res.layout == "timeline" and res.parts
@@ -87,7 +87,7 @@ def test_a_stream_is_put_together_on_a_timeline(probe, tmp_path):
 
 
 def test_format_1_lines_as_their_changes(probe):
-    req = acquire.Request([("A", "10"), ("B", "11")], 20_000_000, 1000, resolution={"B": 1})
+    req = acquire.Request([("A", "GPIO10"), ("B", "GPIO11")], 20_000_000, 1000, resolution={"B": 1})
     res = acquire.capture_at(probe(), req)
     a, b = res.channels
     assert isinstance(a, acquire.Bits) and isinstance(b, acquire.Changes)
@@ -125,3 +125,14 @@ def test_probe_clock_against_the_host():
     assert "rate_ppm" not in acquire._clock_info(r(1, 5, 1), r(2, 6, 1, boot=8))   # restarted between: no rate
     assert acquire._clock_info(None, None) == {}
     assert acquire._clock(types.SimpleNamespace()) is None                 # no reading: the capture goes on
+
+
+def test_lines_are_named_by_channel_name_or_label(probe):
+    src = probe("--label", "13=bus.sda")
+    res = acquire.capture_at(src, acquire.Request([("D", "bus.SDA"), ("E", "gpio11")], 20_000_000, 100))
+    assert [c.acquisition["pin"] for c in res.channels] == [13, 11]          # the label's channel; names any case
+    assert res.meta["probe_channels"] == {"D": 13, "E": 11}
+    with pytest.raises(ValueError, match="no channel of that name"):
+        acquire.capture_at(probe(), acquire.Request([("A", "10")], 20_000_000, 100))     # a number is not a name
+    with pytest.raises(ValueError, match="no channel carries that label"):
+        acquire.capture_at(probe(), acquire.Request([("A", "x035.nrst")], 20_000_000, 100))
