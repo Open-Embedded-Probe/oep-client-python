@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 0.0.42
 - (EN) Changed (breaking): follows oep-spec 364827b (core §2.3) - a request with a known non-repeating TLV given twice
   is malformed. The virtual bench refuses it; the conformance checkers and their models check that refusal in place of
   "the first copy is used" (core owner, attach reset, scan / scan options, wire options, logic / analog / timeline
