@@ -1,7 +1,7 @@
 from oep_client.conformance import Checks
-from oep_client.conformance_port_speed_execution import PortSpeedExecutionChecks
-from oep_client.conformance_port_speed_execution_sample import SamplePortSpeedExecutionAdapter as Adapter
-from oep_client.virtual_port_speed_execution_model import PortSpeedExecutionModel
+from oep_client.conformance.port_speed_execution import PortSpeedExecutionChecks
+from oep_client.conformance.port_speed_execution_sample import SamplePortSpeedExecutionAdapter as Adapter
+from oep_client.conformance.port_speed_execution_model import PortSpeedExecutionModel
 from test_conformance_port_speed import setup as base_setup
 
 

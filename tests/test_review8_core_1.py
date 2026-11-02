@@ -2,8 +2,8 @@
 import struct
 
 from oep_client import capture as c, message as m, riscv
-from oep_client.conformance_restart import RestartChecks
-from oep_client.conformance_restart_sample import SampleRestartAdapter
+from oep_client.conformance.restart import RestartChecks
+from oep_client.conformance.restart_sample import SampleRestartAdapter
 
 from test_conformance_restart import setup as restart_setup
 

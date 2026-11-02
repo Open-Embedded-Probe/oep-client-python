@@ -1,6 +1,6 @@
 import pytest
-from oep_client.conformance_host_resend import HostResendChecks
-from oep_client.conformance_host_resend_sample import SampleHostResendAdapter
+from oep_client.conformance.host_resend import HostResendChecks
+from oep_client.conformance.host_resend_sample import SampleHostResendAdapter
 
 
 SPEC='/explicit/host-resend-spec'
@@ -8,7 +8,7 @@ SPEC='/explicit/host-resend-spec'
 
 @pytest.fixture(autouse=True)
 def selected_spec(monkeypatch):
-    monkeypatch.setattr('oep_client.conformance_host_resend.reviewed_identity',lambda path:{'commit':'unit-fixture'} if path==SPEC else None)
+    monkeypatch.setattr('oep_client.conformance.host_resend.reviewed_identity',lambda path:{'commit':'unit-fixture'} if path==SPEC else None)
 
 
 def test_same_byte_resends_and_probe_cache():

@@ -4,7 +4,7 @@ import struct
 
 import pytest
 
-from oep_client.virtual_resource_model import ResourceModel
+from oep_client.conformance.resource_model import ResourceModel
 
 
 def request(corr, fn, op, sid, payload=b''):

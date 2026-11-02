@@ -13,9 +13,9 @@ reopen後にconfirm・unit_idを確認し、同じboot_idと保護状態を要�
 
 ```python
 from oep_client.conformance import Checks, spec_identity
-from oep_client.conformance_link_routes import LinkRoutesChecks
-from oep_client.conformance_link_routes_sample import SampleLinkRoutesAdapter
-from oep_client.virtual_link_routes_model import LinkRoutesModel
+from oep_client.conformance.link_routes import LinkRoutesChecks
+from oep_client.conformance.link_routes_sample import SampleLinkRoutesAdapter
+from oep_client.conformance.link_routes_model import LinkRoutesModel
 
 registry, identity = spec_identity("/explicit/path/to/oep-spec")
 model = LinkRoutesModel(lambda: 0, boot_id=17)

@@ -7,8 +7,8 @@ import sys
 import pytest
 
 from oep_client.conformance import Checks, TCP_PEER_CASES
-from oep_client.conformance_tcp import TcpWire
-from oep_client.conformance_tcp_peers import Peers
+from oep_client.conformance.tcp import TcpWire
+from oep_client.conformance.tcp_peers import Peers
 from test_conformance import REG
 
 

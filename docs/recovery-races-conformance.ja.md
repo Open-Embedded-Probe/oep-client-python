@@ -45,9 +45,9 @@ peerのSID 0 inventoryで現在の状態を確認しても、unknownだった個
 ```python
 import os
 from oep_client.conformance import Checks, spec_identity
-from oep_client.conformance_recovery_races import RecoveryRaceChecks
-from oep_client.conformance_recovery_race_sample import SampleRecoveryRaceAdapter
-from oep_client.virtual_retention_model import RetentionModel
+from oep_client.conformance.recovery_races import RecoveryRaceChecks
+from oep_client.conformance.recovery_race_sample import SampleRecoveryRaceAdapter
+from oep_client.conformance.retention_model import RetentionModel
 from oep_client.hardware import equipment_lock
 
 registry, spec = spec_identity(os.environ['OEP_CONFORMANCE_SPEC'])

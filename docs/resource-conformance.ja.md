@@ -40,9 +40,9 @@ adapter未提供をPASSにしない。この入口は任意の補助APIで、通
 import os
 from oep_client.conformance import Checks, spec_identity
 from oep_client.hardware import equipment_lock
-from oep_client.conformance_resources import ResourceChecks
-from oep_client.conformance_resource_sample import SampleResourceAdapter
-from oep_client.virtual_resource_model import ResourceModel
+from oep_client.conformance.resources import ResourceChecks
+from oep_client.conformance.resource_sample import SampleResourceAdapter
+from oep_client.conformance.resource_model import ResourceModel
 
 registry, spec = spec_identity(os.environ['OEP_CONFORMANCE_SPEC'])
 with equipment_lock(os.environ['OEP_HW_LOCK']):

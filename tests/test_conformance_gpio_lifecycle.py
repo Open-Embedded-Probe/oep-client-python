@@ -1,8 +1,8 @@
 import pytest
 from oep_client.conformance import Checks
-from oep_client.conformance_gpio_lifecycle import GpioLifecycleChecks
-from oep_client.conformance_gpio_lifecycle_sample import SampleGpioLifecycleAdapter
-from oep_client.virtual_gpio_lifecycle_model import GpioLifecycleModel
+from oep_client.conformance.gpio_lifecycle import GpioLifecycleChecks
+from oep_client.conformance.gpio_lifecycle_sample import SampleGpioLifecycleAdapter
+from oep_client.conformance.gpio_lifecycle_model import GpioLifecycleModel
 from test_conformance_gpio import setup as gpio_setup
 
 
@@ -15,12 +15,12 @@ def test_gpio_lifecycle_checks():
 
 
 def test_gpio_operation_backward_checks():
-    from oep_client.conformance_gpio import GpioChecks
+    from oep_client.conformance.gpio import GpioChecks
     model,c=setup();r=GpioChecks(c,SampleGpioLifecycleAdapter(model)).run();assert r['status']=='passed',r['checks'];assert len(r['checks'])==25
 
 
 def test_common_declarations():
-    from oep_client.conformance_interfaces import InterfaceChecks
+    from oep_client.conformance.interfaces import InterfaceChecks
     _,c=setup();r=InterfaceChecks(c).run();assert r['status']=='passed',r['checks'];assert len(r['checks'])==25
 
 

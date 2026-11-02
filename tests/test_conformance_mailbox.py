@@ -1,7 +1,7 @@
 from oep_client.conformance import Checks
-from oep_client.conformance_mailbox import MailboxChecks
-from oep_client.conformance_mailbox_sample import SampleMailboxAdapter
-from oep_client.virtual_mailbox_model import MailboxModel
+from oep_client.conformance.mailbox import MailboxChecks
+from oep_client.conformance.mailbox_sample import SampleMailboxAdapter
+from oep_client.conformance.mailbox_model import MailboxModel
 from test_conformance_scan import setup as scan_setup
 
 
@@ -18,7 +18,7 @@ def test_logical_mailbox_contracts_pass():
 
 
 import pytest
-from oep_client.virtual_attach_model import COP
+from oep_client.conformance.attach_model import COP
 
 
 @pytest.mark.parametrize('fault,case',[

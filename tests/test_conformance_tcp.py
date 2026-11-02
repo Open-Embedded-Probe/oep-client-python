@@ -4,15 +4,15 @@ import socket
 
 import pytest
 
-from oep_client.conformance_tcp import TcpWire, address, frame
-from oep_client.conformance_serial import WireError
+from oep_client.conformance.tcp import TcpWire, address, frame
+from oep_client.conformance.serial import WireError
 
 
 class Socket:
     def __init__(self, chunks, monkeypatch):
         self.chunks, self.writes, self.now = deque(chunks), [], 0
         self.timeout = 0.01
-        monkeypatch.setattr('oep_client.conformance_tcp.time.monotonic', lambda: self.now)
+        monkeypatch.setattr('oep_client.conformance.tcp.time.monotonic', lambda: self.now)
 
     def sendall(self, data):
         self.writes.append(data)

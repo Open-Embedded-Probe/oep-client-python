@@ -1,9 +1,9 @@
 import pytest
 from spec_names import SPEC
 from oep_client.conformance import Checks
-from oep_client.conformance_dmseq import DmseqChecks, crc_reference
-from oep_client.conformance_dmseq_sample import SampleDmseqAdapter
-from oep_client.virtual_dmseq_model import DmseqModel
+from oep_client.conformance.dmseq import DmseqChecks, crc_reference
+from oep_client.conformance.dmseq_sample import SampleDmseqAdapter
+from oep_client.conformance.dmseq_model import DmseqModel
 from test_conformance_mailbox import setup as mailbox_setup
 
 

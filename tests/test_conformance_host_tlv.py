@@ -1,7 +1,7 @@
 """Reader verdicts tested with independently injected decoder defects."""
 import pytest
-from oep_client.conformance_host_tlv import HostTlvChecks
-from oep_client.conformance_host_tlv_sample import decode
+from oep_client.conformance.host_tlv import HostTlvChecks
+from oep_client.conformance.host_tlv_sample import decode
 
 
 # Unit tests inject SPEC identity; real checkout selection is verified separately.
@@ -13,7 +13,7 @@ def selected_spec(monkeypatch):
     def identity(path):
         assert path == SPEC
         return {}, {'commit': 'unit-test-fixture', 'dirty': False, 'registry_sha256': 'fixture'}
-    monkeypatch.setattr('oep_client.conformance_host_tlv.spec_identity', identity)
+    monkeypatch.setattr('oep_client.conformance.host_tlv.spec_identity', identity)
 
 
 def test_sample_reader_contracts_pass():

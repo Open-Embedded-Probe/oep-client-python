@@ -2,8 +2,8 @@ import copy
 import struct
 import pytest
 from oep_client.conformance import Checks
-from oep_client.conformance_discovery import DiscoveryChecks
-from oep_client.virtual_declaration_model import DeclarationModel
+from oep_client.conformance.discovery import DiscoveryChecks
+from oep_client.conformance.declaration_model import DeclarationModel
 from oep_client.virtual_core import tlv
 from test_conformance import REG
 

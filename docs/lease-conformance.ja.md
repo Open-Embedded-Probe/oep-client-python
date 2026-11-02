@@ -19,9 +19,9 @@ sample adapterは`SamplePipelineAdapter`にclock_ms、wait_ms、timing_stateを�
 import os
 from oep_client.conformance import Checks, spec_identity
 from oep_client.hardware import equipment_lock
-from oep_client.conformance_lease import LeaseChecks
-from oep_client.conformance_lease_sample import SampleLeaseAdapter
-from oep_client.virtual_pipeline_model import PipelineModel
+from oep_client.conformance.lease import LeaseChecks
+from oep_client.conformance.lease_sample import SampleLeaseAdapter
+from oep_client.conformance.pipeline_model import PipelineModel
 
 registry, spec = spec_identity(os.environ['OEP_CONFORMANCE_SPEC'])
 with equipment_lock(os.environ['OEP_HW_LOCK']):

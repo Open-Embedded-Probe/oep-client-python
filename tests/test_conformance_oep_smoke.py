@@ -4,8 +4,8 @@ import struct
 
 import pytest
 
-from oep_client.conformance_core_smoke import CoreSmokeChecks
-from oep_client.conformance_oep_smoke import OepExampleSmokeChecks, REVIEWED_INTERFACES
+from oep_client.conformance.core_smoke import CoreSmokeChecks
+from oep_client.conformance.oep_smoke import OepExampleSmokeChecks, REVIEWED_INTERFACES
 from test_conformance_core_smoke import SmallCore, REG, SPEC, tag
 
 NAMES = {3: 'oep.probe.plan', 4: 'oep.fixture.gpio', 5: 'oep.fixture.uart', 8: 'oep.wire.swd', 9: 'oep.target.arm-adi'}

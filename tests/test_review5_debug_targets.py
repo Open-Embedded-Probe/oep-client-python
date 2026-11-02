@@ -3,9 +3,9 @@ say."""
 import struct
 
 from oep_client import riscv, virtual_bench
-from oep_client.conformance_attach import AttachChecks
-from oep_client.conformance_debug import DebugChecks
-from oep_client.conformance_run import RunChecks
+from oep_client.conformance.attach import AttachChecks
+from oep_client.conformance.debug import DebugChecks
+from oep_client.conformance.run import RunChecks
 from oep_client.virtual_core import tlv
 
 from test_conformance_attach import setup as attach_setup

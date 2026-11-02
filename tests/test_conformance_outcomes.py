@@ -3,7 +3,7 @@ import struct
 import pytest
 from oep_client.conformance import Checks
 from oep_client.virtual_core import Completed
-from oep_client.virtual_resource_model import ResourceModel
+from oep_client.conformance.resource_model import ResourceModel
 from test_conformance import REG
 
 
@@ -28,9 +28,9 @@ def test_completed_failure_and_partial_are_cached_without_reexecution(outcome):
         assert struct.unpack_from('<BI',lock)==(1,2900)
         assert dict(model.ep.current_core.cache)[int.from_bytes(request[1:3],'little')]==(request,result)
 
-from oep_client.conformance_outcomes import OutcomeChecks, decode_debug_counted, debug_succeeded
-from oep_client.conformance_outcome_sample import SampleOutcomeAdapter
-from oep_client.virtual_outcome_model import OutcomeModel
+from oep_client.conformance.outcomes import OutcomeChecks, decode_debug_counted, debug_succeeded
+from oep_client.conformance.outcome_sample import SampleOutcomeAdapter
+from oep_client.conformance.outcome_model import OutcomeModel
 
 
 def setup():

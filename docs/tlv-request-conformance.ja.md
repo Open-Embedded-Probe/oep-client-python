@@ -26,8 +26,8 @@ tag 3は繰り返すu8で、wire順に使う。応答は選択値の長さ(u16)�
 import json
 from pathlib import Path
 from oep_client.conformance import Checks, spec_identity
-from oep_client.conformance_tlv_requests import TlvRequestChecks
-from oep_client.virtual_tlv_request_model import TlvRequestModel
+from oep_client.conformance.tlv_requests import TlvRequestChecks
+from oep_client.conformance.tlv_request_model import TlvRequestModel
 
 registry, identity = spec_identity("/explicit/path/to/oep-spec")
 model = TlvRequestModel(lambda: 0, boot_id=17)

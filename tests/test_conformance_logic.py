@@ -1,6 +1,6 @@
 import struct
 import pytest
-from oep_client.virtual_logic_model import OP, C, A, ST, MODE
+from oep_client.conformance.logic_model import OP, C, A, ST, MODE
 from oep_client.registry import OUTCOMES
 from spec_names import iface
 
@@ -9,9 +9,9 @@ def tags_of(name):
     return {c:dict(t) for c,t in iface(name)['tlv'].items()}
 
 from oep_client.conformance import Checks
-from oep_client.conformance_logic import LogicChecks
-from oep_client.conformance_logic_sample import SampleLogicAdapter
-from oep_client.virtual_logic_model import LogicModel
+from oep_client.conformance.logic import LogicChecks
+from oep_client.conformance.logic_sample import SampleLogicAdapter
+from oep_client.conformance.logic_model import LogicModel
 from test_conformance_registered_ops import setup as registered_setup
 
 
@@ -30,12 +30,12 @@ def test_logic_contract():
 
 
 def test_generic_declarations():
-    from oep_client.conformance_interfaces import InterfaceChecks
+    from oep_client.conformance.interfaces import InterfaceChecks
     _,c=setup();r=InterfaceChecks(c).run();assert r['status']=='passed',r['checks']
 
 
 def test_metadata():
-    from oep_client.conformance_capture_metadata import CaptureMetadataChecks
+    from oep_client.conformance.capture_metadata import CaptureMetadataChecks
     _,c=setup();r=CaptureMetadataChecks(c,{2:'oep.fixture.logic'}).run();assert r['status']=='passed',r['checks']
 
 

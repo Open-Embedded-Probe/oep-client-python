@@ -35,8 +35,8 @@ import hashlib, json, struct, sys
 from pathlib import Path
 from oep_client import virtual_declaration_model
 from oep_client.conformance import Checks, checker_sources_sha256, spec_identity
-from oep_client.conformance_discovery import DiscoveryChecks
-from oep_client.virtual_declaration_model import DeclarationModel
+from oep_client.conformance.discovery import DiscoveryChecks
+from oep_client.conformance.declaration_model import DeclarationModel
 from oep_client.virtual_core import tlv
 registry, identity = spec_identity(sys.argv[1])
 reports = {}

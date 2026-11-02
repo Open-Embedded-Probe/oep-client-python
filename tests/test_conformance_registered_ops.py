@@ -1,8 +1,8 @@
 import copy
 import pytest
 from oep_client.conformance import Checks
-from oep_client.conformance_registered_ops import RegisteredOpsChecks
-from oep_client.virtual_registered_ops_model import RegisteredOpsModel, MINIMAL
+from oep_client.conformance.registered_ops import RegisteredOpsChecks
+from oep_client.conformance.registered_ops_model import RegisteredOpsModel, MINIMAL
 from test_conformance import REG
 from spec_names import SPEC, iface, ops
 
@@ -77,7 +77,7 @@ def test_future_mandatory_op_is_not_silently_ignored():
 
 
 def test_registered_ops_common_declarations_pass():
-    from oep_client.conformance_interfaces import InterfaceChecks
+    from oep_client.conformance.interfaces import InterfaceChecks
     _,c=setup();r=InterfaceChecks(c).run();assert r['status']=='passed',r['checks'];assert len(r['checks'])==129
 
 

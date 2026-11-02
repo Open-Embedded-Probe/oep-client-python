@@ -3,8 +3,8 @@ import struct
 
 import pytest
 
-from oep_client.conformance_core_smoke import CoreSmokeChecks
-from oep_client.conformance_session_smoke import SessionSmokeChecks
+from oep_client.conformance.core_smoke import CoreSmokeChecks
+from oep_client.conformance.session_smoke import SessionSmokeChecks
 from test_conformance_core_smoke import SmallCore, REG, SPEC
 
 

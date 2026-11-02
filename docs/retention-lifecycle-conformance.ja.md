@@ -19,9 +19,9 @@ reset能力はsession操作の前に確認し、`reset_scope='logical-model'`だ
 import os
 from oep_client.conformance import Checks, spec_identity
 from oep_client.hardware import equipment_lock
-from oep_client.conformance_retention_lifecycle import RetentionLifecycleChecks
-from oep_client.conformance_retention_lifecycle_sample import SampleRetentionLifecycleAdapter
-from oep_client.virtual_retention_model import RetentionModel
+from oep_client.conformance.retention_lifecycle import RetentionLifecycleChecks
+from oep_client.conformance.retention_lifecycle_sample import SampleRetentionLifecycleAdapter
+from oep_client.conformance.retention_model import RetentionModel
 
 registry, spec = spec_identity(os.environ['OEP_CONFORMANCE_SPEC'])
 with equipment_lock(os.environ['OEP_HW_LOCK']):

@@ -456,7 +456,7 @@ def test_connections_tell_a_targetsel_of_0_from_none_with_page_relative_indexes(
     counted in its own page; a selector of 0 is told from none. The logical swd model lists 0 as a selection and the
     checker reads it so; the client reads each page's indexes from that page's first entry."""
     from test_conformance_wire_options import setup as wire_setup
-    from oep_client.conformance_wire_options import WireOptionsChecks
+    from oep_client.conformance.wire_options import WireOptionsChecks
     _, c, a = wire_setup()
     checks = WireOptionsChecks(c, a)
     assert checks.run()["status"] == "passed"
@@ -1046,7 +1046,7 @@ def test_a_minimal_wire_needs_no_scan_no_second_connection_and_no_console():
     """debug (before §0): the minimal wire is attach / detach / connections and one connection - the declarations
     checker passes a rvswd fn alone (no console selected) that offers no scan and declares no max_connections (one);
     the bench serves such a wire: attach, a target op, connections, detach."""
-    from oep_client.conformance_oep_declarations import OepDeclarationChecks
+    from oep_client.conformance.oep_declarations import OepDeclarationChecks
     from test_conformance_oep_declarations import setup as decl_setup
     model, c = decl_setup()
     r = OepDeclarationChecks(c, {1: "oep.wire.rvswd"}).run()

@@ -21,8 +21,8 @@ import random
 import struct
 
 from oep_client import catalog, endpoint, host, message as m, pins, registry as reg, virtual_bench
-from oep_client.conformance_oep_declarations import OepDeclarationChecks
-from oep_client.conformance_retry import RetryChecks
+from oep_client.conformance.oep_declarations import OepDeclarationChecks
+from oep_client.conformance.retry import RetryChecks
 from test_conformance_oep_declarations import SELECTION, setup as decl_setup
 from test_conformance_retry import setup as retry_setup
 from test_virtual_bench_spec import W, Clock, Host, att

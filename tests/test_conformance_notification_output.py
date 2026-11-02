@@ -5,7 +5,7 @@ import struct
 
 import pytest
 
-from oep_client.conformance_core_smoke import CoreSmokeChecks
+from oep_client.conformance.core_smoke import CoreSmokeChecks
 from test_conformance_core_smoke import REG, SPEC
 from test_conformance_session_smoke import TimedCore
 

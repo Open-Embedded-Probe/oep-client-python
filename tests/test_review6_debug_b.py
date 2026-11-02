@@ -155,7 +155,7 @@ def test_mem_ap_reads_and_writes_with_raw_transfers_when_the_probe_has_no_block_
 # ---- debug §6: no feature bits for arm-adi - a features tag with none set is no defect ---------------------------------
 
 def test_an_arm_adi_features_tag_without_bits_is_not_a_defect():
-    from oep_client.conformance_selected_metadata import SelectedMetadataChecks
+    from oep_client.conformance.selected_metadata import SelectedMetadataChecks
     from oep_client.virtual_core import tlv
     from test_conformance_selected_metadata import setup as metadata_setup
     model, c = metadata_setup()

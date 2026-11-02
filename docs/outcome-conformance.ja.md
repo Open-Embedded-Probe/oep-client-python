@@ -23,9 +23,9 @@ common §1.4のwrite、§3のdebug status/doneを採用したインターフェ�
 ```python
 import os
 from oep_client.conformance import Checks, spec_identity
-from oep_client.conformance_outcomes import OutcomeChecks
-from oep_client.conformance_outcome_sample import SampleOutcomeAdapter
-from oep_client.virtual_outcome_model import OutcomeModel
+from oep_client.conformance.outcomes import OutcomeChecks
+from oep_client.conformance.outcome_sample import SampleOutcomeAdapter
+from oep_client.conformance.outcome_model import OutcomeModel
 from oep_client.hardware import equipment_lock
 
 registry, spec = spec_identity(os.environ['OEP_CONFORMANCE_SPEC'])

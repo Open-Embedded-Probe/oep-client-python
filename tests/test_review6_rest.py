@@ -38,8 +38,8 @@ def passed(r):
 
 # ---- link §1/§2: source len(u16) data [TLV], sink — [TLV] ----------------------------------------------------------
 def test_link_routes_accept_a_source_answer_tail(monkeypatch):
-    from oep_client.conformance_link_routes import LinkRoutesChecks
-    from oep_client.conformance_link_routes_sample import SampleLinkRoutesAdapter
+    from oep_client.conformance.link_routes import LinkRoutesChecks
+    from oep_client.conformance.link_routes_sample import SampleLinkRoutesAdapter
     from test_conformance_link_routes import setup
     extended(monkeypatch, success={(4, 16), (4, 17)})
     model, c = setup()
@@ -47,8 +47,8 @@ def test_link_routes_accept_a_source_answer_tail(monkeypatch):
 
 
 def test_port_speed_execution_accepts_source_and_sink_answer_tails(monkeypatch):
-    from oep_client.conformance_port_speed_execution import PortSpeedExecutionChecks
-    from oep_client.conformance_port_speed_execution_sample import SamplePortSpeedExecutionAdapter
+    from oep_client.conformance.port_speed_execution import PortSpeedExecutionChecks
+    from oep_client.conformance.port_speed_execution_sample import SamplePortSpeedExecutionAdapter
     from test_conformance_port_speed_execution import setup
     extended(monkeypatch, success={(4, 16), (4, 17)})
     model, c = setup()
@@ -57,8 +57,8 @@ def test_port_speed_execution_accepts_source_and_sink_answer_tails(monkeypatch):
 
 # ---- link §3: 「拒否」はunavailable cause 6 (a TLV list; the probe may add the fn TLV) ---------------------------------
 def test_port_speed_accepts_more_tlvs_in_its_refusals_and_a_source_tail(monkeypatch):
-    from oep_client.conformance_port_speed import PortSpeedChecks
-    from oep_client.conformance_port_speed_sample import SamplePortSpeedAdapter
+    from oep_client.conformance.port_speed import PortSpeedChecks
+    from oep_client.conformance.port_speed_sample import SamplePortSpeedAdapter
     from test_conformance_port_speed import setup
     extended(monkeypatch, success={(4, 16)})
     model, c = setup()
@@ -66,8 +66,8 @@ def test_port_speed_accepts_more_tlvs_in_its_refusals_and_a_source_tail(monkeypa
 
 
 def test_port_speed_lifecycle_accepts_more_tlvs_in_its_refusals(monkeypatch):
-    from oep_client.conformance_port_speed_lifecycle import PortSpeedLifecycleChecks
-    from oep_client.conformance_port_speed_sample import SamplePortSpeedAdapter
+    from oep_client.conformance.port_speed_lifecycle import PortSpeedLifecycleChecks
+    from oep_client.conformance.port_speed_sample import SamplePortSpeedAdapter
     from test_conformance_port_speed import setup
     extended(monkeypatch)
     model, c = setup()
@@ -75,8 +75,8 @@ def test_port_speed_lifecycle_accepts_more_tlvs_in_its_refusals(monkeypatch):
 
 
 def test_port_speed_still_requires_cause_6(monkeypatch):
-    from oep_client.conformance_port_speed import PortSpeedChecks
-    from oep_client.conformance_port_speed_sample import SamplePortSpeedAdapter
+    from oep_client.conformance.port_speed import PortSpeedChecks
+    from oep_client.conformance.port_speed_sample import SamplePortSpeedAdapter
     from test_conformance_port_speed import setup
     handle = virtual_core.Core.handle
 
@@ -96,10 +96,10 @@ def test_port_speed_still_requires_cause_6(monkeypatch):
 def test_fixture_checkers_accept_more_tlvs_in_refusals(monkeypatch, name):
     import importlib
     test = importlib.import_module(f'test_conformance_{name}')
-    checker = {'gpio': ('conformance_gpio', 'GpioChecks', 'conformance_gpio_sample', 'SampleGpioAdapter'),
-               'uart': ('conformance_uart', 'UartChecks', 'conformance_uart_sample', 'SampleUartAdapter'),
-               'i2c': ('conformance_i2c', 'I2cChecks', 'conformance_i2c_sample', 'SampleI2cAdapter'),
-               'spi': ('conformance_spi', 'SpiChecks', 'conformance_spi_sample', 'SampleSpiAdapter')}[name]
+    checker = {'gpio': ('conformance.gpio', 'GpioChecks', 'conformance.gpio_sample', 'SampleGpioAdapter'),
+               'uart': ('conformance.uart', 'UartChecks', 'conformance.uart_sample', 'SampleUartAdapter'),
+               'i2c': ('conformance.i2c', 'I2cChecks', 'conformance.i2c_sample', 'SampleI2cAdapter'),
+               'spi': ('conformance.spi', 'SpiChecks', 'conformance.spi_sample', 'SampleSpiAdapter')}[name]
     checks = getattr(importlib.import_module('oep_client.' + checker[0]), checker[1])
     adapter = getattr(importlib.import_module('oep_client.' + checker[2]), checker[3])
     extended(monkeypatch)
@@ -112,7 +112,7 @@ def test_fixture_checkers_accept_more_tlvs_in_refusals(monkeypatch, name):
     (b'\1\1\0\5', b'\1\1\0\6', False), (b'', b'\1\1\0\6', False)],
     ids=['more-after', 'more-before', 'other-cause', 'none'])
 def test_refusal_matcher(payload, expected, ok):
-    from oep_client.conformance_registered_ops import refusal_carries
+    from oep_client.conformance.registered_ops import refusal_carries
     assert refusal_carries('unavailable', payload, expected) is ok
     assert refusal_carries('unsupported', b'\xfe' + payload, b'\xfe' + expected) is ok
     assert refusal_carries('unsupported', b'\x00' + payload, b'\xfe' + expected) is False

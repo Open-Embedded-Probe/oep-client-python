@@ -2,10 +2,10 @@
 import struct
 
 from oep_client.registry import WIRE_RVSWD as _WIRE, REJECT_REASONS as _R
-from oep_client.conformance_capture_group import CaptureGroupChecks
-from oep_client.conformance_capture_group_sample import SampleCaptureGroupAdapter
-from oep_client.virtual_attach_model import AttachModel
-from oep_client.virtual_capture_group_model import CaptureGroup
+from oep_client.conformance.capture_group import CaptureGroupChecks
+from oep_client.conformance.capture_group_sample import SampleCaptureGroupAdapter
+from oep_client.conformance.attach_model import AttachModel
+from oep_client.conformance.capture_group_model import CaptureGroup
 from oep_client.virtual_core import Reject
 from test_conformance_capture_group import setup as group_setup
 

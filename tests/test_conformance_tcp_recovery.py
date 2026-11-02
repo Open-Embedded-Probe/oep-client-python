@@ -1,11 +1,11 @@
 import pytest
-from oep_client.conformance_tcp_recovery import TcpRecoveryChecks
-from oep_client.conformance_tcp_recovery_sample import SampleTcpRecoveryAdapter
+from oep_client.conformance.tcp_recovery import TcpRecoveryChecks
+from oep_client.conformance.tcp_recovery_sample import SampleTcpRecoveryAdapter
 
 SPEC='/explicit/tcp-recovery-spec'
 @pytest.fixture(autouse=True)
 def selected_spec(monkeypatch):
-    monkeypatch.setattr('oep_client.conformance_tcp_recovery.reviewed_identity',lambda path:{'commit':'unit-fixture'} if path==SPEC else None)
+    monkeypatch.setattr('oep_client.conformance.tcp_recovery.reviewed_identity',lambda path:{'commit':'unit-fixture'} if path==SPEC else None)
 
 def test_tcp_recovery():
     report=TcpRecoveryChecks(SampleTcpRecoveryAdapter(),spec=SPEC).run()
@@ -62,7 +62,7 @@ def test_observation_faults(fault,case):
 def test_actual_frames_core_faults(monkeypatch,fault,case):
     from oep_client import frames
     from oep_client.virtual_core import Core
-    from oep_client.conformance_tcp_recovery_sample import TcpFixtureStream
+    from oep_client.conformance.tcp_recovery_sample import TcpFixtureStream
     adapter=SampleTcpRecoveryAdapter();run=adapter.run_case
     def broken(name):
         if name!=case:return run(name)

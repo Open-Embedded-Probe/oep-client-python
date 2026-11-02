@@ -1,6 +1,6 @@
 import pytest
-from oep_client.conformance_host_wait import HostWaitChecks,reviewed_identity as actual_review,REVIEWED
-from oep_client.conformance_host_wait_sample import SampleHostWaitAdapter
+from oep_client.conformance.host_wait import HostWaitChecks,reviewed_identity as actual_review,REVIEWED
+from oep_client.conformance.host_wait_sample import SampleHostWaitAdapter
 
 
 SPEC='/explicit/host-wait-spec'
@@ -8,7 +8,7 @@ SPEC='/explicit/host-wait-spec'
 
 @pytest.fixture(autouse=True)
 def selected_spec(monkeypatch):
-    monkeypatch.setattr('oep_client.conformance_host_wait.reviewed_identity',lambda path:{'commit':'unit-fixture'} if path==SPEC else None)
+    monkeypatch.setattr('oep_client.conformance.host_wait.reviewed_identity',lambda path:{'commit':'unit-fixture'} if path==SPEC else None)
 
 
 def test_existing_host_save_budget_path():
@@ -77,7 +77,7 @@ def registry():
 @pytest.mark.parametrize('document',REVIEWED)
 def test_changed_reviewed_document_is_not_accepted(monkeypatch,tmp_path,document):
     import hashlib
-    import oep_client.conformance_host_wait as module
+    import oep_client.conformance.host_wait as module
     from oep_client.conformance import Violation
     hashes={}
     for name in REVIEWED:
@@ -89,7 +89,7 @@ def test_changed_reviewed_document_is_not_accepted(monkeypatch,tmp_path,document
 
 @pytest.mark.parametrize('field',['margin','notifications','frame','maximum','save','quick'])
 def test_changed_registry_wait_rule_is_not_accepted(monkeypatch,field):
-    import oep_client.conformance_host_wait as module
+    import oep_client.conformance.host_wait as module
     from oep_client.conformance import Violation
     r=registry()
     if field=='margin':r['timing']['host_wait_add_ms']=999

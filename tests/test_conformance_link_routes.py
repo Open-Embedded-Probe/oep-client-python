@@ -1,9 +1,9 @@
 import pytest
 
 from oep_client.conformance import Checks
-from oep_client.conformance_link_routes import LinkRoutesChecks
-from oep_client.conformance_link_routes_sample import SampleLinkRoutesAdapter
-from oep_client.virtual_link_routes_model import LinkRoutesModel
+from oep_client.conformance.link_routes import LinkRoutesChecks
+from oep_client.conformance.link_routes_sample import SampleLinkRoutesAdapter
+from oep_client.conformance.link_routes_model import LinkRoutesModel
 from test_conformance_registered_ops import setup as registered_setup
 
 
@@ -22,7 +22,7 @@ def test_shared_routes_pass():
 
 @pytest.mark.parametrize('route',[0,1,2])
 def test_common_declarations_per_route(route):
-    from oep_client.conformance_interfaces import InterfaceChecks
+    from oep_client.conformance.interfaces import InterfaceChecks
     model,c=setup();c.send=lambda r:model.handle_route(r,route)
     r=InterfaceChecks(c).run();assert r['status']=='passed',r['checks']
 

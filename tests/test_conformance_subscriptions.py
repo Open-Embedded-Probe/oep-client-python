@@ -5,11 +5,11 @@ import struct
 import pytest
 
 from oep_client.conformance import Checks
-from oep_client.conformance_subscriptions import SubscriptionChecks, SUBSCRIPTION_CASES
-from oep_client.conformance_subscription_sample import SampleSubscriptionAdapter
-from oep_client.virtual_notification_model import NotificationModel
-from oep_client.conformance_resources import ResourceChecks
-from oep_client.conformance_resource_sample import SampleResourceAdapter
+from oep_client.conformance.subscriptions import SubscriptionChecks, SUBSCRIPTION_CASES
+from oep_client.conformance.subscription_sample import SampleSubscriptionAdapter
+from oep_client.conformance.notification_model import NotificationModel
+from oep_client.conformance.resources import ResourceChecks
+from oep_client.conformance.resource_sample import SampleResourceAdapter
 from test_conformance import REG
 
 

@@ -46,7 +46,7 @@ def test_a_listed_interface_at_revision_0_is_not_refused_by_the_discovery_checks
 
 def test_the_core_smoke_list_takes_an_interface_at_revision_0():
     """core §7.2 (as above): CoreSmokeChecks' list entries take revision 0."""
-    from oep_client.conformance_core_smoke import CoreSmokeChecks
+    from oep_client.conformance.core_smoke import CoreSmokeChecks
     from test_conformance_core_smoke import REG, SPEC, SmallCore
     probe = SmallCore(1, named=True)
     plain = probe.send

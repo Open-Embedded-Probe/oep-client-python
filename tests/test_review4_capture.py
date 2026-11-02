@@ -184,10 +184,10 @@ def test_analog_checker_requires_unsupported_for_a_frontend_of_a_role_not_planne
     cause 6); "挙げていない断り: ... probe は、自分が扱えないほかの値と値の組み合わせ ... も、core §2.3 のとおり rejected
     unsupported で断る。tag はその値を持つ TLV の受け取ったままのtag". The model answers so, and the checker fails a
     probe answering unavailable cause 6."""
-    from oep_client.conformance_analog import AnalogChecks
-    from oep_client.conformance_analog_sample import SampleAnalogAdapter
+    from oep_client.conformance.analog import AnalogChecks
+    from oep_client.conformance.analog_sample import SampleAnalogAdapter
     from oep_client.virtual_core import Reject, tlv
-    from oep_client import virtual_analog_model
+    from oep_client.conformance import analog_model as virtual_analog_model
     model, checks = _analog_model()
     checker = AnalogChecks(checks, SampleAnalogAdapter(model))
     checker.cases = ("FRONTEND",)
@@ -211,12 +211,12 @@ def test_models_check_a_later_copy_of_a_configure_tlv(model_name):
     """core §2.3 (capture §3.3's configure TLVs follow it): "後続の同じtagも上の検証対象である。例えば、正常な既知TLVの
     後に同じtagで不正な長さの値があれば、要求全体をmalformedで断る。"."""
     if model_name == "timeline":
-        from oep_client.virtual_capture_timeline_model import Track
+        from oep_client.conformance.capture_timeline_model import Track
         track = Track(2, None, [])
         tags = lambda data: track.request_tags(_LOGIC.op["configure"], data)    # noqa: E731
     else:
-        from oep_client.virtual_logic_model import Logic
-        from oep_client.virtual_analog_model import Analog
+        from oep_client.conformance.logic_model import Logic
+        from oep_client.conformance.analog_model import Analog
         ext = (Logic if model_name == "logic" else Analog).__new__(Logic if model_name == "logic" else Analog)
         tags = lambda data: ext.request_tags(2, _LOGIC.op["configure"], data)   # noqa: E731
     from oep_client.virtual_core import Reject, tlv

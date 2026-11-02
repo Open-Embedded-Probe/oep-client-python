@@ -1,6 +1,6 @@
 import struct
 import pytest
-from oep_client.conformance_corr import CorrChecks
+from oep_client.conformance.corr import CorrChecks
 from test_conformance_retention import build
 
 

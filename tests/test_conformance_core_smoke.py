@@ -5,7 +5,7 @@ import struct
 
 import pytest
 
-from oep_client.conformance_core_smoke import CoreSmokeChecks, REVIEWED_CORE_SHA256
+from oep_client.conformance.core_smoke import CoreSmokeChecks, REVIEWED_CORE_SHA256
 from test_conformance import REG as LEGACY_REG
 
 REG = copy.deepcopy(LEGACY_REG)

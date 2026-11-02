@@ -2,10 +2,10 @@ from oep_client.conformance import Checks, ops
 from oep_client.catalog import pack_ops
 from oep_client.virtual_core import tlv
 from oep_client.virtual_names import DC
-from oep_client.virtual_scan_options_model import SC, KIND, WOP
-from oep_client.conformance_scan_options import ScanOptionsChecks
-from oep_client.conformance_scan_options_sample import SampleScanOptionsAdapter
-from oep_client.virtual_scan_options_model import ScanOptionsModel
+from oep_client.conformance.scan_options_model import SC, KIND, WOP
+from oep_client.conformance.scan_options import ScanOptionsChecks
+from oep_client.conformance.scan_options_sample import SampleScanOptionsAdapter
+from oep_client.conformance.scan_options_model import ScanOptionsModel
 from test_conformance_wire_options import setup as wire_setup
 
 
@@ -103,13 +103,13 @@ def test_invalid_scan_option_controls_preserve_state(method,args):
 
 
 def test_scan_options_common_declarations_pass():
-    from oep_client.conformance_interfaces import InterfaceChecks
+    from oep_client.conformance.interfaces import InterfaceChecks
     _,c,_=setup();c.reg['describe_common'].update(role_channels=1,max_clock_hz=2,max_length=3,min_clock_hz=4,features=5,channel_group=6)
     r=InterfaceChecks(c).run();assert r['status']=='passed',r['checks']
     assert len(r['checks'])==33
 
 
 def test_scan_options_keep_attach_option_contracts():
-    from oep_client.conformance_wire_options import WireOptionsChecks
+    from oep_client.conformance.wire_options import WireOptionsChecks
     _,c,a=setup();r=WireOptionsChecks(c,a).run();assert r['status']=='passed',r['checks']
     assert len(r['checks'])==40

@@ -21,8 +21,8 @@ Probeがcritical bit付き応答を送ってよいという規則ではない。
 ```python
 import json
 from pathlib import Path
-from oep_client.conformance_host_tlv import HostTlvChecks
-from oep_client.conformance_host_tlv_sample import decode
+from oep_client.conformance.host_tlv import HostTlvChecks
+from oep_client.conformance.host_tlv_sample import decode
 
 report = HostTlvChecks(decode, spec="/explicit/path/to/oep-spec").run()
 Path("/explicit/output/host-tlv.json").write_text(json.dumps(report, indent=2))

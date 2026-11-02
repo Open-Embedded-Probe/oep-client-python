@@ -1,13 +1,13 @@
 import copy
 import struct
 import pytest
-from oep_client.virtual_analog_model import OP, C, A, ST, MODE
+from oep_client.conformance.analog_model import OP, C, A, ST, MODE
 from oep_client.registry import OUTCOMES
 from oep_client import registry as registry
 from oep_client.conformance import Checks
-from oep_client.conformance_analog import AnalogChecks
-from oep_client.conformance_analog_sample import SampleAnalogAdapter
-from oep_client.virtual_analog_model import AnalogModel
+from oep_client.conformance.analog import AnalogChecks
+from oep_client.conformance.analog_sample import SampleAnalogAdapter
+from oep_client.conformance.analog_model import AnalogModel
 from oep_client.virtual_core import tlv
 from test_conformance_registered_ops import setup as registered_setup
 
@@ -31,8 +31,8 @@ def test_analog_operations():
 
 @pytest.mark.parametrize('checker_name',['declarations','metadata'])
 def test_analog_declarations(checker_name):
-    from oep_client.conformance_interfaces import InterfaceChecks
-    from oep_client.conformance_capture_metadata import CaptureMetadataChecks
+    from oep_client.conformance.interfaces import InterfaceChecks
+    from oep_client.conformance.capture_metadata import CaptureMetadataChecks
     model,checks=setup()
     result=(InterfaceChecks(checks) if checker_name=='declarations' else CaptureMetadataChecks(checks,{2:'oep.fixture.analog'})).run()
     assert result['status']=='passed',result['checks']

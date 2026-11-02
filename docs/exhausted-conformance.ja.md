@@ -20,9 +20,9 @@ fixtureは接続closeと別経路を論理APIで表現する。physical reader�
 ```python
 import os
 from oep_client.conformance import Checks, spec_identity
-from oep_client.conformance_exhausted import ExhaustedChecks
-from oep_client.conformance_recovery_race_sample import SampleRecoveryRaceAdapter
-from oep_client.virtual_retention_model import RetentionModel
+from oep_client.conformance.exhausted import ExhaustedChecks
+from oep_client.conformance.recovery_race_sample import SampleRecoveryRaceAdapter
+from oep_client.conformance.retention_model import RetentionModel
 from oep_client.hardware import equipment_lock
 
 registry, spec = spec_identity(os.environ['OEP_CONFORMANCE_SPEC'])

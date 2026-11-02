@@ -2,9 +2,9 @@ import copy
 import struct
 import pytest
 from oep_client.conformance import Checks
-from oep_client.conformance_scan import ScanChecks
-from oep_client.conformance_scan_sample import SampleScanAdapter
-from oep_client.virtual_scan_model import ScanModel
+from oep_client.conformance.scan import ScanChecks
+from oep_client.conformance.scan_sample import SampleScanAdapter
+from oep_client.conformance.scan_model import ScanModel
 from test_conformance_attach import SPECS
 from test_conformance import REG
 

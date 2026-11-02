@@ -706,7 +706,7 @@ class Host:
     def _restart_fn(self) -> int:
         """The probe's oep.probe.restart fn (LookupError: it offers none - the interface is optional); the link is told,
         so a completed restart sends it back to the boot speed (oep-if-link §3 host 2)."""
-        from . import core                              # core imports host: here, not at the top
+        from . import core# core imports host: here, not at the top
         fn = core.restart_fn(self)
         link = getattr(self, "link", None)
         if link is not None:

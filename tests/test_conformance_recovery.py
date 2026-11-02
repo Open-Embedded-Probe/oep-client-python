@@ -1,7 +1,7 @@
 import struct
 import pytest
-from oep_client.conformance_recovery import RecoveryChecks
-from oep_client.conformance_recovery_sample import SampleRecoveryAdapter, SampleRecoveryHost
+from oep_client.conformance.recovery import RecoveryChecks
+from oep_client.conformance.recovery_sample import SampleRecoveryAdapter, SampleRecoveryHost
 from test_conformance_retention_lifecycle import build
 
 

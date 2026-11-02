@@ -1,11 +1,11 @@
 import pytest
-from oep_client.conformance_refusal_order import RefusalOrderChecks
-from oep_client.conformance_refusal_order_sample import SampleRefusalOrderAdapter
+from oep_client.conformance.refusal_order import RefusalOrderChecks
+from oep_client.conformance.refusal_order_sample import SampleRefusalOrderAdapter
 
 SPEC='/explicit/refusal-order-spec'
 @pytest.fixture(autouse=True)
 def selected_spec(monkeypatch):
-    monkeypatch.setattr('oep_client.conformance_refusal_order.reviewed_identity',lambda path:{'commit':'unit-fixture'} if path==SPEC else None)
+    monkeypatch.setattr('oep_client.conformance.refusal_order.reviewed_identity',lambda path:{'commit':'unit-fixture'} if path==SPEC else None)
 
 def test_refusal_precedence_matrix():
     r=RefusalOrderChecks(SampleRefusalOrderAdapter(),spec=SPEC).run()

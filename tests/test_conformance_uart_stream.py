@@ -1,6 +1,6 @@
 import pytest
-from oep_client.conformance_uart_stream import UartStreamChecks
-from oep_client.conformance_uart_stream_sample import SampleUartStreamAdapter
+from oep_client.conformance.uart_stream import UartStreamChecks
+from oep_client.conformance.uart_stream_sample import SampleUartStreamAdapter
 from test_conformance_uart import setup
 
 

@@ -58,10 +58,10 @@ import hashlib, json, sys
 from pathlib import Path
 from oep_client import virtual_arm_adi_model
 from oep_client.conformance import Checks, checker_sources_sha256, spec_identity
-from oep_client.conformance_arm_adi_blocks import ArmAdiBlockChecks
-from oep_client.conformance_arm_adi_sample import SampleArmAdiAdapter
-from oep_client.conformance_interfaces import InterfaceChecks
-from oep_client.virtual_arm_adi_model import ArmAdiModel
+from oep_client.conformance.arm_adi_blocks import ArmAdiBlockChecks
+from oep_client.conformance.arm_adi_sample import SampleArmAdiAdapter
+from oep_client.conformance.interfaces import InterfaceChecks
+from oep_client.conformance.arm_adi_model import ArmAdiModel
 registry, identity = spec_identity(sys.argv[1])
 model = ArmAdiModel()
 common = InterfaceChecks(Checks(model.handle, registry, 'virtual-resource-1')).run()

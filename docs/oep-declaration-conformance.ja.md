@@ -23,8 +23,8 @@ fnと標準名の対応を明示する。名称による全fnへの自動適用�
 ```python
 import os
 from oep_client.conformance import Checks, spec_identity
-from oep_client.conformance_oep_declarations import OepDeclarationChecks
-from oep_client.virtual_oep_declaration_model import OepDeclarationModel
+from oep_client.conformance.oep_declarations import OepDeclarationChecks
+from oep_client.conformance.oep_declaration_model import OepDeclarationModel
 from oep_client.hardware import equipment_lock
 
 registry, spec = spec_identity(os.environ['OEP_CONFORMANCE_SPEC'])

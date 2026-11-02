@@ -35,9 +35,9 @@ import hashlib, json, sys
 from pathlib import Path
 from oep_client import virtual_allocator_model
 from oep_client.conformance import Checks, checker_sources_sha256, spec_identity
-from oep_client.conformance_allocator import AllocatorChecks
-from oep_client.conformance_allocator_sample import SampleAllocatorAdapter
-from oep_client.virtual_allocator_model import AllocatorModel
+from oep_client.conformance.allocator import AllocatorChecks
+from oep_client.conformance.allocator_sample import SampleAllocatorAdapter
+from oep_client.conformance.allocator_model import AllocatorModel
 registry, identity = spec_identity(sys.argv[1])
 model = AllocatorModel()
 checks = Checks(model.handle, registry, 'virtual-resource-1')

@@ -28,9 +28,9 @@ probeの保持契約とsample hostの回復方針を分けて観測する。samp
 ```python
 import os
 from oep_client.conformance import Checks, spec_identity
-from oep_client.conformance_recovery import RecoveryChecks
-from oep_client.conformance_recovery_sample import SampleRecoveryAdapter
-from oep_client.virtual_retention_model import RetentionModel
+from oep_client.conformance.recovery import RecoveryChecks
+from oep_client.conformance.recovery_sample import SampleRecoveryAdapter
+from oep_client.conformance.retention_model import RetentionModel
 from oep_client.hardware import equipment_lock
 
 registry, spec = spec_identity(os.environ['OEP_CONFORMANCE_SPEC'])

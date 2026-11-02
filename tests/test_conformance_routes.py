@@ -1,9 +1,9 @@
 import copy
 import pytest
 from oep_client.conformance import Checks
-from oep_client.conformance_routes import RouteChecks
-from oep_client.conformance_route_sample import SampleRouteAdapter
-from oep_client.virtual_route_model import RouteModel
+from oep_client.conformance.routes import RouteChecks
+from oep_client.conformance.route_sample import SampleRouteAdapter
+from oep_client.conformance.route_model import RouteModel
 from test_conformance import REG
 
 

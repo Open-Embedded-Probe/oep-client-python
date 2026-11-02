@@ -94,7 +94,7 @@ def test_crc_check_values(case):
                          ids=lambda c: c["name"])
 def test_dmseq_crc8(case):
     """target-console-dmseq CRC-8: the dmseq checker's reference and the virtual bench's dmseq model."""
-    from oep_client import conformance_dmseq, virtual_dmseq_model
+    from oep_client.conformance import dmseq as conformance_dmseq, dmseq_model as virtual_dmseq_model
     data = hx(case["input_hex"])
     assert conformance_dmseq.crc_reference(data) == virtual_dmseq_model.checksum(data) == case["crc"]
 
@@ -102,7 +102,7 @@ def test_dmseq_crc8(case):
 @pytest.mark.parametrize("case", load("checks.json")["dmseq_words"], ids=lambda c: c["name"])
 def test_dmseq_words(case):
     """target-console-dmseq byte order: DATA0 is byte0, the payload and the CRC-8 of them, little endian."""
-    from oep_client import conformance_dmseq
+    from oep_client.conformance import dmseq as conformance_dmseq
     head = bytes([case["byte0"]]) + hx(case["payload_hex"])
     assert conformance_dmseq.crc_reference(head) == case["crc"]
     assert int.from_bytes((head + bytes([case["crc"]])).ljust(4, b"\0")[:4], "little") == case["data0"]

@@ -15,7 +15,9 @@ from fractions import Fraction
 
 import pytest
 
-from oep_client import arm, capture as c, conformance, conformance_stream, host as h, message as m, registry as reg, riscv
+from oep_client import arm, capture as c, conformance, host as h, message as m, registry as reg, riscv
+
+from oep_client.conformance import stream as conformance_stream
 
 u32 = lambda v: struct.pack("<I", v)   # noqa: E731
 

@@ -100,7 +100,7 @@ from typing import Callable, Hashable
 
 from . import catalog, virtual_bench, virtual_bench_capture, message as m, registry as reg
 from .virtual_fixture_drive import DRIVE, FixtureDrive
-from . import registry as current_reg     # TRANSITIONAL: the common stream marks
+from . import registry as current_reg# TRANSITIONAL: the common stream marks
 
 TOY_WRITE, TOY_READ = 0x10, 0x11                    # 0x01 / 0x02: subscribe / unsubscribe in every op space
 OK, WAIT, LINE, FAULT, TIMEOUT, STATE = (reg.STATUS[k] for k in ("ok", "wait", "line", "fault", "timeout", "state"))

@@ -1,7 +1,7 @@
 from oep_client.conformance import Checks
-from oep_client.conformance_reset import ResetChecks
-from oep_client.conformance_reset_sample import SampleResetAdapter
-from oep_client.virtual_reset_model import ResetModel
+from oep_client.conformance.reset import ResetChecks
+from oep_client.conformance.reset_sample import SampleResetAdapter
+from oep_client.conformance.reset_model import ResetModel
 from test_conformance_step import setup as step_setup
 
 
@@ -123,14 +123,14 @@ def test_invalid_reset_controls_preserve_state(invalid):
 
 
 def test_reset_fixture_common_declarations_pass():
-    from oep_client.conformance_interfaces import InterfaceChecks
+    from oep_client.conformance.interfaces import InterfaceChecks
     _,c,_=setup();r=InterfaceChecks(c).run()
     assert r['status']=='passed',r['checks']
     assert len(r['checks'])==41
 
 
 def test_dm_line_may_proactively_clear_dmseq_sync_without_havereset_mark():
-    from oep_client.virtual_dmseq_model import initial
+    from oep_client.conformance.dmseq_model import initial
     model,c,a=setup();install=model.install
     def permissive_install():
         install();e=model.extension;dispatch=e.dispatch_request

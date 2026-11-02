@@ -3,9 +3,9 @@ import struct
 import pytest
 from oep_client.conformance import Checks
 from spec_names import iface
-from oep_client.conformance_arm_adi import ArmAdiChecks
-from oep_client.conformance_arm_adi_sample import SampleArmAdiAdapter
-from oep_client.virtual_arm_adi_model import ArmAdiModel
+from oep_client.conformance.arm_adi import ArmAdiChecks
+from oep_client.conformance.arm_adi_sample import SampleArmAdiAdapter
+from oep_client.conformance.arm_adi_model import ArmAdiModel
 from oep_client.virtual_core import Completed, Reject
 from test_conformance_attach import setup as attach_setup
 

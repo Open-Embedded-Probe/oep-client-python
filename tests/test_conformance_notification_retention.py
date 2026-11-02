@@ -1,11 +1,11 @@
 import pytest
-from oep_client.conformance_notification_retention import NotificationRetentionChecks
-from oep_client.conformance_notification_retention_sample import SampleNotificationRetentionAdapter
+from oep_client.conformance.notification_retention import NotificationRetentionChecks
+from oep_client.conformance.notification_retention_sample import SampleNotificationRetentionAdapter
 
 SPEC='/explicit/notification-retention-spec'
 @pytest.fixture(autouse=True)
 def selected_spec(monkeypatch):
-    monkeypatch.setattr('oep_client.conformance_notification_retention.reviewed_identity',lambda path:{'commit':'unit-fixture'} if path==SPEC else None)
+    monkeypatch.setattr('oep_client.conformance.notification_retention.reviewed_identity',lambda path:{'commit':'unit-fixture'} if path==SPEC else None)
 
 def test_retained_notification_quarter_span():
     report=NotificationRetentionChecks(SampleNotificationRetentionAdapter(),spec=SPEC).run()
@@ -44,7 +44,7 @@ def test_retention_observation_faults(fault,active):
 @pytest.mark.parametrize('fault,active',[
     ('no_eviction',False),('late_eviction',False),('discard_partial',True),('global_eviction',False)])
 def test_actual_retention_faults(monkeypatch,fault,active):
-    from oep_client.virtual_route_model import RouteModel
+    from oep_client.conformance.route_model import RouteModel
     offer=RouteModel.offer
     if fault=='no_eviction':
         def bad_offer(model,route,frame):

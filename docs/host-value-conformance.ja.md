@@ -22,8 +22,8 @@ causeとscan kindは整数として表示層へ渡せることを確認する。
 ```python
 import json
 from pathlib import Path
-from oep_client.conformance_host_values import HostValueChecks
-from oep_client.conformance_host_values_sample import decode
+from oep_client.conformance.host_values import HostValueChecks
+from oep_client.conformance.host_values_sample import decode
 
 report = HostValueChecks(decode, spec="/explicit/path/to/oep-spec").run()
 Path("/explicit/output/host-values.json").write_text(json.dumps(report, indent=2))

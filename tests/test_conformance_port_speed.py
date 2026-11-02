@@ -1,8 +1,8 @@
 import pytest
 from oep_client.conformance import Checks
-from oep_client.conformance_port_speed import PortSpeedChecks
-from oep_client.conformance_port_speed_sample import SamplePortSpeedAdapter
-from oep_client.virtual_port_speed_model import PortSpeedModel
+from oep_client.conformance.port_speed import PortSpeedChecks
+from oep_client.conformance.port_speed_sample import SamplePortSpeedAdapter
+from oep_client.conformance.port_speed_model import PortSpeedModel
 from test_conformance_registered_ops import setup as registered_setup
 
 
@@ -20,7 +20,7 @@ def test_port_speed_handshake():
 
 
 def test_common_declarations():
-    from oep_client.conformance_interfaces import InterfaceChecks
+    from oep_client.conformance.interfaces import InterfaceChecks
     model,c=setup();r=InterfaceChecks(c).run();assert r['status']=='passed',r['checks']
 
 

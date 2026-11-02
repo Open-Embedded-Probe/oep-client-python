@@ -1,8 +1,8 @@
 import pytest
 from oep_client.conformance import Checks
-from oep_client.conformance_gpio import GpioChecks
-from oep_client.conformance_gpio_sample import SampleGpioAdapter
-from oep_client.virtual_gpio_model import GpioModel
+from oep_client.conformance.gpio import GpioChecks
+from oep_client.conformance.gpio_sample import SampleGpioAdapter
+from oep_client.conformance.gpio_model import GpioModel
 from test_conformance_registered_ops import setup as registered_setup
 
 
@@ -21,12 +21,12 @@ def test_gpio_plan_checks():
 
 
 def test_generic_declarations():
-    from oep_client.conformance_interfaces import InterfaceChecks
+    from oep_client.conformance.interfaces import InterfaceChecks
     _,c=setup();r=InterfaceChecks(c).run();assert r['status']=='passed',r['checks'];assert len(r['checks'])==25
 
 
 def test_gpio_metadata():
-    from oep_client.conformance_fixture_metadata import FixtureMetadataChecks
+    from oep_client.conformance.fixture_metadata import FixtureMetadataChecks
     _,c=setup();c.reg['constants']={'min_max_frame':64};r=FixtureMetadataChecks(c,{2:'oep.fixture.gpio',3:'oep.fixture.gpio'}).run();assert r['status']=='passed',r['checks'];assert len(r['checks'])==6
 
 

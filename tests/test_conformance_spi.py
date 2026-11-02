@@ -6,9 +6,9 @@ def tags_of(name):
     return {c:dict(t) for c,t in iface(name)['tlv'].items()}
 
 from oep_client.conformance import Checks
-from oep_client.conformance_spi import SpiChecks
-from oep_client.conformance_spi_sample import SampleSpiAdapter
-from oep_client.virtual_spi_model import SpiModel
+from oep_client.conformance.spi import SpiChecks
+from oep_client.conformance.spi_sample import SampleSpiAdapter
+from oep_client.conformance.spi_model import SpiModel
 from test_conformance_registered_ops import setup as registered_setup
 
 
@@ -29,12 +29,12 @@ def test_spi_contract(lsb):
 
 
 def test_common_declarations():
-    from oep_client.conformance_interfaces import InterfaceChecks
+    from oep_client.conformance.interfaces import InterfaceChecks
     _,c=setup();r=InterfaceChecks(c).run();assert r['status']=='passed',r['checks']
 
 
 def test_metadata():
-    from oep_client.conformance_fixture_metadata import FixtureMetadataChecks
+    from oep_client.conformance.fixture_metadata import FixtureMetadataChecks
     _,c=setup();r=FixtureMetadataChecks(c,{2:'oep.fixture.spi-target'}).run();assert r['status']=='passed',r['checks']
 
 
@@ -212,7 +212,7 @@ def test_state0_arm_refusal_faults(fault,planned):
 def test_features_may_be_absent():
     """core §7.4 / fixture §4 (a09fa45): features holds optional bits ("features の bit0 が無いのに bit_order 1 は
     unsupported"); an MSB-only probe need not declare it - the metadata and behaviour checkers pass without the tag."""
-    from oep_client.conformance_fixture_metadata import FixtureMetadataChecks
+    from oep_client.conformance.fixture_metadata import FixtureMetadataChecks
     for checker in ('metadata','behaviour'):
         model,c=setup(lsb=False);original=model.extension.describe
         model.extension.describe=lambda fn,original=original:tuple(row for row in original(fn) if fn!=2 or row[0]!=5)

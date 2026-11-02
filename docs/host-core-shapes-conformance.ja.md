@@ -66,8 +66,8 @@ SPECが変わった場合は入力を読み直すまで停止し、番号が同�
 繰返しのsort、boolを0/1だけで読む誤りなどを捕捉する。
 
 ```python
-from oep_client.conformance_host_core import HostCoreShapeChecks
-from oep_client.conformance_host_core_sample import decode
+from oep_client.conformance.host_core import HostCoreShapeChecks
+from oep_client.conformance.host_core_sample import decode
 
 report = HostCoreShapeChecks(decode, spec="/explicit/oep-spec").run()
 assert report["status"] == "passed"

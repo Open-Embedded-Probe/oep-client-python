@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from oep_client.conformance_serial import SerialWire, WireError, encode, decode, frame, unframe
+from oep_client.conformance.serial import SerialWire, WireError, encode, decode, frame, unframe
 
 
 def test_independent_codec_matches_shared_spec():
@@ -26,7 +26,7 @@ class Stream:
     def __init__(self, chunks, monkeypatch):
         self.chunks, self.writes = deque(chunks), []
         self.now, self.timeout = 0, 0.01
-        monkeypatch.setattr('oep_client.conformance_serial.time.monotonic', lambda: self.now)
+        monkeypatch.setattr('oep_client.conformance.serial.time.monotonic', lambda: self.now)
 
     def write(self, data):
         self.writes.append(data)

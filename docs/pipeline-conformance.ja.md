@@ -25,9 +25,9 @@ adapterは`SampleRouteAdapter`の制御/trace能力に加え、明示した`admi
 import os
 from oep_client.conformance import Checks, spec_identity
 from oep_client.hardware import equipment_lock
-from oep_client.conformance_pipeline import PipelineChecks
-from oep_client.conformance_pipeline_sample import SamplePipelineAdapter
-from oep_client.virtual_pipeline_model import PipelineModel
+from oep_client.conformance.pipeline import PipelineChecks
+from oep_client.conformance.pipeline_sample import SamplePipelineAdapter
+from oep_client.conformance.pipeline_model import PipelineModel
 
 registry, spec = spec_identity(os.environ['OEP_CONFORMANCE_SPEC'])
 with equipment_lock(os.environ['OEP_HW_LOCK']):

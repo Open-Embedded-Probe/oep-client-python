@@ -74,14 +74,14 @@ def h_call(hst, fn, op, payload):
 # ---- probe-config §1: label = "text（1〜32byte、coreのtext）"; core §2.1: text is UTF-8, the host replaces C0 / 0x7F ----
 
 def _models():
-    from oep_client.virtual_analog_model import AnalogModel
-    from oep_client.virtual_capture_group_model import CaptureGroupModel
-    from oep_client.virtual_capture_timeline_model import CaptureTimelineModel
-    from oep_client.virtual_gpio_model import GpioModel
-    from oep_client.virtual_i2c_model import I2cModel
-    from oep_client.virtual_logic_model import LogicModel
-    from oep_client.virtual_spi_model import SpiModel
-    from oep_client.virtual_uart_model import UartModel
+    from oep_client.conformance.analog_model import AnalogModel
+    from oep_client.conformance.capture_group_model import CaptureGroupModel
+    from oep_client.conformance.capture_timeline_model import CaptureTimelineModel
+    from oep_client.conformance.gpio_model import GpioModel
+    from oep_client.conformance.i2c_model import I2cModel
+    from oep_client.conformance.logic_model import LogicModel
+    from oep_client.conformance.spi_model import SpiModel
+    from oep_client.conformance.uart_model import UartModel
     return {"gpio": lambda: GpioModel(lambda: 0, boot_id=17), "uart": lambda: UartModel(boot_id=17),
             "spi": lambda: SpiModel(boot_id=17), "i2c": lambda: I2cModel(boot_id=17),
             "logic": lambda: LogicModel(boot_id=17), "analog": lambda: AnalogModel(boot_id=17),

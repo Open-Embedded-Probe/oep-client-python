@@ -32,9 +32,9 @@ adapterの能力は以下のとおり。
 import os
 from oep_client.conformance import Checks, spec_identity
 from oep_client.hardware import equipment_lock
-from oep_client.conformance_subscriptions import SubscriptionChecks
-from oep_client.conformance_subscription_sample import SampleSubscriptionAdapter
-from oep_client.virtual_notification_model import NotificationModel
+from oep_client.conformance.subscriptions import SubscriptionChecks
+from oep_client.conformance.subscription_sample import SampleSubscriptionAdapter
+from oep_client.conformance.notification_model import NotificationModel
 
 registry, spec = spec_identity(os.environ['OEP_CONFORMANCE_SPEC'])
 with equipment_lock(os.environ['OEP_HW_LOCK']):

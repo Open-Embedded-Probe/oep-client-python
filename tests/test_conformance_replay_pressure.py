@@ -1,8 +1,8 @@
 import copy
 from oep_client.conformance import Checks
-from oep_client.conformance_replay_pressure import ReplayPressureChecks
-from oep_client.conformance_pipeline_sample import SamplePipelineAdapter
-from oep_client.virtual_pipeline_model import PipelineModel
+from oep_client.conformance.replay_pressure import ReplayPressureChecks
+from oep_client.conformance.pipeline_sample import SamplePipelineAdapter
+from oep_client.conformance.pipeline_model import PipelineModel
 from test_conformance import REG
 
 

@@ -5,9 +5,9 @@ import struct
 import pytest
 
 from oep_client.conformance import Checks
-from oep_client.conformance_resources import ResourceChecks
-from oep_client.conformance_resource_sample import SampleResourceAdapter
-from oep_client.virtual_resource_model import ResourceModel
+from oep_client.conformance.resources import ResourceChecks
+from oep_client.conformance.resource_sample import SampleResourceAdapter
+from oep_client.conformance.resource_model import ResourceModel
 from oep_client.virtual_core import Reject, tlv
 from test_conformance import REG
 

@@ -52,8 +52,8 @@ core/debug/capture/plan/fixture/config本文SHAとregistry SHAをレビュー時
 ```python
 import json
 from pathlib import Path
-from oep_client.conformance_host_requests import HostRequestChecks
-from oep_client.conformance_host_request_sample import encode
+from oep_client.conformance.host_requests import HostRequestChecks
+from oep_client.conformance.host_request_sample import encode
 
 report = HostRequestChecks(encode, spec="/explicit/path/to/oep-spec").run()
 Path("/explicit/output/host-request-policy.json").write_text(json.dumps(report, indent=2))

@@ -1,8 +1,8 @@
 import struct
 import pytest
-from oep_client.conformance_capture_timeline_lifecycle import CaptureTimelineLifecycleChecks
-from oep_client.conformance_capture_timeline_sample import SampleCaptureTimelineAdapter
-from oep_client.virtual_capture_timeline_model import OP, GOP, ST, EV, STOPPED, ADC, LOGIC, GROUP, Completed
+from oep_client.conformance.capture_timeline_lifecycle import CaptureTimelineLifecycleChecks
+from oep_client.conformance.capture_timeline_sample import SampleCaptureTimelineAdapter
+from oep_client.conformance.capture_timeline_model import OP, GOP, ST, EV, STOPPED, ADC, LOGIC, GROUP, Completed
 from test_conformance_capture_timeline import setup,run as run_checker,failed as failed_row
 
 
@@ -71,7 +71,7 @@ def test_lifecycle_semantic_faults_are_detected(fault,kind):
                 result=result[:5]+(int.from_bytes(result[5:13],'little')+1).to_bytes(8,'little')+result[13:]
             return result
         def raise_unavailable():
-            from oep_client.virtual_capture_timeline_model import refusal
+            from oep_client.conformance.capture_timeline_model import refusal
             raise refusal('wrong_state')
         def broken_release():
             kept={fn:(list(t.current),t.config) for fn,t in e.tracks.items()};release()

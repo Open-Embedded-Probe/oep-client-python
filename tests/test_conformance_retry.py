@@ -1,8 +1,8 @@
 import pytest
 from oep_client.conformance import Checks
-from oep_client.conformance_retry import RetryChecks
-from oep_client.conformance_retry_sample import SampleRetryAdapter
-from oep_client.virtual_retry_model import RetryModel
+from oep_client.conformance.retry import RetryChecks
+from oep_client.conformance.retry_sample import SampleRetryAdapter
+from oep_client.conformance.retry_model import RetryModel
 from test_conformance_debug import setup as debug_setup
 
 
@@ -87,6 +87,6 @@ def test_invalid_retry_controls_preserve_state(method,args):
 
 
 def test_retry_common_declarations_pass():
-    from oep_client.conformance_interfaces import InterfaceChecks
+    from oep_client.conformance.interfaces import InterfaceChecks
     _,c,_=setup();r=InterfaceChecks(c).run();assert r['status']=='passed',r['checks']
     assert len(r['checks'])==41

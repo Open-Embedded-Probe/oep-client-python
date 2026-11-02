@@ -1,9 +1,9 @@
 import pytest
 
 from oep_client.conformance import Checks
-from oep_client.conformance_link_transfers import LinkTransferChecks
-from oep_client.conformance_link_transfer_sample import SampleLinkTransferAdapter
-from oep_client.virtual_link_transfer_model import LinkTransferModel
+from oep_client.conformance.link_transfers import LinkTransferChecks
+from oep_client.conformance.link_transfer_sample import SampleLinkTransferAdapter
+from oep_client.conformance.link_transfer_model import LinkTransferModel
 from test_conformance_registered_ops import setup as registered_setup
 
 
@@ -23,7 +23,7 @@ def test_link_transfer_profiles(frame):
 
 @pytest.mark.parametrize('frame',[64,256,1024])
 def test_common_interface_declarations(frame):
-    from oep_client.conformance_interfaces import InterfaceChecks
+    from oep_client.conformance.interfaces import InterfaceChecks
     model,c=setup(frame);r=InterfaceChecks(c).run()
     assert r['status']=='passed',r['checks']
 

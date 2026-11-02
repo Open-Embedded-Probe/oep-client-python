@@ -4,7 +4,7 @@ import struct
 import pytest
 
 from oep_client import endpoint, message as m, virtual_bench
-from oep_client.conformance_attach import AttachChecks
+from oep_client.conformance.attach import AttachChecks
 from test_conformance_attach import setup as attach_setup
 from test_virtual_bench_spec import RV, W, Clock, Host, att, bench
 
@@ -124,7 +124,7 @@ def test_the_scan_checker_requires_max_speed_0_and_a_bad_later_copy_to_be_malfor
     """debug §1: "max_speed（u32 Hz）: ... 0はmalformed。" (scan: TLV 0x01) and core §2.3 "後続の同じtagも上の検証対象
     である。" - the logical scan fixture answered max_speed 0 unsupported and skipped a later copy unchecked, and the
     scan checker did not look; both cases now fail that reading."""
-    from oep_client.conformance_scan import ScanChecks
+    from oep_client.conformance.scan import ScanChecks
     from test_conformance_scan import setup as scan_setup
     model, c, a = scan_setup()
     r = ScanChecks(c, a).run()
@@ -193,7 +193,7 @@ def test_the_metadata_checker_takes_a_block_max_length_past_the_route_frame(fn):
     """debug §4.5 (riscv-dm, fn 7) and §6 (arm-adi, fn 8: "1回の長さと読みの意味は riscv-dm（§4.5）と同じ"): the host takes
     min(max_length, max_frame - 8 / - 20), "大きい経路を小さい経路の転送量へ一律に制限しない" - the selected-metadata checker
     required 18 + max_length and 8 + max_length to fit max_frame (an old rule, with an old 18-byte write header)."""
-    from oep_client.conformance_selected_metadata import SelectedMetadataChecks
+    from oep_client.conformance.selected_metadata import SelectedMetadataChecks
     from oep_client.virtual_core import tlv
     from test_conformance_selected_metadata import setup as metadata_setup
     model, c = metadata_setup()

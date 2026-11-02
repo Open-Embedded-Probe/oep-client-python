@@ -1,11 +1,11 @@
 """Round 8, debug."""
 import struct
 
-from oep_client.conformance_arm_adi import ArmAdiChecks
-from oep_client.conformance_attach import AttachChecks
-from oep_client.conformance_reset import ResetChecks
-from oep_client.virtual_attach_model import AttachModel, Attachments
-from oep_client.virtual_wire_options_model import WireOptionsModel
+from oep_client.conformance.arm_adi import ArmAdiChecks
+from oep_client.conformance.attach import AttachChecks
+from oep_client.conformance.reset import ResetChecks
+from oep_client.conformance.attach_model import AttachModel, Attachments
+from oep_client.conformance.wire_options_model import WireOptionsModel
 from test_conformance_arm_adi import setup as arm_setup
 from test_conformance_attach import setup as attach_setup
 from test_conformance_reset import setup as reset_setup

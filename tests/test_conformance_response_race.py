@@ -1,11 +1,11 @@
 import pytest
-from oep_client.conformance_response_race import ResponseRaceChecks
-from oep_client.conformance_response_race_sample import SampleResponseRaceAdapter
+from oep_client.conformance.response_race import ResponseRaceChecks
+from oep_client.conformance.response_race_sample import SampleResponseRaceAdapter
 
 SPEC='/explicit/response-race-spec'
 @pytest.fixture(autouse=True)
 def selected_spec(monkeypatch):
-    monkeypatch.setattr('oep_client.conformance_response_race.reviewed_identity',lambda path:{'commit':'unit-fixture'} if path==SPEC else None)
+    monkeypatch.setattr('oep_client.conformance.response_race.reviewed_identity',lambda path:{'commit':'unit-fixture'} if path==SPEC else None)
 
 def test_competing_writer_completion():
     r=ResponseRaceChecks(SampleResponseRaceAdapter(),spec=SPEC).run()
@@ -52,7 +52,7 @@ def test_response_race_observation_faults(fault,kind):
     ('renew_stale','FORCE'),('ignore_epoch','RETURN-ID'),('reset_ids','FORCE'),('renew_replay','NO-FORCE')])
 def test_actual_completion_faults(monkeypatch,fault,kind):
     from oep_client.virtual_core import Core
-    from oep_client.virtual_resource_model import Resources
+    from oep_client.conformance.resource_model import Resources
     if fault in ('renew_stale','ignore_epoch'):
         def bad_sent(core,token,**kwargs):
             core.tick()

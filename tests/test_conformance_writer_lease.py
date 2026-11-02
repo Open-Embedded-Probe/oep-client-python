@@ -1,7 +1,7 @@
 from oep_client.conformance import Checks
-from oep_client.conformance_writer_lease import WriterLeaseChecks
-from oep_client.conformance_writer_lease_sample import SampleWriterLeaseAdapter
-from oep_client.virtual_writer_lease_model import WriterLeaseModel
+from oep_client.conformance.writer_lease import WriterLeaseChecks
+from oep_client.conformance.writer_lease_sample import SampleWriterLeaseAdapter
+from oep_client.conformance.writer_lease_model import WriterLeaseModel
 from test_conformance_cut import setup as cut_setup
 
 
@@ -95,21 +95,21 @@ def test_invalid_writer_controls_preserve_state(method,value):
 
 
 def test_writer_lease_common_declarations_pass():
-    from oep_client.conformance_interfaces import InterfaceChecks
+    from oep_client.conformance.interfaces import InterfaceChecks
     _,c,_=setup();r=InterfaceChecks(c).run();assert r['status']=='passed',r['checks']
     assert len(r['checks'])==41
 
 
 def test_writer_lease_retains_wire_cut_contracts():
-    from oep_client.conformance_cut import CutChecks
+    from oep_client.conformance.cut import CutChecks
     _,c,a=setup();r=CutChecks(c,a).run();assert r['status']=='passed',r['checks']
     assert len(r['checks'])==9
 
 
 def test_existing_cut_fixture_uses_session_cause_on_expiry():
-    from oep_client.virtual_cut_model import CutModel
-    from oep_client.conformance_cut import CutChecks
-    from oep_client.conformance_cut_sample import SampleCutAdapter
+    from oep_client.conformance.cut_model import CutModel
+    from oep_client.conformance.cut import CutChecks
+    from oep_client.conformance.cut_sample import SampleCutAdapter
     milliseconds=[0];_,original,_=cut_setup();model=CutModel(lambda:milliseconds[0],boot_id=17)
     c=Checks(model.handle,original.reg,'virtual-resource-1');a=SampleCutAdapter(model);checker=CutChecks(c,a)
     assert checker.run()['status']=='passed';checker.fresh()

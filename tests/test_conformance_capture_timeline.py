@@ -2,9 +2,9 @@ import copy
 import struct
 import pytest
 from oep_client.conformance import Checks
-from oep_client.conformance_capture_timeline import CaptureTimelineChecks
-from oep_client.conformance_capture_timeline_sample import SampleCaptureTimelineAdapter
-from oep_client.virtual_capture_timeline_model import CaptureTimelineModel
+from oep_client.conformance.capture_timeline import CaptureTimelineChecks
+from oep_client.conformance.capture_timeline_sample import SampleCaptureTimelineAdapter
+from oep_client.conformance.capture_timeline_model import CaptureTimelineModel
 from test_conformance_registered_ops import setup as registered_setup
 from spec_names import iface, tags
 
@@ -50,8 +50,8 @@ def test_cross_rate_acquisition(scenario):
 
 @pytest.mark.parametrize('kind',['declarations','metadata'])
 def test_timeline_declarations(kind):
-    from oep_client.conformance_interfaces import InterfaceChecks
-    from oep_client.conformance_capture_metadata import CaptureMetadataChecks
+    from oep_client.conformance.interfaces import InterfaceChecks
+    from oep_client.conformance.capture_metadata import CaptureMetadataChecks
     model,checks=setup()
     result=(InterfaceChecks(checks) if kind=='declarations' else CaptureMetadataChecks(checks,{2:'oep.fixture.analog',3:'oep.fixture.logic',4:'oep.fixture.capture-group'})).run()
     assert result['status']=='passed',result['checks']

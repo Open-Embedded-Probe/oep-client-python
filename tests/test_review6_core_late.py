@@ -62,7 +62,7 @@ def test_the_core_checker_takes_tlvs_after_the_list_entries(monkeypatch):
 
 def test_the_discovery_and_smoke_checkers_take_tlvs_after_the_list_entries():
     import inspect
-    from oep_client import conformance_core_smoke, conformance_discovery
+    from oep_client.conformance import core_smoke as conformance_core_smoke, discovery as conformance_discovery
     for module in (conformance_core_smoke, conformance_discovery):
         src = inspect.getsource(module)
         assert "at == len(p)" not in src and "tlvs(p[at:])" in src

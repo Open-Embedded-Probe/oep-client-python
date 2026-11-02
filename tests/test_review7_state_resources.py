@@ -3,9 +3,9 @@
 import struct
 
 from oep_client import capture, core, settings, endpoint, host as h, message as m, virtual_bench
-from oep_client.virtual_analog_model import AnalogModel
-from oep_client.virtual_capture_group_model import CaptureGroupModel
-from oep_client.virtual_capture_timeline_model import CaptureTimelineModel
+from oep_client.conformance.analog_model import AnalogModel
+from oep_client.conformance.capture_group_model import CaptureGroupModel
+from oep_client.conformance.capture_timeline_model import CaptureTimelineModel
 from oep_client.virtual_core import Reject, tlv
 
 GPIO, UART, LOGIC, CONFIG = 4, 5, 6, 9                     # esp32_v003

@@ -21,7 +21,7 @@ import random
 import struct
 
 from oep_client import catalog, endpoint, host, message as m, pins, registry as reg, riscv, virtual_bench
-from oep_client.conformance_attach import AttachChecks
+from oep_client.conformance.attach import AttachChecks
 from test_conformance_attach import setup as attach_setup
 from test_virtual_bench_spec import W, Host, att
 
@@ -198,10 +198,10 @@ def strict_later_copies(model_cls, monkeypatch):
 def test_the_scan_checkers_pass_a_probe_that_checks_later_copies(monkeypatch):
     """core §2.3: a probe that refuses an unhandled later copy follows the rule - the checkers' first-wins cases send
     valid later copies, and a later copy below min_clock_hz must be refused."""
-    from oep_client.conformance_scan import ScanChecks
-    from oep_client.conformance_scan_options import ScanOptionsChecks
-    from oep_client.virtual_scan_model import ScanModel
-    from oep_client.virtual_scan_options_model import ScanOptionsModel
+    from oep_client.conformance.scan import ScanChecks
+    from oep_client.conformance.scan_options import ScanOptionsChecks
+    from oep_client.conformance.scan_model import ScanModel
+    from oep_client.conformance.scan_options_model import ScanOptionsModel
     from test_conformance_scan import setup as scan_setup
     from test_conformance_scan_options import setup as options_setup
     strict_later_copies(ScanModel, monkeypatch)
@@ -214,7 +214,7 @@ def test_the_scan_checkers_pass_a_probe_that_checks_later_copies(monkeypatch):
 
 def test_the_scan_checker_refuses_a_probe_that_takes_a_later_copy_below_min_clock():
     """core §2.3 with debug §1 (min_clock_hz): a model that ignores later max_speed copies fails OEP-SCAN-LATER-LOW."""
-    from oep_client.conformance_scan import ScanChecks
+    from oep_client.conformance.scan import ScanChecks
     from test_conformance_scan import setup as scan_setup
     model, c, a = scan_setup()
     restart = model.restart_fixture

@@ -1,12 +1,12 @@
 import pytest
-from oep_client.conformance_capture_serial import CaptureSerialChecks
-from oep_client.conformance_capture_serial_sample import SampleCaptureSerialAdapter
-from oep_client.conformance_capture_serial import reviewed_identity as actual_reviewed_identity
+from oep_client.conformance.capture_serial import CaptureSerialChecks
+from oep_client.conformance.capture_serial_sample import SampleCaptureSerialAdapter
+from oep_client.conformance.capture_serial import reviewed_identity as actual_reviewed_identity
 
 SPEC='/explicit/capture-serial-spec'
 @pytest.fixture(autouse=True)
 def selected_spec(monkeypatch):
-    monkeypatch.setattr('oep_client.conformance_capture_serial.reviewed_identity',lambda path:{'commit':'unit-fixture'} if path==SPEC else None)
+    monkeypatch.setattr('oep_client.conformance.capture_serial.reviewed_identity',lambda path:{'commit':'unit-fixture'} if path==SPEC else None)
 
 def test_capture_serial_wrap_and_release():
     r=CaptureSerialChecks(SampleCaptureSerialAdapter(),spec=SPEC).run()
@@ -53,7 +53,7 @@ def test_serial_observation_faults(fault):
 
 @pytest.mark.parametrize('fault',['no_wrap','unsigned_release','discard_partial','corrupt_replay','read_any_generation','read_zero_max_data','read_released_no_gap'])
 def test_actual_capture_faults(monkeypatch,fault):
-    from oep_client.virtual_logic_model import Logic
+    from oep_client.conformance.logic_model import Logic
     from oep_client.virtual_core import Core
     if fault=='no_wrap':
         finish=Logic.finish
@@ -103,7 +103,7 @@ def test_missing_serial_controls(missing):
 @pytest.mark.parametrize('changed',['capture','common'])
 def test_changed_reviewed_document_rejected(tmp_path,monkeypatch,changed):
     import hashlib
-    import oep_client.conformance_capture_serial as module
+    import oep_client.conformance.capture_serial as module
     names={name:'interfaces/oep-if-'+name+'.ja.md' for name in ('capture','common')}
     hashes={}
     for name,path in names.items():

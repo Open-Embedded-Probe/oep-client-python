@@ -18,9 +18,9 @@ core §4.1/§5.1のcorrは0を使わない循環番号である。hostはsession
 ```python
 import os
 from oep_client.conformance import Checks, spec_identity
-from oep_client.conformance_corr import CorrChecks
-from oep_client.conformance_retention_sample import SampleRetentionAdapter
-from oep_client.virtual_retention_model import RetentionModel
+from oep_client.conformance.corr import CorrChecks
+from oep_client.conformance.retention_sample import SampleRetentionAdapter
+from oep_client.conformance.retention_model import RetentionModel
 from oep_client.hardware import equipment_lock
 
 registry, spec = spec_identity(os.environ['OEP_CONFORMANCE_SPEC'])

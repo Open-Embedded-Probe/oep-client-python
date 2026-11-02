@@ -1,9 +1,9 @@
 import copy
 import pytest
 from oep_client.conformance import Checks
-from oep_client.conformance_dependencies import DependencyChecks
-from oep_client.conformance_dependency_sample import SampleDependencyAdapter
-from oep_client.virtual_dependency_model import DependencyModel
+from oep_client.conformance.dependencies import DependencyChecks
+from oep_client.conformance.dependency_sample import SampleDependencyAdapter
+from oep_client.conformance.dependency_model import DependencyModel
 from test_conformance import REG
 from test_conformance_oep_declarations import SPECS
 
@@ -125,7 +125,7 @@ def test_empty_completion_payload_requires_well_formed_tlvs(operation):
 def test_recreated_stream_may_start_its_mark_serial_anywhere(monkeypatch):
     """common §1.3: serial is the stream's own mark counter (u32, wrapping) - where a new stream's serial starts is not
     defined (only its byte position starts at 0, §1.1), so a probe whose new streams start at 7 passes CLOSE."""
-    import oep_client.virtual_dependency_model as dm
+    import oep_client.conformance.dependency_model as dm
     plain = dm.Stream
     monkeypatch.setattr(dm, 'Stream', lambda ep: plain(ep, serial=7))
     _, c, a, wait = setup()

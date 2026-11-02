@@ -1,7 +1,7 @@
 from oep_client.conformance import Checks
-from oep_client.conformance_blocks import BlockChecks
-from oep_client.conformance_block_sample import SampleBlockAdapter
-from oep_client.virtual_block_model import BlockModel
+from oep_client.conformance.blocks import BlockChecks
+from oep_client.conformance.block_sample import SampleBlockAdapter
+from oep_client.conformance.block_model import BlockModel
 from test_conformance_debug import setup as debug_setup
 
 
@@ -102,7 +102,7 @@ def test_invalid_block_controls_preserve_state(method,args):
 
 
 def test_block_fixture_common_declarations_pass():
-    from oep_client.conformance_interfaces import InterfaceChecks
+    from oep_client.conformance.interfaces import InterfaceChecks
     _,c,_=setup();r=InterfaceChecks(c).run()
     assert r['status']=='passed',r['checks']
     assert len(r['checks'])==41

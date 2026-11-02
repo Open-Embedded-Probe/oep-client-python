@@ -1,6 +1,6 @@
 import pytest
-from oep_client.conformance_port_speed_lifecycle import PortSpeedLifecycleChecks
-from oep_client.conformance_port_speed_sample import SamplePortSpeedAdapter
+from oep_client.conformance.port_speed_lifecycle import PortSpeedLifecycleChecks
+from oep_client.conformance.port_speed_sample import SamplePortSpeedAdapter
 from test_conformance_port_speed import setup
 
 

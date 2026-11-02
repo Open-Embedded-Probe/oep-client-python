@@ -1,8 +1,8 @@
 import copy
 from oep_client.conformance import Checks
-from oep_client.conformance_retention import RetentionChecks
-from oep_client.conformance_lease_sample import SampleLeaseAdapter
-from oep_client.virtual_pipeline_model import PipelineModel
+from oep_client.conformance.retention import RetentionChecks
+from oep_client.conformance.lease_sample import SampleLeaseAdapter
+from oep_client.conformance.pipeline_model import PipelineModel
 from test_conformance import REG
 
 
@@ -14,8 +14,8 @@ def test_unconfigured_retention_blocks_session_work():
     assert report['status'] == 'failed'
     assert model.ep.current_core.last is None
 
-from oep_client.virtual_retention_model import RetentionModel
-from oep_client.conformance_retention_sample import SampleRetentionAdapter
+from oep_client.conformance.retention_model import RetentionModel
+from oep_client.conformance.retention_sample import SampleRetentionAdapter
 import pytest
 import struct
 

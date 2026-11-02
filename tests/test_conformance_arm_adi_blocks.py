@@ -1,4 +1,4 @@
-from oep_client.conformance_arm_adi_blocks import ArmAdiBlockChecks
+from oep_client.conformance.arm_adi_blocks import ArmAdiBlockChecks
 from test_conformance_arm_adi import setup
 
 

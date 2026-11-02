@@ -1,7 +1,7 @@
 from oep_client.conformance import Checks
-from oep_client.conformance_run import RunChecks
-from oep_client.conformance_run_sample import SampleRunAdapter
-from oep_client.virtual_run_model import RunModel
+from oep_client.conformance.run import RunChecks
+from oep_client.conformance.run_sample import SampleRunAdapter
+from oep_client.conformance.run_model import RunModel
 from test_conformance_reset import setup as reset_setup
 
 
@@ -129,7 +129,7 @@ def test_run_program_requires_live_parent():
 
 
 def test_run_fixture_common_declarations_pass():
-    from oep_client.conformance_interfaces import InterfaceChecks
+    from oep_client.conformance.interfaces import InterfaceChecks
     _,c,_=setup();r=InterfaceChecks(c).run()
     assert r['status']=='passed',r['checks']
     assert len(r['checks'])==41

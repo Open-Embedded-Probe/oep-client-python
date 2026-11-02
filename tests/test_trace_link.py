@@ -246,8 +246,8 @@ def test_source_len_is_bounded_by_the_max_frame_of_the_route_the_request_came_on
     1024 bytes each give their own bound, and sink takes max_frame - 12 of that route (checker OEP-LINK-ROUTES-ROUTE-
     LIMITS over three logical routes; a probe using one global bound fails it)."""
     from test_conformance_link_routes import setup as routes_setup
-    from oep_client.conformance_link_routes import LinkRoutesChecks
-    from oep_client.conformance_link_routes_sample import SampleLinkRoutesAdapter
+    from oep_client.conformance.link_routes import LinkRoutesChecks
+    from oep_client.conformance.link_routes_sample import SampleLinkRoutesAdapter
     model, c = routes_setup()
     r = LinkRoutesChecks(c, SampleLinkRoutesAdapter(model)).run()
     row = next(x for x in r["checks"] if x["id"] == "OEP-LINK-ROUTES-ROUTE-LIMITS")

@@ -1,6 +1,6 @@
 import pytest
-from oep_client.conformance_host_notifications import HostNotificationChecks, event
-from oep_client.conformance_host_notifications_sample import SampleHostNotificationReader
+from oep_client.conformance.host_notifications import HostNotificationChecks, event
+from oep_client.conformance.host_notifications_sample import SampleHostNotificationReader
 
 SPEC = '/explicit/spec-input'
 
@@ -10,7 +10,7 @@ def selected_spec(monkeypatch):
     def identity(path):
         assert path == SPEC
         return {}, {'commit': 'unit-fixture', 'dirty': False, 'registry_sha256': 'fixture'}
-    monkeypatch.setattr('oep_client.conformance_host_notifications.spec_identity', identity)
+    monkeypatch.setattr('oep_client.conformance.host_notifications.spec_identity', identity)
 
 
 def test_notification_reader_contracts_pass():

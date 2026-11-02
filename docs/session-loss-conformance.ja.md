@@ -22,9 +22,9 @@ openの確認はclock/boot確認/clockの順で行う。読み直し中のboot�
 ```python
 import os
 from oep_client.conformance import Checks, spec_identity
-from oep_client.conformance_session_loss import SessionLossChecks
-from oep_client.conformance_session_loss_sample import SampleSessionLossAdapter
-from oep_client.virtual_retention_model import RetentionModel
+from oep_client.conformance.session_loss import SessionLossChecks
+from oep_client.conformance.session_loss_sample import SampleSessionLossAdapter
+from oep_client.conformance.retention_model import RetentionModel
 from oep_client.hardware import equipment_lock
 
 registry, spec = spec_identity(os.environ['OEP_CONFORMANCE_SPEC'])

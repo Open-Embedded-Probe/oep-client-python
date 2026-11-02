@@ -1,7 +1,7 @@
 from oep_client.conformance import Checks
-from oep_client.conformance_step import StepChecks
-from oep_client.conformance_step_sample import SampleStepAdapter
-from oep_client.virtual_step_model import StepModel
+from oep_client.conformance.step import StepChecks
+from oep_client.conformance.step_sample import SampleStepAdapter
+from oep_client.conformance.step_model import StepModel
 from test_conformance_blocks import setup as block_setup
 
 
@@ -111,7 +111,7 @@ def test_invalid_step_controls_preserve_state(method,args):
 
 
 def test_step_fixture_common_declarations_pass():
-    from oep_client.conformance_interfaces import InterfaceChecks
+    from oep_client.conformance.interfaces import InterfaceChecks
     _,c,_=setup();r=InterfaceChecks(c).run()
     assert r['status']=='passed',r['checks']
     assert len(r['checks'])==41

@@ -1,9 +1,9 @@
 import copy
 from oep_client.conformance import Checks
 from spec_names import iface
-from oep_client.conformance_debug import DebugChecks
-from oep_client.conformance_debug_sample import SampleDebugAdapter
-from oep_client.virtual_debug_model import DebugModel
+from oep_client.conformance.debug import DebugChecks
+from oep_client.conformance.debug_sample import SampleDebugAdapter
+from oep_client.conformance.debug_model import DebugModel
 from test_conformance_dmseq import setup as dmseq_setup
 
 
@@ -107,7 +107,7 @@ def test_invalid_debug_controls_do_not_change_state(method,args):
 
 
 def test_debug_fixture_all_five_functions_pass_common_declarations():
-    from oep_client.conformance_interfaces import InterfaceChecks
+    from oep_client.conformance.interfaces import InterfaceChecks
     _,c,_=setup();r=InterfaceChecks(c).run()
     assert r['status']=='passed',r['checks']
     assert len(r['checks'])==41 and all(row['level']=='interface' for row in r['checks'])
@@ -117,7 +117,7 @@ def test_debug_fixture_all_five_functions_pass_common_declarations():
 def test_dmi_response_boundary_at_minimum_frame(model_name):
     import importlib
     modules={'Debug':'debug','Block':'block','Step':'step','Reset':'reset','Run':'run','Retry':'retry','Cut':'cut'}
-    model=getattr(importlib.import_module('oep_client.virtual_'+modules[model_name]+'_model'),model_name+'Model')(lambda:0,boot_id=17)
+    model=getattr(importlib.import_module('oep_client.conformance.'+modules[model_name]+'_model'),model_name+'Model')(lambda:0,boot_id=17)
     model.ep.probe.max_frame=64
     _,original,_=setup();c=Checks(model.handle,original.reg,'virtual-resource-1');a=SampleDebugAdapter(model)
     checker=DebugChecks(c,a);checker.specs={fn:next(s for s in c.reg['interface'] if s['name']==name and s['revision']==1) for fn,name in {**a.selection,5:'oep.target.riscv-dm'}.items()}

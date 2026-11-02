@@ -82,7 +82,7 @@ def test_required_missing_does_not_use_broken_transport_values():
 # ---- the TLV-request model checks a later copy too ------------------------------------------------------------------
 
 def test_tlv_request_model_checks_a_later_copy():
-    from oep_client.virtual_tlv_request_model import TlvRequests
+    from oep_client.conformance.tlv_request_model import TlvRequests
     e = TlvRequests()
     with pytest.raises(Reject) as r:
         e.request_tags(1, 16, m.tlv(1, b"\x07") + m.tlv(1, b"", critical=True))
@@ -120,12 +120,12 @@ def test_tlv_request_checker_fails_a_model_that_skips_later_copies():
 # ---- capture models: every copy of an unknown tag counts; later copies are checked for their values ---------------
 
 def _logic():
-    from oep_client.virtual_logic_model import Logic
+    from oep_client.conformance.logic_model import Logic
     return Logic.__new__(Logic)
 
 
 def _analog():
-    from oep_client.virtual_analog_model import Analog
+    from oep_client.conformance.analog_model import Analog
     return Analog.__new__(Analog)
 
 
@@ -133,10 +133,10 @@ def _analog():
 def test_models_refuse_a_critical_unknown_tag_after_a_non_critical_copy(which):
     unknown = tlv(0x7E, b"x") + tlv(0xFE, b"x")
     if which == "timeline":
-        from oep_client.virtual_capture_timeline_model import Track
+        from oep_client.conformance.capture_timeline_model import Track
         parse = lambda data: Track(2, None, []).request_tags(16, data)         # noqa: E731
     elif which == "group":
-        from oep_client.virtual_capture_group_model import CaptureGroupModel
+        from oep_client.conformance.capture_group_model import CaptureGroupModel
         e = CaptureGroupModel(boot_id=17).extension
         parse = lambda data: e.request_tags(4, 16, data)                       # noqa: E731
     else:
@@ -149,8 +149,8 @@ def test_models_refuse_a_critical_unknown_tag_after_a_non_critical_copy(which):
 
 def test_logic_checker_runs_raw_tags_and_first_wins_on_the_models():
     from test_conformance_logic import setup
-    from oep_client.conformance_logic import LogicChecks
-    from oep_client.conformance_logic_sample import SampleLogicAdapter
+    from oep_client.conformance.logic import LogicChecks
+    from oep_client.conformance.logic_sample import SampleLogicAdapter
     model, checks = setup()
     checker = LogicChecks(checks, SampleLogicAdapter(model))
     checker.cases = ("RAW-TAGS", "FIRST-WINS")
@@ -160,9 +160,9 @@ def test_logic_checker_runs_raw_tags_and_first_wins_on_the_models():
 
 def test_logic_checker_fails_a_model_that_does_not_check_later_copies(monkeypatch):
     from test_conformance_logic import setup
-    from oep_client import virtual_logic_model
-    from oep_client.conformance_logic import LogicChecks
-    from oep_client.conformance_logic_sample import SampleLogicAdapter
+    from oep_client.conformance import logic_model as virtual_logic_model
+    from oep_client.conformance.logic import LogicChecks
+    from oep_client.conformance.logic_sample import SampleLogicAdapter
     original = virtual_logic_model.Logic.settings
     monkeypatch.setattr(virtual_logic_model.Logic, "settings",
                         lambda self, tags: original(self, {k: v for k, v in tags.items() if k != "later"}))
@@ -174,9 +174,9 @@ def test_logic_checker_fails_a_model_that_does_not_check_later_copies(monkeypatc
 
 def test_logic_checker_fails_a_model_that_skips_a_repeated_unknown_tag(monkeypatch):
     from test_conformance_logic import setup
-    from oep_client import virtual_logic_model
-    from oep_client.conformance_logic import LogicChecks
-    from oep_client.conformance_logic_sample import SampleLogicAdapter
+    from oep_client.conformance import logic_model as virtual_logic_model
+    from oep_client.conformance.logic import LogicChecks
+    from oep_client.conformance.logic_sample import SampleLogicAdapter
     original = virtual_logic_model.Logic.request_tags
 
     def first_copy_only(self, fn, op, data):
@@ -205,7 +205,7 @@ def test_other_capture_models_check_later_copies(which):
     C, OP = _CAP.tlv["configure"], _CAP.op
     good = tlv(C["mode"], bytes([_CAP.enum["mode"]["one_shot"]])) + tlv(C["rate"], struct.pack("<I", 1000)) + tlv(C["samples"], struct.pack("<I", 8))
     if which == "timeline":
-        from oep_client.virtual_capture_timeline_model import Track
+        from oep_client.conformance.capture_timeline_model import Track
         track = Track(2, None, [])
         track.roles = [0]
         parse, settle = (lambda data: track.request_tags(OP["configure"], data)), track.settings
@@ -260,9 +260,9 @@ def test_bench_checks_a_later_copy_of_a_configure_tlv(later, expected):
 def test_analog_checker_reads_the_first_vrefint_copy(monkeypatch):
     """vrefint does not repeat (capture §3.3): a later copy after the good first one is not used (core §2.3)."""
     from test_conformance_analog import setup
-    from oep_client import virtual_analog_model
-    from oep_client.conformance_analog import AnalogChecks
-    from oep_client.conformance_analog_sample import SampleAnalogAdapter
+    from oep_client.conformance import analog_model as virtual_analog_model
+    from oep_client.conformance.analog import AnalogChecks
+    from oep_client.conformance.analog_sample import SampleAnalogAdapter
     original = virtual_analog_model.Analog.dispatch_request
 
     def with_later_copy(self, fn, op, payload, tags):

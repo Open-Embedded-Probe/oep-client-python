@@ -12,8 +12,9 @@ from __future__ import annotations
 import inspect
 import struct
 
-from oep_client import (catalog, conformance, conformance_retention, conformance_session_smoke, conformance_tcp_peers,
-                        core, endpoint, host as h, message as m, registry as reg, virtual_bench as vb)
+from oep_client import (catalog, conformance, core, endpoint, host as h, message as m, registry as reg, virtual_bench as vb)
+
+from oep_client.conformance import (retention as conformance_retention, session_smoke as conformance_session_smoke, tcp_peers as conformance_tcp_peers)
 
 PLAN = reg.PROBE_PLAN
 APPLY = PLAN.op["plan_apply"]

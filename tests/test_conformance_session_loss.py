@@ -1,6 +1,6 @@
 import pytest
-from oep_client.conformance_session_loss import SessionLossChecks
-from oep_client.conformance_session_loss_sample import SampleSessionLossAdapter, SampleSessionLossHost
+from oep_client.conformance.session_loss import SessionLossChecks
+from oep_client.conformance.session_loss_sample import SampleSessionLossAdapter, SampleSessionLossHost
 from test_conformance_recovery import setup as base
 
 

@@ -1,9 +1,9 @@
 import copy
 import pytest
 from oep_client.conformance import Checks
-from oep_client.conformance_notification_sequence import NotificationSequenceChecks
-from oep_client.conformance_notification_sequence_sample import SampleNotificationSequenceAdapter
-from oep_client.virtual_route_model import RouteModel
+from oep_client.conformance.notification_sequence import NotificationSequenceChecks
+from oep_client.conformance.notification_sequence_sample import SampleNotificationSequenceAdapter
+from oep_client.conformance.route_model import RouteModel
 from test_conformance import REG
 
 

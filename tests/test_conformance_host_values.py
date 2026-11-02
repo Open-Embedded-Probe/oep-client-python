@@ -1,6 +1,6 @@
 import pytest
-from oep_client.conformance_host_values import HostValueChecks
-from oep_client.conformance_host_values_sample import decode
+from oep_client.conformance.host_values import HostValueChecks
+from oep_client.conformance.host_values_sample import decode
 
 SPEC = '/explicit/spec-input'
 
@@ -13,7 +13,7 @@ def selected_spec(monkeypatch):
                 'outcomes': {'success': 0, 'failed': 1, 'partial': 2},
                 'status': {'ok': 0, 'wait': 1, 'line': 2, 'fault': 3, 'timeout': 4, 'state': 5},
                 'reject_reasons': {'unavailable' if i == 4 else str(i): i for i in (1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12)}}, {'commit': 'unit-fixture'}
-    monkeypatch.setattr('oep_client.conformance_host_values.spec_identity', identity)
+    monkeypatch.setattr('oep_client.conformance.host_values.spec_identity', identity)
 
 
 def test_selected_unknown_value_contracts_pass():
@@ -66,7 +66,7 @@ def test_unknown_failure_can_be_reported_as_protocol_error():
     ('status', 'ok'), ('reject_reasons', 'unavailable'),
 ])
 def test_changed_selected_meanings_block_before_decoder(monkeypatch, section, key):
-    from oep_client import conformance_host_values as module
+    from oep_client.conformance import host_values as module
     from oep_client.conformance import Violation
     original = module.spec_identity
     def changed(path):

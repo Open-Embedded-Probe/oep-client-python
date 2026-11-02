@@ -32,9 +32,9 @@ sample fn 1/2のown create(op 16)はkind u8、reply_size u8、[TLV]を受け、r
 import os
 from oep_client.conformance import Checks, spec_identity
 from oep_client.hardware import equipment_lock
-from oep_client.conformance_retention import RetentionChecks
-from oep_client.conformance_retention_sample import SampleRetentionAdapter
-from oep_client.virtual_retention_model import RetentionModel
+from oep_client.conformance.retention import RetentionChecks
+from oep_client.conformance.retention_sample import SampleRetentionAdapter
+from oep_client.conformance.retention_model import RetentionModel
 
 registry, spec = spec_identity(os.environ['OEP_CONFORMANCE_SPEC'])
 with equipment_lock(os.environ['OEP_HW_LOCK']):

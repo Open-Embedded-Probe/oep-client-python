@@ -1,9 +1,9 @@
 import copy
 import pytest
 from oep_client.conformance import Checks
-from oep_client.conformance_allocator import AllocatorChecks
-from oep_client.conformance_allocator_sample import SampleAllocatorAdapter
-from oep_client.virtual_allocator_model import AllocatorModel
+from oep_client.conformance.allocator import AllocatorChecks
+from oep_client.conformance.allocator_sample import SampleAllocatorAdapter
+from oep_client.conformance.allocator_model import AllocatorModel
 from oep_client.virtual_core import Reject,tlv
 from test_conformance import REG
 
@@ -91,7 +91,7 @@ def test_allocator_cause_uses_first_duplicate_tlv(first,last,status):
 def test_allocator_boundary_is_the_u32_end(monkeypatch):
     """core §9: resource numbers are u32 and creation is refused (cause 2) only once 0xFFFFFFFF is used up - the boundary
     case allocates 0xFFFFFFFE and 0xFFFFFFFF; a probe that stops at the old u16 end (65535) fails it."""
-    import oep_client.virtual_allocator_model as am
+    import oep_client.conformance.allocator_model as am
     model,c,a,runner=setup();runner.c.check('CORE-ALLOCATOR-BOUNDARY','core §9',runner.boundary)
     assert c.results[-1]['status']=='passed',c.results[-1].get('error')
     created=[bytes.fromhex(x['response_hex'])[5:9] for x in c.results[-1]['exchanges']

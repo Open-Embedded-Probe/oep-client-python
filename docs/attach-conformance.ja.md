@@ -28,9 +28,9 @@
 ```python
 import os
 from oep_client.conformance import Checks, spec_identity
-from oep_client.conformance_attach import AttachChecks
-from oep_client.conformance_attach_sample import SampleAttachAdapter
-from oep_client.virtual_attach_model import AttachModel
+from oep_client.conformance.attach import AttachChecks
+from oep_client.conformance.attach_sample import SampleAttachAdapter
+from oep_client.conformance.attach_model import AttachModel
 from oep_client.hardware import equipment_lock
 
 registry, spec = spec_identity(os.environ['OEP_CONFORMANCE_SPEC'])

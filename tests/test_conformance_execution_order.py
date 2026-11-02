@@ -2,9 +2,9 @@ import copy
 from collections import deque
 import pytest
 from oep_client.conformance import Checks
-from oep_client.conformance_execution_order import ExecutionOrderChecks
-from oep_client.conformance_execution_order_sample import SampleExecutionOrderAdapter
-from oep_client.virtual_pipeline_model import PipelineModel
+from oep_client.conformance.execution_order import ExecutionOrderChecks
+from oep_client.conformance.execution_order_sample import SampleExecutionOrderAdapter
+from oep_client.conformance.pipeline_model import PipelineModel
 from test_conformance import REG
 
 

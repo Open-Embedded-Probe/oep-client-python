@@ -18,9 +18,9 @@ import pytest
 
 from oep_client import catalog, conformance, settings, console, core, dump, fixture, host as h, link, pins, riscv
 from oep_client import message as m, registry as reg
-from oep_client.conformance_serial import SerialWire, frame as serial_frame
-from oep_client.conformance_tcp import TcpWire
-from oep_client.conformance_usb import UsbWire
+from oep_client.conformance.serial import SerialWire, frame as serial_frame
+from oep_client.conformance.tcp import TcpWire
+from oep_client.conformance.usb import UsbWire
 
 CRIT = m.TAG_CRITICAL
 

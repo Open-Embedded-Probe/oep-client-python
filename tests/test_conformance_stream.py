@@ -1,9 +1,9 @@
 import copy
 import pytest
 from oep_client.conformance import Checks
-from oep_client.conformance_stream import StreamChecks
-from oep_client.conformance_stream_sample import SampleStreamAdapter
-from oep_client.virtual_stream_model import StreamModel
+from oep_client.conformance.stream import StreamChecks
+from oep_client.conformance.stream_sample import SampleStreamAdapter
+from oep_client.conformance.stream_model import StreamModel
 from test_conformance import REG
 from spec_names import SPEC
 
@@ -139,7 +139,7 @@ def test_overflow_mark_where_the_first_byte_was_pushed_out(monkeypatch):
     """common §1.3: a mark's position is the write position when the probe made it - a probe that marks the overflow
     as the first byte is pushed out (at 65 of 80 bytes with 64 kept), not after the whole burst, passes GAP; a mark
     outside the burst does not."""
-    import oep_client.virtual_stream_model as sm
+    import oep_client.conformance.stream_model as sm
     def at_first_push(self, data):
         lost = False
         for b in data:

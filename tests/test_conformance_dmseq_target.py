@@ -1,7 +1,7 @@
 from oep_client.conformance import Checks
-from oep_client.conformance_dmseq_target import TargetDmseqChecks
-from oep_client.conformance_dmseq_target_sample import SampleTargetDmseqAdapter
-from oep_client.virtual_dmseq_target_model import TargetDmseqModel
+from oep_client.conformance.dmseq_target import TargetDmseqChecks
+from oep_client.conformance.dmseq_target_sample import SampleTargetDmseqAdapter
+from oep_client.conformance.dmseq_target_model import TargetDmseqModel
 from test_conformance_dmseq import setup as probe_setup
 
 

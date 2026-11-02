@@ -1,9 +1,9 @@
 """Independent decoder faults against actual core shape vectors."""
 import hashlib
 import pytest
-from oep_client import conformance_host_core as cc
+from oep_client.conformance import host_core as cc
 from oep_client.conformance import Violation
-from oep_client.conformance_host_core_sample import decode
+from oep_client.conformance.host_core_sample import decode
 
 SPEC='/explicit/spec-input'
 ORIGINAL_IDENTITY=cc.reviewed_identity

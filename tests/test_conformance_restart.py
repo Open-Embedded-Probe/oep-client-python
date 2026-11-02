@@ -1,7 +1,7 @@
 from oep_client.conformance import Checks
-from oep_client.conformance_restart import RestartChecks
-from oep_client.conformance_restart_sample import SampleRestartAdapter
-from oep_client.virtual_restart_model import RestartModel
+from oep_client.conformance.restart import RestartChecks
+from oep_client.conformance.restart_sample import SampleRestartAdapter
+from oep_client.conformance.restart_model import RestartModel
 from test_conformance_registered_ops import setup as base_setup
 
 
@@ -20,7 +20,7 @@ import pytest
 
 
 def test_restart_common_declarations():
-    from oep_client.conformance_interfaces import InterfaceChecks
+    from oep_client.conformance.interfaces import InterfaceChecks
     model,c=setup();r=InterfaceChecks(c).run();assert r['status']=='passed',r['checks']
 
 

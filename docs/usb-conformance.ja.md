@@ -8,10 +8,10 @@ bulk/HIDのprobe入力を、公開clientの独立した検査器で確認する�
 
 ```sh
 uv run --group dev --env-file tests/equipment/.env \
-  python -m oep_client.conformance_usb_model --kind bulk
+  python -m oep_client.conformance.usb_model --kind bulk
 # 別の新規出力先を指定して実行する
 uv run --group dev --env-file tests/equipment/.env \
-  python -m oep_client.conformance_usb_model --kind hid --out /absolute/path/to/new-hid.json
+  python -m oep_client.conformance.usb_model --kind hid --out /absolute/path/to/new-hid.json
 ```
 
 ID付きHIDの既定はreport ID 6、input 9 byte、output 11 byte。サイズはID/countを含む。`--report-id 0` ならIDを使わないので、別IDの入力だけnot_applicableとなり理由を残す。`--input-size` / `--output-size` で別のサイズも試せる。実機のdescriptorをこの値から推定しない。
@@ -25,7 +25,7 @@ ID付きHIDの既定はreport ID 6、input 9 byte、output 11 byte。サイズ�
 
 ## raw adapterの契約
 
-`oep_client.conformance_usb.inspect(factory, ...)` が、新規出力先の予約と共有lockの取得後にfactoryを呼ぶ。shapeが不正ならfactoryを呼ばない。終了・例外時にもbackendをcloseし、close失敗は実行全体をFAILにする。個体不一致・不正confirmではsession操作へ進まない。
+`oep_client.conformance.usb.inspect(factory, ...)` が、新規出力先の予約と共有lockの取得後にfactoryを呼ぶ。shapeが不正ならfactoryを呼ばない。終了・例外時にもbackendをcloseし、close失敗は実行全体をFAILにする。個体不一致・不正confirmではsession操作へ進まない。
 
 factoryは、利用者が明示した端点を開くraw backendを返す。backendの `write(data, method='out'|'set-report')` は送ったbyte数を返し、`read(timeout)` は1転送/reportのbytes、timeout時だけNoneを返す。bulkのbytes長0はZLPであり、timeoutとは区別する。切断・権限・その他のUSBエラーは例外で伝える。ID/count/paddingを先に除去・修復したり、要求の再送やframing回復を行ったりしない。
 

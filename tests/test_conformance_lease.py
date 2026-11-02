@@ -1,8 +1,8 @@
 import copy
 from oep_client.conformance import Checks
-from oep_client.conformance_lease import LeaseChecks
-from oep_client.conformance_lease_sample import SampleLeaseAdapter
-from oep_client.virtual_pipeline_model import PipelineModel
+from oep_client.conformance.lease import LeaseChecks
+from oep_client.conformance.lease_sample import SampleLeaseAdapter
+from oep_client.conformance.pipeline_model import PipelineModel
 from test_conformance import REG
 
 

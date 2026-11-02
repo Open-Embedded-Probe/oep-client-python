@@ -2,8 +2,8 @@ import copy
 import pytest
 from oep_client.conformance import Checks, ops
 from oep_client.catalog import pack_ops
-from oep_client.conformance_oep_declarations import OepDeclarationChecks
-from oep_client.virtual_oep_declaration_model import OepDeclarationModel
+from oep_client.conformance.oep_declarations import OepDeclarationChecks
+from oep_client.conformance.oep_declaration_model import OepDeclarationModel
 from test_conformance import REG
 from spec_names import SPEC, iface
 

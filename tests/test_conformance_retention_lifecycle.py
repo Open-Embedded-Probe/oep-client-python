@@ -1,8 +1,8 @@
 import copy
 from oep_client.conformance import Checks
-from oep_client.conformance_retention_lifecycle import RetentionLifecycleChecks
-from oep_client.conformance_retention_sample import SampleRetentionAdapter
-from oep_client.virtual_retention_model import RetentionModel
+from oep_client.conformance.retention_lifecycle import RetentionLifecycleChecks
+from oep_client.conformance.retention_sample import SampleRetentionAdapter
+from oep_client.conformance.retention_model import RetentionModel
 from test_conformance import REG
 
 
@@ -14,7 +14,7 @@ def test_restart_requires_explicit_logical_fixture():
     assert report['status'] == 'failed'
     assert model.ep.current_core.last is None
 
-from oep_client.conformance_retention_lifecycle_sample import SampleRetentionLifecycleAdapter
+from oep_client.conformance.retention_lifecycle_sample import SampleRetentionLifecycleAdapter
 import pytest
 import struct
 

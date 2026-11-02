@@ -1,7 +1,7 @@
 from oep_client.conformance import Checks
-from oep_client.conformance_wire_options import WireOptionsChecks
-from oep_client.conformance_wire_options_sample import SampleWireOptionsAdapter
-from oep_client.virtual_wire_options_model import WireOptionsModel, AT, ANSWER, FLAGS, WOP
+from oep_client.conformance.wire_options import WireOptionsChecks
+from oep_client.conformance.wire_options_sample import SampleWireOptionsAdapter
+from oep_client.conformance.wire_options_model import WireOptionsModel, AT, ANSWER, FLAGS, WOP
 from oep_client.virtual_names import DC, CAUSE
 from oep_client.registry import CORE as _CORE, WIRE_RVSWD as _RVSWD
 
@@ -113,7 +113,7 @@ def test_invalid_wire_controls_preserve_state(method,args):
 
 
 def test_wire_fixture_common_declarations_pass():
-    from oep_client.conformance_interfaces import InterfaceChecks
+    from oep_client.conformance.interfaces import InterfaceChecks
     _,c,_=setup()
     r=InterfaceChecks(c).run();assert r['status']=='passed',r['checks']
     assert len(r['checks'])==33

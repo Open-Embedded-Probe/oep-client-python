@@ -5,8 +5,8 @@
 
 ```python
 from oep_client.conformance import spec_identity
-from oep_client.conformance_core_smoke import CoreSmokeChecks
-from oep_client.conformance_oep_smoke import OepExampleSmokeChecks
+from oep_client.conformance.core_smoke import CoreSmokeChecks
+from oep_client.conformance.oep_smoke import OepExampleSmokeChecks
 
 registry, spec = spec_identity(spec_checkout)
 core = CoreSmokeChecks(send_message, registry, expected_unit, spec=spec)

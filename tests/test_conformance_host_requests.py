@@ -2,15 +2,15 @@
 import hashlib
 
 import pytest
-from oep_client.conformance_host_requests import HostRequestChecks, contexts, policy, REVIEWED, REVIEWED_REGISTRY_SHA256, reviewed_identity
-from oep_client.conformance_host_request_sample import encode
+from oep_client.conformance.host_requests import HostRequestChecks, contexts, policy, REVIEWED, REVIEWED_REGISTRY_SHA256, reviewed_identity
+from oep_client.conformance.host_request_sample import encode
 
 SPEC='/explicit/request-policy-spec'
 
 
 @pytest.fixture(autouse=True)
 def selected_spec(monkeypatch):
-    monkeypatch.setattr('oep_client.conformance_host_requests.reviewed_identity',
+    monkeypatch.setattr('oep_client.conformance.host_requests.reviewed_identity',
                         lambda path: {'commit':'unit-fixture'} if path==SPEC else None)
 
 
@@ -90,9 +90,9 @@ def test_changed_normative_policy_requires_review(tmp_path,monkeypatch,changed):
     for name in REVIEWED:
         p=tmp_path/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(name)
         hashes[name]=hashlib.sha256(p.read_bytes()).hexdigest()
-    monkeypatch.setattr('oep_client.conformance_host_requests.REVIEWED',hashes)
+    monkeypatch.setattr('oep_client.conformance.host_requests.REVIEWED',hashes)
     registry=registry_fixture()
-    monkeypatch.setattr('oep_client.conformance_host_requests.spec_identity',lambda p:(registry,{'registry_sha256':REVIEWED_REGISTRY_SHA256}))
+    monkeypatch.setattr('oep_client.conformance.host_requests.spec_identity',lambda p:(registry,{'registry_sha256':REVIEWED_REGISTRY_SHA256}))
     reviewed_identity(tmp_path)
     (tmp_path/changed).write_text('changed policy')
     with pytest.raises(Exception,match='request policy text changed'):reviewed_identity(tmp_path)
@@ -113,9 +113,9 @@ def test_selected_schema_guard(tmp_path,monkeypatch,change):
     for name in REVIEWED:
         p=tmp_path/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(name)
         hashes[name]=hashlib.sha256(p.read_bytes()).hexdigest()
-    monkeypatch.setattr('oep_client.conformance_host_requests.REVIEWED',hashes)
+    monkeypatch.setattr('oep_client.conformance.host_requests.REVIEWED',hashes)
     registry=registry_fixture();identity={'registry_sha256':REVIEWED_REGISTRY_SHA256}
-    monkeypatch.setattr('oep_client.conformance_host_requests.spec_identity',lambda p:(registry,identity))
+    monkeypatch.setattr('oep_client.conformance.host_requests.spec_identity',lambda p:(registry,identity))
     reviewed_identity(tmp_path)
     if change=='registry_hash':identity['registry_sha256']='changed'
     if change=='protocol':registry['protocol']['revision']=2
@@ -132,9 +132,9 @@ def test_new_operation_number_requires_review(tmp_path,monkeypatch,interface,ope
     for name in REVIEWED:
         p=tmp_path/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(name)
         hashes[name]=hashlib.sha256(p.read_bytes()).hexdigest()
-    monkeypatch.setattr('oep_client.conformance_host_requests.REVIEWED',hashes)
+    monkeypatch.setattr('oep_client.conformance.host_requests.REVIEWED',hashes)
     registry=registry_fixture()
-    monkeypatch.setattr('oep_client.conformance_host_requests.spec_identity',lambda path:(registry,{'registry_sha256':REVIEWED_REGISTRY_SHA256}))
+    monkeypatch.setattr('oep_client.conformance.host_requests.spec_identity',lambda path:(registry,{'registry_sha256':REVIEWED_REGISTRY_SHA256}))
     reviewed_identity(tmp_path)
     item=next(row for row in registry['interface'] if row['name']==interface)
     next(row for row in item['op'] if row['name']==operation)['code']=32

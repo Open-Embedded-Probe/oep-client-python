@@ -8,7 +8,7 @@ import pytest
 
 from oep_client import endpoint, virtual_bench
 from oep_client.conformance import Checks
-from oep_client.conformance_tcp import TcpWire
+from oep_client.conformance.tcp import TcpWire
 from test_conformance import REG
 
 
@@ -92,7 +92,7 @@ def test_current_virtual_tcp_passes_core_and_tcp_faults():
 @pytest.mark.skipif(sys.platform != 'linux', reason='PTY exclusive-port lifecycle requires Linux')
 def test_current_virtual_serial_passes_faults_and_reconnect():
     from oep_client import link
-    from oep_client.conformance_serial import SerialWire
+    from oep_client.conformance.serial import SerialWire
     proc = subprocess.Popen([sys.executable, '-m', 'oep_client.virtual_bench_serve',
                              '--pty', '--profile', 'core-v1'],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)

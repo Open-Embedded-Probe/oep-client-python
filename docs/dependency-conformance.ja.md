@@ -40,9 +40,9 @@ sample contractは次の通り。すべての応答の末尾にはTLVを置け�
 ```python
 import os
 from oep_client.conformance import Checks, spec_identity
-from oep_client.conformance_dependencies import DependencyChecks
-from oep_client.conformance_dependency_sample import SampleDependencyAdapter
-from oep_client.virtual_dependency_model import DependencyModel
+from oep_client.conformance.dependencies import DependencyChecks
+from oep_client.conformance.dependency_sample import SampleDependencyAdapter
+from oep_client.conformance.dependency_model import DependencyModel
 from oep_client.hardware import equipment_lock
 
 registry, spec = spec_identity(os.environ['OEP_CONFORMANCE_SPEC'])

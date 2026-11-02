@@ -1,8 +1,8 @@
 from oep_client.conformance import Checks
 from spec_names import SPEC
-from oep_client.conformance_cut import CutChecks
-from oep_client.conformance_cut_sample import SampleCutAdapter
-from oep_client.virtual_cut_model import CutModel
+from oep_client.conformance.cut import CutChecks
+from oep_client.conformance.cut_sample import SampleCutAdapter
+from oep_client.conformance.cut_model import CutModel
 from test_conformance_debug import setup as debug_setup
 
 
@@ -122,6 +122,6 @@ def test_busy_writer_rejects_other_request_without_mutation():
 
 
 def test_cut_common_declarations_pass():
-    from oep_client.conformance_interfaces import InterfaceChecks
+    from oep_client.conformance.interfaces import InterfaceChecks
     _,c,_=setup();r=InterfaceChecks(c).run();assert r['status']=='passed',r['checks']
     assert len(r['checks'])==41

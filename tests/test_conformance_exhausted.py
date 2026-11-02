@@ -1,6 +1,6 @@
 import pytest
-from oep_client.conformance_exhausted import ExhaustedChecks
-from oep_client.conformance_exhausted_sample import SampleExhaustedHost
+from oep_client.conformance.exhausted import ExhaustedChecks
+from oep_client.conformance.exhausted_sample import SampleExhaustedHost
 from test_conformance_recovery_races import setup as base
 
 
@@ -51,7 +51,7 @@ def test_exhausted_host_mutants_fail(defect):
 
 def host_fixture():
     import struct
-    from oep_client.conformance_recovery_race_sample import SamplePendingHost
+    from oep_client.conformance.recovery_race_sample import SamplePendingHost
     now,model,a,runner=setup();c,peer=runner.c,runner.peer
     c.confirm();c.identity();peer.confirm();peer.identity();boot=c.boot
     c.success(c.request(c.core['open'],struct.pack('<IB',3000,0),session=123,corr=1))

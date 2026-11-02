@@ -63,7 +63,7 @@ def answer_tails(monkeypatch):
 def run(module, name, monkeypatch, *args):
     """Runs tests/<module>.py::<name>, with the module's own autouse spec-identity fixture where it has one."""
     mod = importlib.import_module(module)
-    checker = module.replace('test_', 'oep_client.', 1)
+    checker = module.replace('test_conformance_', 'oep_client.conformance.', 1)
     if hasattr(importlib.import_module(checker), 'reviewed_identity') and getattr(mod, 'SPEC', None) is not None:
         spec = mod.SPEC
         monkeypatch.setattr(checker + '.reviewed_identity', lambda path: {'commit': 'unit-fixture'} if path == spec else None)

@@ -13,10 +13,10 @@ public checkerはSPECを明示選択し、privateベンチや隣接checkoutを�
 
 ```python
 from oep_client.conformance import Checks, spec_identity
-from oep_client.conformance_interfaces import InterfaceChecks
-from oep_client.conformance_port_speed import PortSpeedChecks
-from oep_client.conformance_port_speed_sample import SamplePortSpeedAdapter
-from oep_client.virtual_port_speed_model import PortSpeedModel
+from oep_client.conformance.interfaces import InterfaceChecks
+from oep_client.conformance.port_speed import PortSpeedChecks
+from oep_client.conformance.port_speed_sample import SamplePortSpeedAdapter
+from oep_client.conformance.port_speed_model import PortSpeedModel
 
 registry, identity = spec_identity("/explicit/path/to/oep-spec")
 model = PortSpeedModel(boot_id=17)

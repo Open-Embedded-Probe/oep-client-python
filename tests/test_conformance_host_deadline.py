@@ -1,6 +1,6 @@
 import pytest
-from oep_client.conformance_host_deadline import HostDeadlineChecks,reviewed_identity as actual_review,REVIEWED
-from oep_client.conformance_host_deadline_sample import SampleHostDeadlineAdapter
+from oep_client.conformance.host_deadline import HostDeadlineChecks,reviewed_identity as actual_review,REVIEWED
+from oep_client.conformance.host_deadline_sample import SampleHostDeadlineAdapter
 
 
 SPEC='/explicit/host-deadline-spec'
@@ -8,7 +8,7 @@ SPEC='/explicit/host-deadline-spec'
 
 @pytest.fixture(autouse=True)
 def selected_spec(monkeypatch):
-    monkeypatch.setattr('oep_client.conformance_host_deadline.reviewed_identity',lambda path:{'commit':'unit-fixture'} if path==SPEC else None)
+    monkeypatch.setattr('oep_client.conformance.host_deadline.reviewed_identity',lambda path:{'commit':'unit-fixture'} if path==SPEC else None)
 
 
 def test_wait_loop_and_pipeline_deadline_origins():
@@ -83,7 +83,7 @@ def registry():return dict(timing=dict(host_wait_add_ms=1000,notify_pending_max_
 @pytest.mark.parametrize('document',REVIEWED)
 def test_document_guard(monkeypatch,tmp_path,document):
     import hashlib
-    import oep_client.conformance_host_deadline as module
+    import oep_client.conformance.host_deadline as module
     from oep_client.conformance import Violation
     hashes={}
     for name in REVIEWED:
@@ -95,7 +95,7 @@ def test_document_guard(monkeypatch,tmp_path,document):
 
 @pytest.mark.parametrize('field',['margin','notifications','frame','quick','quick_missing','maximum'])
 def test_registry_guard(monkeypatch,field):
-    import oep_client.conformance_host_deadline as module
+    import oep_client.conformance.host_deadline as module
     from oep_client.conformance import Violation
     r=registry()
     if field=='margin':r['timing']['host_wait_add_ms']=999
@@ -114,7 +114,7 @@ def test_registry_guard(monkeypatch,field):
 def test_old_argument_time_floor_is_detected(monkeypatch,fault,group):
     # core §4.4 at a09fa45: the floor is the whole-request processing bound (max_op_ms, or the fn 0 quick
     # bound, 1000 ms while max_op_ms is unknown) + 1000 ms + transfer; the argument time alone is too short.
-    from oep_client import conformance_host_deadline_sample as sample
+    from oep_client.conformance import host_deadline_sample as sample
     real=sample.bound_ms
     def bad(case):
         if fault=='argument_only' and not case['quick']:return case['argument_ms']

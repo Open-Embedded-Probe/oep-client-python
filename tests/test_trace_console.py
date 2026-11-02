@@ -8,7 +8,7 @@ import struct
 import pytest
 
 from oep_client import catalog, console, core, endpoint, riscv, virtual_bench, host as h, message as m, registry as reg
-from oep_client.conformance_dmseq import DmseqChecks
+from oep_client.conformance.dmseq import DmseqChecks
 
 from test_console_queue_and_reset_settle import Clock, bench
 from test_conformance_dmseq import setup as dmseq_setup

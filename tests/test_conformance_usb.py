@@ -6,9 +6,9 @@ import pytest
 
 from oep_client import endpoint, virtual_bench
 from oep_client.conformance import Checks
-from oep_client.conformance_serial import WireError
-from oep_client.conformance_usb import UsbWire, frame
-from oep_client.conformance_usb_cases import run
+from oep_client.conformance.serial import WireError
+from oep_client.conformance.usb import UsbWire, frame
+from oep_client.conformance.usb_cases import run
 from oep_client.virtual_bench_usb import Usb
 from test_conformance import REG
 
@@ -207,7 +207,7 @@ def test_raw_backend_requires_explicit_valid_shape(kind, kwargs):
 @pytest.mark.parametrize('failure', ['missing_lock', 'existing_output', 'bad_shape', 'read_error', 'bad_identity', 'close_error'])
 def test_raw_usb_api_reserves_evidence_locks_and_closes_backend(monkeypatch, tmp_path, failure):
     import json
-    from oep_client.conformance_usb import inspect
+    from oep_client.conformance.usb import inspect
     monkeypatch.setattr('oep_client.conformance.spec_identity', lambda path: (REG, {'commit': 'test', 'dirty': False}))
     lock = tmp_path / 'equipment.lock'
     out = tmp_path / 'evidence.json'
@@ -271,7 +271,7 @@ def test_hid_count_uses_both_bytes_and_sender_zero_padding():
 
 @pytest.mark.parametrize('kind,report_id', [('bulk', 6), ('hid', 0), ('hid', 6)])
 def test_software_model_cli_passes_explicit_settings_to_reserved_runner(monkeypatch, kind, report_id):
-    from oep_client import conformance_usb_model
+    from oep_client.conformance import usb_model as conformance_usb_model
     calls = []
     boots = iter((17, 18))
     from types import SimpleNamespace

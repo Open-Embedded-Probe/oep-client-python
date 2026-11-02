@@ -1,8 +1,8 @@
 import struct
 import pytest
 from oep_client.conformance import Checks
-from oep_client.conformance_capture_metadata import CaptureMetadataChecks
-from oep_client.virtual_capture_metadata_model import CaptureMetadataModel
+from oep_client.conformance.capture_metadata import CaptureMetadataChecks
+from oep_client.conformance.capture_metadata_model import CaptureMetadataModel
 from oep_client.virtual_core import tlv
 from test_conformance_registered_ops import setup as registered_setup
 
@@ -74,12 +74,12 @@ def test_repeated_identifier_cannot_duplicate(fn,tag):
 
 
 def test_common_declarations():
-    from oep_client.conformance_interfaces import InterfaceChecks
+    from oep_client.conformance.interfaces import InterfaceChecks
     _,c=setup();r=InterfaceChecks(c).run();assert r['status']=='passed',r['checks'];assert len(r['checks'])==129
 
 
 def test_registered_ops():
-    from oep_client.conformance_registered_ops import RegisteredOpsChecks
+    from oep_client.conformance.registered_ops import RegisteredOpsChecks
     model,c=setup();r=RegisteredOpsChecks(c,model.selection).run();assert r['status']=='passed',r['checks'];assert len(r['checks'])==17
 
 

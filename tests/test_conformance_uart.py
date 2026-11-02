@@ -1,8 +1,8 @@
 import pytest
 from oep_client.conformance import Checks
-from oep_client.conformance_uart import UartChecks
-from oep_client.conformance_uart_sample import SampleUartAdapter
-from oep_client.virtual_uart_model import UartModel
+from oep_client.conformance.uart import UartChecks
+from oep_client.conformance.uart_sample import SampleUartAdapter
+from oep_client.conformance.uart_model import UartModel
 from test_conformance_registered_ops import setup as registered_setup
 
 
@@ -19,12 +19,12 @@ def test_uart_checks():
 
 
 def test_common_declarations():
-    from oep_client.conformance_interfaces import InterfaceChecks
+    from oep_client.conformance.interfaces import InterfaceChecks
     _,c=setup();r=InterfaceChecks(c).run();assert r['status']=='passed',r['checks'];assert len(r['checks'])==17
 
 
 def test_uart_metadata():
-    from oep_client.conformance_fixture_metadata import FixtureMetadataChecks
+    from oep_client.conformance.fixture_metadata import FixtureMetadataChecks
     _,c=setup();r=FixtureMetadataChecks(c,{2:'oep.fixture.uart'}).run();assert r['status']=='passed',r['checks'];assert len(r['checks'])==4
 
 

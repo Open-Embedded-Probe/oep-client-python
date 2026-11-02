@@ -37,9 +37,9 @@ import hashlib, json, sys
 from pathlib import Path
 from oep_client import virtual_clock_model
 from oep_client.conformance import Checks, checker_sources_sha256, spec_identity
-from oep_client.conformance_clock import ClockChecks
-from oep_client.conformance_clock_sample import SampleClockAdapter
-from oep_client.virtual_clock_model import ClockModel
+from oep_client.conformance.clock import ClockChecks
+from oep_client.conformance.clock_sample import SampleClockAdapter
+from oep_client.conformance.clock_model import ClockModel
 registry, identity = spec_identity(sys.argv[1])
 model = ClockModel()
 checks = Checks(model.handle, registry, 'virtual-resource-1')

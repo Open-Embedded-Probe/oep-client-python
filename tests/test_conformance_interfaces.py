@@ -2,8 +2,8 @@ import copy
 import struct
 import pytest
 from oep_client.conformance import Checks
-from oep_client.conformance_interfaces import InterfaceChecks
-from oep_client.virtual_declaration_model import DeclarationModel
+from oep_client.conformance.interfaces import InterfaceChecks
+from oep_client.conformance.declaration_model import DeclarationModel
 from oep_client.virtual_core import tlv
 from test_conformance import REG
 
@@ -95,7 +95,7 @@ def test_valid_names_do_not_require_oep_registry_membership(name):
 
 
 def test_core_only_marks_interface_cases_not_applicable():
-    from oep_client.virtual_resource_model import ResourceModel
+    from oep_client.conformance.resource_model import ResourceModel
     _,c,_=setup();model=ResourceModel();model.ep.current_core.extension=None
     c.send=model.handle;report=InterfaceChecks(c).run()
     assert report['status']=='passed' and len(report['checks'])==1 and report['interface_count']==0

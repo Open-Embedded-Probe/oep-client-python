@@ -1,8 +1,8 @@
 import copy
 from oep_client.conformance import Checks
-from oep_client.conformance_pipeline import PipelineChecks
-from oep_client.conformance_route_sample import SampleRouteAdapter
-from oep_client.virtual_route_model import RouteModel
+from oep_client.conformance.pipeline import PipelineChecks
+from oep_client.conformance.route_sample import SampleRouteAdapter
+from oep_client.conformance.route_model import RouteModel
 from test_conformance import REG
 
 
@@ -14,8 +14,8 @@ def test_unbounded_model_fails_pipeline_preflight():
     assert report['status'] == 'failed'
     assert not any(row['method'] == 'hold' for row in adapter.trace)
 
-from oep_client.virtual_pipeline_model import PipelineModel
-from oep_client.conformance_pipeline_sample import SamplePipelineAdapter
+from oep_client.conformance.pipeline_model import PipelineModel
+from oep_client.conformance.pipeline_sample import SamplePipelineAdapter
 import pytest
 
 

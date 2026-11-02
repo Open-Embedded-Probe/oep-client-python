@@ -1,0 +1,68 @@
+"""Logical optional ndmreset fixture; no reset pin or physical DM."""
+import struct
+from .step_model import Steps, StepModel
+from .block_model import HARTSEL
+from .debug_model import fixed_dmi
+from .dmseq_model import initial
+from ..virtual_core import Core, Completed, Reject, tlv
+from .. import registry as _reg
+
+MODE = _reg.TARGET_RISCV_DM.enum['reset_mode']             # run, halt_at_reset (debug §4.3)
+
+
+class Resets(Steps):
+    def __init__(self,ep):super().__init__(ep);self.reset_result='ok'
+    def describe(self,fn):return (tlv(7,b'\x10\xbf'),tlv(3,struct.pack('<H',8))) if fn==5 else super().describe(fn)
+    def dispatch_request(self,fn,op,payload,tags):
+        if fn!=5 or op!=19:return super().dispatch_request(fn,op,payload,tags)
+        parent,mode=struct.unpack('<IB',payload);self.resource(parent,'connection')
+        if self.connections[parent]['fn']==3:raise Reject(4,tlv(1,b'\x06'))
+        if mode not in MODE.values():raise Reject(11,b'\0')           # debug §4.3: the two modes only
+        target=self.targets[parent];result=self.reset_result;related=[rid for rid,(p,_) in self.streams.items() if p==parent]
+        for rid in related:self.mailboxes[rid]['debug_busy']=True
+        control=target['registers'].get(0x10,0)&~(HARTSEL|0x80000002)
+        target['haltreq']=mode==MODE['halt_at_reset'];control|=0x80000000 if mode==MODE['halt_at_reset'] else 0
+        status=0;flags=0;pc=0;cleaned=True
+        try:
+            self.writereg(parent,0x10,control|2);self.access.append(('ndmreset-assert',parent))
+            self.writereg(parent,0x10,control);self.access.append(('ndmreset-release',parent,target['haltreq']))
+            target['pc']=0x2000;target['halted']=mode==MODE['halt_at_reset']
+            failures=5 if result=='dm-line' else 2 if result=='dm-recover' else 0
+            responded=False
+            for attempt in range(5):
+                self.interleave(parent);line=attempt<failures;self.access.append(('reset-dm-read',parent,2 if line else 0,attempt*200))
+                if not line:responded=True;break
+            if not responded:status=2
+            else:
+                self.access.append(('ack-havereset',parent))
+                for rid in related:
+                    if rid in self.protocols:self.protocols[rid]=initial()   # dmseq unsynced again (debug §4.6)
+                if result=='state-timeout':status=4;target['halted']=mode!=MODE['halt_at_reset']
+                elif result=='fault':status=3
+                else:
+                    flags=1;pc=target['pc'] if mode==MODE['halt_at_reset'] else 0
+                    if result=='cleanup-line':status=2;cleaned=False   # haltreq could not be lowered
+        finally:
+            if cleaned:target['haltreq']=False                        # lowered in both modes; mode 2 stays halted
+            self.writereg(parent,0x10,control if target['haltreq'] else control&~0x80000000)
+            for rid in related:self.mailboxes[rid]['debug_busy']=False
+        if not status:
+            for rid in related:self.streams[rid][1].mark(0x40,1)       # a successful reset op: one reset mark (§4.6)
+        answer=Completed(struct.pack('<BBI',status,flags,pc)+tlv(127,b'x'),int(bool(status)))
+        if not cleaned:self.close_connection(parent)                   # after the answer (debug §4)
+        return answer
+
+
+class ResetModel(StepModel):
+    def install(self):self.extension=Resets(self.ep);self.ep.current_core=Core(self.ep,self.extension)
+    def handle(self,request):
+        if len(request)<6 or struct.unpack_from('<H',request,3)[0]!=5:return super().handle(request)
+        e=self.extension;fixed,free=e.fixed,e.free;e.fixed={16:fixed_dmi(request[10:]),17:4,18:4,19:5,20:10,21:10,23:4};e.free=set()
+        if request[5]==21 and len(request)>=20:e.fixed[21]=10+4*struct.unpack_from('<H',request,18)[0]
+        try:return self.ep.handle(request)
+        finally:e.fixed,e.free=fixed,free
+    def reset_state(self):
+        state=self.step_state();state['reset_result']=self.extension.reset_result;return state
+    def reset_behavior(self,result):
+        if result not in ('ok','state-timeout','dm-recover','dm-line','fault','cleanup-line'):raise ValueError('explicit logical reset result required')
+        self.extension.reset_result=result

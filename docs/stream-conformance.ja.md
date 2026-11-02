@@ -44,9 +44,9 @@ MOVING-PAGESは要求と要求の間で順序を定めたproducer刺激である
 ```python
 import os
 from oep_client.conformance import Checks, spec_identity
-from oep_client.conformance_stream import StreamChecks
-from oep_client.conformance_stream_sample import SampleStreamAdapter
-from oep_client.virtual_stream_model import StreamModel
+from oep_client.conformance.stream import StreamChecks
+from oep_client.conformance.stream_sample import SampleStreamAdapter
+from oep_client.conformance.stream_model import StreamModel
 from oep_client.hardware import equipment_lock
 
 registry, spec = spec_identity(os.environ['OEP_CONFORMANCE_SPEC'])

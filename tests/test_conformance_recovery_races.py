@@ -1,6 +1,6 @@
 import pytest
-from oep_client.conformance_recovery_races import RecoveryRaceChecks
-from oep_client.conformance_recovery_race_sample import SampleRecoveryRaceAdapter, SamplePendingHost
+from oep_client.conformance.recovery_races import RecoveryRaceChecks
+from oep_client.conformance.recovery_race_sample import SampleRecoveryRaceAdapter, SamplePendingHost
 from test_conformance_recovery import setup as base
 
 

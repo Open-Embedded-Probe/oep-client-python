@@ -2,12 +2,12 @@ import copy
 import pytest
 from oep_client import registry as current
 from oep_client.conformance import Checks
-from oep_client.conformance_attach import AttachChecks
-from oep_client.conformance_attach_sample import SampleAttachAdapter
-from oep_client.virtual_attach_model import AttachModel
+from oep_client.conformance.attach import AttachChecks
+from oep_client.conformance.attach_sample import SampleAttachAdapter
+from oep_client.conformance.attach_model import AttachModel
 from test_conformance_oep_declarations import SPECS
 from test_conformance import REG
-from oep_client.virtual_attach_model import WOP, WT, COP
+from oep_client.conformance.attach_model import WOP, WT, COP
 from oep_client.virtual_names import R
 
 RESET = WT['attach']['reset']                       # the wire family's reset TLV (debug §3)

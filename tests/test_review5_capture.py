@@ -5,8 +5,8 @@ import struct
 import pytest
 
 from oep_client import capture as c, core, host as h, message as m
-from oep_client.virtual_logic_model import LogicModel
-from oep_client.virtual_analog_model import AnalogModel
+from oep_client.conformance.logic_model import LogicModel
+from oep_client.conformance.analog_model import AnalogModel
 from test_virtual_bench_capture import bench
 
 ST = c.STATE

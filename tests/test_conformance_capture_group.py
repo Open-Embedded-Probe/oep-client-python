@@ -2,9 +2,9 @@ import copy
 import pytest
 from oep_client import registry as registry
 from oep_client.conformance import Checks
-from oep_client.conformance_capture_group import CaptureGroupChecks
-from oep_client.conformance_capture_group_sample import SampleCaptureGroupAdapter
-from oep_client.virtual_capture_group_model import CaptureGroupModel, OP, GOP, PLAN, ST, GS, ADC, LOGIC, GROUPS
+from oep_client.conformance.capture_group import CaptureGroupChecks
+from oep_client.conformance.capture_group_sample import SampleCaptureGroupAdapter
+from oep_client.conformance.capture_group_model import CaptureGroupModel, OP, GOP, PLAN, ST, GS, ADC, LOGIC, GROUPS
 from oep_client.virtual_names import R
 
 GROUP = GROUPS[0]                     # the group the checker drives
@@ -34,8 +34,8 @@ def test_group_operations():
 
 @pytest.mark.parametrize('kind',['declarations','metadata'])
 def test_group_declarations(kind):
-    from oep_client.conformance_interfaces import InterfaceChecks
-    from oep_client.conformance_capture_metadata import CaptureMetadataChecks
+    from oep_client.conformance.interfaces import InterfaceChecks
+    from oep_client.conformance.capture_metadata import CaptureMetadataChecks
     model,checks=setup()
     result=(InterfaceChecks(checks) if kind=='declarations' else CaptureMetadataChecks(checks,{2:'oep.fixture.analog',3:'oep.fixture.logic',4:'oep.fixture.capture-group'})).run()
     assert result['status']=='passed',result['checks']
@@ -88,7 +88,7 @@ def test_preflight_blocks_group(invalid):
 ])
 def test_semantic_group_faults_are_detected(fault,case):
     from oep_client.virtual_core import Reject,tlv
-    from oep_client.virtual_capture_group_model import NO_TIME,LAST
+    from oep_client.conformance.capture_group_model import NO_TIME,LAST
     import struct
     model,checks=setup();install=model.install
     def faulty_install():

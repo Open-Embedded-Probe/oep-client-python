@@ -24,9 +24,9 @@ queue残量・購読・再送履歴の保持はinstrumentationで観測する。
 import os
 from oep_client.conformance import Checks, spec_identity
 from oep_client.hardware import equipment_lock
-from oep_client.conformance_routes import RouteChecks
-from oep_client.conformance_route_sample import SampleRouteAdapter
-from oep_client.virtual_route_model import RouteModel
+from oep_client.conformance.routes import RouteChecks
+from oep_client.conformance.route_sample import SampleRouteAdapter
+from oep_client.conformance.route_model import RouteModel
 
 registry, spec = spec_identity(os.environ['OEP_CONFORMANCE_SPEC'])
 with equipment_lock(os.environ['OEP_HW_LOCK']):

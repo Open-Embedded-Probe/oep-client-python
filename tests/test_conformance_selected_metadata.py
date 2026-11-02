@@ -1,8 +1,8 @@
 import struct
 import pytest
 from oep_client.conformance import Checks
-from oep_client.conformance_selected_metadata import SelectedMetadataChecks
-from oep_client.virtual_selected_metadata_model import SelectedMetadataModel
+from oep_client.conformance.selected_metadata import SelectedMetadataChecks
+from oep_client.conformance.selected_metadata_model import SelectedMetadataModel
 from oep_client.virtual_core import tlv
 from test_conformance_registered_ops import setup as registered_setup
 
@@ -63,12 +63,12 @@ def test_protocol_minimum_is_enough_for_small_multiroute_block_length():
 
 
 def test_metadata_common_declarations_pass():
-    from oep_client.conformance_interfaces import InterfaceChecks
+    from oep_client.conformance.interfaces import InterfaceChecks
     _,c=setup();r=InterfaceChecks(c).run();assert r['status']=='passed',r['checks'];assert len(r['checks'])==129
 
 
 def test_metadata_preserves_registered_op_contracts():
-    from oep_client.conformance_registered_ops import RegisteredOpsChecks
+    from oep_client.conformance.registered_ops import RegisteredOpsChecks
     model,c=setup();r=RegisteredOpsChecks(c,model.selection).run();assert r['status']=='passed',r['checks'];assert len(r['checks'])==17
 
 

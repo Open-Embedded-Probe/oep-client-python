@@ -1,11 +1,11 @@
 import pytest
-from oep_client.conformance_probe_input import ProbeInputChecks
-from oep_client.conformance_probe_input_sample import SampleProbeInputAdapter
+from oep_client.conformance.probe_input import ProbeInputChecks
+from oep_client.conformance.probe_input_sample import SampleProbeInputAdapter
 
 SPEC='/explicit/probe-input-spec'
 @pytest.fixture(autouse=True)
 def selected_spec(monkeypatch):
-    monkeypatch.setattr('oep_client.conformance_probe_input.reviewed_identity',lambda path:{'commit':'unit-fixture'} if path==SPEC else None)
+    monkeypatch.setattr('oep_client.conformance.probe_input.reviewed_identity',lambda path:{'commit':'unit-fixture'} if path==SPEC else None)
 
 def test_raw_probe_role_and_header_rules():
     r=ProbeInputChecks(SampleProbeInputAdapter(),spec=SPEC).run()

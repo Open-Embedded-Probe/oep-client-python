@@ -1,8 +1,8 @@
 import copy
 import pytest
 from oep_client.conformance import Checks
-from oep_client.conformance_tlv_requests import TlvRequestChecks
-from oep_client.virtual_tlv_request_model import TlvRequestModel
+from oep_client.conformance.tlv_requests import TlvRequestChecks
+from oep_client.conformance.tlv_request_model import TlvRequestModel
 from oep_client.virtual_core import Reject
 from test_conformance import REG
 
@@ -68,7 +68,7 @@ def test_injected_request_faults(fault, case):
 
 
 def test_counted_value_capacity_rejects_without_execution():
-    from oep_client.conformance_tlv_requests import field
+    from oep_client.conformance.tlv_requests import field
     _, c, checker = build()
     checker.context()
     with c.holding(60000) as sid:

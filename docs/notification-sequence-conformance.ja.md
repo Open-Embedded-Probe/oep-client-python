@@ -42,11 +42,11 @@ import hashlib, json, sys
 from pathlib import Path
 from oep_client import virtual_route_model
 from oep_client.conformance import Checks, checker_sources_sha256, spec_identity
-from oep_client.conformance_routes import RouteChecks
-from oep_client.conformance_route_sample import SampleRouteAdapter
-from oep_client.conformance_notification_sequence import NotificationSequenceChecks
-from oep_client.conformance_notification_sequence_sample import SampleNotificationSequenceAdapter
-from oep_client.virtual_route_model import RouteModel
+from oep_client.conformance.routes import RouteChecks
+from oep_client.conformance.route_sample import SampleRouteAdapter
+from oep_client.conformance.notification_sequence import NotificationSequenceChecks
+from oep_client.conformance.notification_sequence_sample import SampleNotificationSequenceAdapter
+from oep_client.conformance.route_model import RouteModel
 registry, identity = spec_identity(sys.argv[1])
 model = RouteModel()
 routes = RouteChecks(Checks(model.handle, registry, 'virtual-routes-1'), SampleRouteAdapter(model)).run()

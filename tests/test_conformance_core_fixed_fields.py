@@ -1,7 +1,7 @@
 import pytest
-from oep_client import conformance_host_core as hc
-from oep_client.conformance_core_fixed_fields import CoreFixedFieldChecks,CORE_SHAPES
-from oep_client.conformance_host_core_sample import decode
+from oep_client.conformance import host_core as hc
+from oep_client.conformance.core_fixed_fields import CoreFixedFieldChecks,CORE_SHAPES
+from oep_client.conformance.host_core_sample import decode
 from test_conformance_registered_ops import setup
 
 
@@ -16,7 +16,7 @@ def checker(reader=decode,factory=None):
 
 def test_removed_confirm_flags_are_not_reviewed_shape(monkeypatch):
     # a09fa45 removed confirm flags(u8): a 17-byte confirm inventory no longer matches the reviewed core.
-    from oep_client import conformance_core_fixed_fields as ff
+    from oep_client.conformance import core_fixed_fields as ff
     old=tuple(('confirm',1,req,reply[:2]+(('flags',1),)+reply[2:]) if name=='confirm' else (name,op,req,reply) for name,op,req,reply in CORE_SHAPES)
     monkeypatch.setattr(ff,'CORE_SHAPES',old)
     with pytest.raises(Exception,match='prefixes differ'):checker().run()

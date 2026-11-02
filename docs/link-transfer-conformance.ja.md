@@ -22,10 +22,10 @@ source/sinkの成功・拒否は共通のChecksでresolution/detail/corrを検�
 
 ```python
 from oep_client.conformance import Checks, spec_identity
-from oep_client.conformance_interfaces import InterfaceChecks
-from oep_client.conformance_link_transfers import LinkTransferChecks
-from oep_client.conformance_link_transfer_sample import SampleLinkTransferAdapter
-from oep_client.virtual_link_transfer_model import LinkTransferModel
+from oep_client.conformance.interfaces import InterfaceChecks
+from oep_client.conformance.link_transfers import LinkTransferChecks
+from oep_client.conformance.link_transfer_sample import SampleLinkTransferAdapter
+from oep_client.conformance.link_transfer_model import LinkTransferModel
 
 registry, identity = spec_identity("/explicit/path/to/oep-spec")
 model = LinkTransferModel(lambda: 0, boot_id=17, max_frame=1024)

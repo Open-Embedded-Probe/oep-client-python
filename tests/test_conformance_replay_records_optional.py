@@ -16,14 +16,14 @@ def build(name):
     if name=='allocator':
         model,c,_,runner=t.setup();no_records(model);return runner
     if name=='dependencies':
-        from oep_client.conformance_dependencies import DependencyChecks
+        from oep_client.conformance.dependencies import DependencyChecks
         model,c,a,wait=t.setup();no_records(model);return DependencyChecks(c,a,wait=wait)
     if name=='capture_group':
-        from oep_client.conformance_capture_group import CaptureGroupChecks
-        from oep_client.conformance_capture_group_sample import SampleCaptureGroupAdapter
+        from oep_client.conformance.capture_group import CaptureGroupChecks
+        from oep_client.conformance.capture_group_sample import SampleCaptureGroupAdapter
         model,c=t.setup();no_records(model);return CaptureGroupChecks(c,SampleCaptureGroupAdapter(model))
     if name=='arm_adi':
-        from oep_client.conformance_arm_adi import ArmAdiChecks
+        from oep_client.conformance.arm_adi import ArmAdiChecks
         model,c,a=t.setup();no_records(model);return ArmAdiChecks(c,a)
     if name=='execution_order':
         model,runner=t.build();no_records(model);return runner
@@ -32,18 +32,18 @@ def build(name):
     if name in ('data','resources','subscriptions'):
         model,_,_,runner=t.build();no_records(model);return runner
     if name=='link_routes':
-        from oep_client.conformance_link_routes import LinkRoutesChecks
-        from oep_client.conformance_link_routes_sample import SampleLinkRoutesAdapter
+        from oep_client.conformance.link_routes import LinkRoutesChecks
+        from oep_client.conformance.link_routes_sample import SampleLinkRoutesAdapter
         model,c=t.setup();no_records(model);return LinkRoutesChecks(c,SampleLinkRoutesAdapter(model))
     if name=='link_transfers':
-        from oep_client.conformance_link_transfers import LinkTransferChecks
-        from oep_client.conformance_link_transfer_sample import SampleLinkTransferAdapter
+        from oep_client.conformance.link_transfers import LinkTransferChecks
+        from oep_client.conformance.link_transfer_sample import SampleLinkTransferAdapter
         model,c=t.setup(64);no_records(model);return LinkTransferChecks(c,SampleLinkTransferAdapter(model))
-    simple={'analog':('conformance_analog','AnalogChecks','conformance_analog_sample','SampleAnalogAdapter'),
-            'logic':('conformance_logic','LogicChecks','conformance_logic_sample','SampleLogicAdapter'),
-            'i2c':('conformance_i2c','I2cChecks','conformance_i2c_sample','SampleI2cAdapter'),
-            'spi':('conformance_spi','SpiChecks','conformance_spi_sample','SampleSpiAdapter'),
-            'uart':('conformance_uart','UartChecks','conformance_uart_sample','SampleUartAdapter')}
+    simple={'analog':('conformance.analog','AnalogChecks','conformance.analog_sample','SampleAnalogAdapter'),
+            'logic':('conformance.logic','LogicChecks','conformance.logic_sample','SampleLogicAdapter'),
+            'i2c':('conformance.i2c','I2cChecks','conformance.i2c_sample','SampleI2cAdapter'),
+            'spi':('conformance.spi','SpiChecks','conformance.spi_sample','SampleSpiAdapter'),
+            'uart':('conformance.uart','UartChecks','conformance.uart_sample','SampleUartAdapter')}
     if name in simple:
         mod,cls,smod,scls=simple[name];model,c=t.setup();no_records(model)
         return getattr(importlib.import_module('oep_client.'+mod),cls)(c,getattr(importlib.import_module('oep_client.'+smod),scls)(model))
@@ -53,7 +53,7 @@ def build(name):
              'scan_options':'ScanOptionsChecks','stream':'StreamChecks','wire_options':'WireOptionsChecks',
              'writer_lease':'WriterLeaseChecks'}
     model,c,a=t.setup();no_records(model)
-    return getattr(importlib.import_module('oep_client.conformance_'+name),classes[name])(c,a)
+    return getattr(importlib.import_module('oep_client.conformance.'+name),classes[name])(c,a)
 
 
 # link_transfers / link_routes / retention and the replay pressure checks (lease) are left out: their explicit fixtures
@@ -71,7 +71,7 @@ def test_replay_without_records_passes(name):
 
 def test_timeline_lifecycle_replay_without_records_passes():
     from test_conformance_capture_timeline_lifecycle import setup,run
-    from oep_client.conformance_capture_timeline_lifecycle import CaptureTimelineLifecycleChecks
+    from oep_client.conformance.capture_timeline_lifecycle import CaptureTimelineLifecycleChecks
     for scenario in CaptureTimelineLifecycleChecks.scenarios:
         model,checks=setup();no_records(model);r=run(model,checks,scenario)
         assert r['status']=='passed',(scenario,[(x['id'],x.get('error')) for x in r['checks'] if x['status']!='passed'])

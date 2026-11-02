@@ -1,6 +1,12 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Changed (breaking): the conformance checkers and their models are one subpackage, `oep_client.conformance`
+  (`conformance_<x>` -> `oep_client.conformance.<x>`, `virtual_<x>_model` -> `oep_client.conformance.<x>_model`); the
+  package's top level keeps the host library, the CLI and the virtual bench. `oep-conformance` is unchanged.
+- (JA) 変更（壊す変更）: 適合検査とそのモデルを、下位のパッケージ `oep_client.conformance` にまとめた（`conformance_<x>` は
+  `oep_client.conformance.<x>`、`virtual_<x>_model` は `oep_client.conformance.<x>_model`）。パッケージの一番上には、host の
+  ライブラリ、CLI、仮想ベンチが残る。`oep-conformance` の命令は変わらない。
 - (EN) Changed (breaking): follows oep-spec a6a4374 - the debug wires' settings are `channel.{}.rest` and
   `channel.{}.hold` (were `rest.{}` / `hold.{}`, debug §2, §3.1); the virtual bench declares them so.
 - (JA) 変更（壊す変更）: oep-spec a6a4374 に従う。debug の線の設定の項目名は `channel.{}.rest` と `channel.{}.hold`

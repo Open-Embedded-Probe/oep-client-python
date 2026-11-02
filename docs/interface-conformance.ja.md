@@ -24,8 +24,8 @@
 ```python
 import os
 from oep_client.conformance import Checks, spec_identity
-from oep_client.conformance_interfaces import InterfaceChecks
-from oep_client.virtual_declaration_model import DeclarationModel
+from oep_client.conformance.interfaces import InterfaceChecks
+from oep_client.conformance.declaration_model import DeclarationModel
 from oep_client.hardware import equipment_lock
 
 registry, spec = spec_identity(os.environ['OEP_CONFORMANCE_SPEC'])

@@ -4,9 +4,9 @@ import struct
 
 import pytest
 
-from oep_client.conformance_core_smoke import CoreSmokeChecks
+from oep_client.conformance.core_smoke import CoreSmokeChecks
 from oep_client.conformance import Violation
-from oep_client.conformance_interface_smoke import InterfaceSmokeChecks
+from oep_client.conformance.interface_smoke import InterfaceSmokeChecks
 from test_conformance_core_smoke import SmallCore, REG, SPEC, tag
 
 REGISTRY = copy.deepcopy(REG)

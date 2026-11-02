@@ -8,17 +8,17 @@
 
 import struct
 
-from oep_client.conformance_analog import AnalogChecks
-from oep_client.conformance_analog_sample import SampleAnalogAdapter
-from oep_client.conformance_capture_group import CaptureGroupChecks
-from oep_client.conformance_capture_group_sample import SampleCaptureGroupAdapter
-from oep_client.conformance_capture_timeline import CaptureTimelineChecks
-from oep_client.conformance_capture_timeline_sample import SampleCaptureTimelineAdapter
-from oep_client.conformance_logic import LogicChecks
-from oep_client.conformance_logic_sample import SampleLogicAdapter
-from oep_client.virtual_analog_model import Analog
+from oep_client.conformance.analog import AnalogChecks
+from oep_client.conformance.analog_sample import SampleAnalogAdapter
+from oep_client.conformance.capture_group import CaptureGroupChecks
+from oep_client.conformance.capture_group_sample import SampleCaptureGroupAdapter
+from oep_client.conformance.capture_timeline import CaptureTimelineChecks
+from oep_client.conformance.capture_timeline_sample import SampleCaptureTimelineAdapter
+from oep_client.conformance.logic import LogicChecks
+from oep_client.conformance.logic_sample import SampleLogicAdapter
+from oep_client.conformance.analog_model import Analog
 from oep_client.virtual_core import Core, Reject
-from oep_client.virtual_logic_model import Logic
+from oep_client.conformance.logic_model import Logic
 
 import test_conformance_analog as analog_tests
 import test_conformance_capture_group as group_tests

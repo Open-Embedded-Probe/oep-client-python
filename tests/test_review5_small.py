@@ -37,8 +37,8 @@ def test_the_uart_model_checks_a_later_copy_of_the_format():
     """configure with format 4 and a later copy 0xff (bit 7): the later copy is checked too - an undefined format is
     unsupported, the tag as received (0x81), nothing changes. The model skipped every later copy; a later valid copy
     leaves the first in use."""
-    from oep_client.conformance_uart import UartChecks
-    from oep_client.conformance_uart_sample import SampleUartAdapter
+    from oep_client.conformance.uart import UartChecks
+    from oep_client.conformance.uart_sample import SampleUartAdapter
     model, c = _uart()
     checker = UartChecks(c, SampleUartAdapter(model))
     checker.cases = ('FIRST-WINS',)
@@ -46,7 +46,7 @@ def test_the_uart_model_checks_a_later_copy_of_the_format():
     assert next(row for row in r['checks'] if row['id'] == 'OEP-UART-FIRST-WINS')['status'] == 'passed'
     e = model.extension
     e.plans[2] = [0, 1]
-    from oep_client.virtual_stream_model import Stream
+    from oep_client.conformance.stream_model import Stream
     e.stream = Stream(model.ep, 0, 0)
     tags = e.request_tags(2, 16, m.tlv(1, b'\x04') + m.tlv(1, b'\xff', critical=True))
     with pytest.raises(Reject) as ex:
@@ -57,8 +57,8 @@ def test_the_uart_model_checks_a_later_copy_of_the_format():
 def test_the_uart_checker_requires_a_later_bad_format_copy_refused():
     """The checker's FIRST-WINS case required a configure with a later 0xff format copy to succeed (the old rule: later
     copies ignored); it now requires unsupported 0x81 and catches a model that skips later copies."""
-    from oep_client.conformance_uart import UartChecks
-    from oep_client.conformance_uart_sample import SampleUartAdapter
+    from oep_client.conformance.uart import UartChecks
+    from oep_client.conformance.uart_sample import SampleUartAdapter
     model, c = _uart()
     install = model.install
 
@@ -122,13 +122,13 @@ def test_the_target_checkers_require_a_later_critical_copy_refused(kind):
     """The checkers' TLV case now sends a non-critical 0x7e then 0xfe and requires unsupported 0xfe; a model that skips
     later copies fails it."""
     if kind == 'i2c':
-        from oep_client.conformance_i2c import I2cChecks as Checker
-        from oep_client.conformance_i2c_sample import SampleI2cAdapter as Adapter
+        from oep_client.conformance.i2c import I2cChecks as Checker
+        from oep_client.conformance.i2c_sample import SampleI2cAdapter as Adapter
         from test_conformance_i2c import setup
         prefix = 'OEP-I2C-'
     else:
-        from oep_client.conformance_spi import SpiChecks as Checker
-        from oep_client.conformance_spi_sample import SampleSpiAdapter as Adapter
+        from oep_client.conformance.spi import SpiChecks as Checker
+        from oep_client.conformance.spi_sample import SampleSpiAdapter as Adapter
         from test_conformance_spi import setup
         prefix = 'OEP-SPI-'
     def skipping(model, install):

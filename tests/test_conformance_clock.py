@@ -2,9 +2,9 @@ import copy
 import struct
 import pytest
 from oep_client.conformance import Checks
-from oep_client.conformance_clock import ClockChecks
-from oep_client.conformance_clock_sample import SampleClockAdapter
-from oep_client.virtual_clock_model import ClockModel
+from oep_client.conformance.clock import ClockChecks
+from oep_client.conformance.clock_sample import SampleClockAdapter
+from oep_client.conformance.clock_model import ClockModel
 from test_conformance import REG
 
 

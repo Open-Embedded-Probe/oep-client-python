@@ -35,8 +35,8 @@ data長0/1/255/256、u64最大position、後続の未知TLVを正常試料とす
 ```python
 import json
 from pathlib import Path
-from oep_client.conformance_host_notifications import HostNotificationChecks
-from oep_client.conformance_host_notifications_sample import SampleHostNotificationReader
+from oep_client.conformance.host_notifications import HostNotificationChecks
+from oep_client.conformance.host_notifications_sample import SampleHostNotificationReader
 
 report = HostNotificationChecks(
     SampleHostNotificationReader(), spec="/explicit/path/to/oep-spec"

@@ -8,8 +8,8 @@ import struct
 import pytest
 
 from oep_client import catalog, core, endpoint, fixture, host, message as m, registry as reg, virtual_bench
-from oep_client.conformance_uart import UartChecks
-from oep_client.conformance_uart_sample import SampleUartAdapter
+from oep_client.conformance.uart import UartChecks
+from oep_client.conformance.uart_sample import SampleUartAdapter
 from test_conformance_uart import setup as uart_setup
 from test_virtual_bench_rules_2026_10_02 import IDLE, PLAN_APPLY, PLAN_RELEASE, SET, Clock, Host, cset, idle_item, una
 

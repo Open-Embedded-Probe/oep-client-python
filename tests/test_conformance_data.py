@@ -5,9 +5,9 @@ import struct
 import pytest
 
 from oep_client.conformance import Checks
-from oep_client.conformance_data import DataChecks
-from oep_client.conformance_data_sample import SampleDataAdapter
-from oep_client.virtual_data_model import DataModel
+from oep_client.conformance.data import DataChecks
+from oep_client.conformance.data_sample import SampleDataAdapter
+from oep_client.conformance.data_model import DataModel
 from test_conformance import REG
 
 
@@ -232,8 +232,8 @@ def test_model_actual_seq_wrap_with_65538_mixed_notifications():
 
 
 def test_data_model_preserves_existing_core_and_resource_contracts(monkeypatch):
-    from oep_client.conformance_resources import ResourceChecks
-    from oep_client.conformance_resource_sample import SampleResourceAdapter
+    from oep_client.conformance.resources import ResourceChecks
+    from oep_client.conformance.resource_sample import SampleResourceAdapter
     now = [0]
     wait = lambda seconds: now.__setitem__(0, now[0] + int(seconds * 1000))
     monkeypatch.setattr('oep_client.conformance.time.sleep', wait)
