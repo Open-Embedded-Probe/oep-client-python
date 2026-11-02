@@ -137,25 +137,21 @@ def later(tag, value, critical=True):
     return m.tlv(tag, value, critical=critical)
 
 
-def test_the_bench_checks_every_copy_of_a_wire_tlv():
-    """core §2.3: a later copy of a known TLV is checked like the first (the first is used): scan's max_speed 0 is
-    malformed, below min_clock_hz unsupported; idle_clock 2 and an attach reset copy naming an undeclared channel or a
-    hold past max_op_ms are unsupported, each with the tag as that copy came."""
+def test_the_bench_refuses_every_wire_tlv_twice():
+    """core §2.3: a known non-repeating TLV twice is malformed, whatever the later copy holds: scan's max_speed and
+    idle_clock, attach's idle_clock and reset - and nothing runs."""
     from test_virtual_bench_spec import bench as p4
     ep, h = p4()
     pair = ep.pairs[1][0]
     scan = b"\x01" + struct.pack("<HH", *pair)
     SC, AT = reg.WIRE_RVSWD.tlv["scan"], reg.WIRE_RVSWD.tlv["attach"]
     first = later(SC["max_speed"], struct.pack("<I", 1500))
-    r = h.raw(1, W["scan"], scan + first + later(SC["max_speed"], bytes(4)))
-    assert (r.resolution, r.detail) == (m.REJECTED, m.MALFORMED)
-    ep.decl[1].append((catalog.MIN_CLOCK_HZ, struct.pack("<I", 1000)))
-    r = h.raw(1, W["scan"], scan + first + later(SC["max_speed"], struct.pack("<I", 999), critical=False))
-    assert (r.resolution, r.detail, r.payload) == (m.REJECTED, m.UNSUPPORTED, bytes([SC["max_speed"]]))
-    bad_idle = bytes([max(reg.WIRE_RVSWD.enum["idle_clock"].values()) + 1])
+    for copy in (bytes(4), struct.pack("<I", 999), struct.pack("<I", 1500)):
+        r = h.raw(1, W["scan"], scan + first + later(SC["max_speed"], copy))
+        assert (r.resolution, r.detail) == (m.REJECTED, m.MALFORMED)
     for op, body, idle in ((W["scan"], scan, SC["idle_clock"]), (W["attach"], att(pair), AT["idle_clock"])):
-        r = h.raw(1, op, body + later(idle, b"\x01") + later(idle, bad_idle, critical=False))
-        assert (r.resolution, r.detail, r.payload) == (m.REJECTED, m.UNSUPPORTED, bytes([idle]))
+        r = h.raw(1, op, body + later(idle, b"\x01") + later(idle, b"\x00", critical=False))
+        assert (r.resolution, r.detail) == (m.REJECTED, m.MALFORMED)
     v = virtual_bench.esp32_v003()
     ep = endpoint.Endpoint(v, lambda: 0)
     h = Host(ep)
@@ -163,10 +159,9 @@ def test_the_bench_checks_every_copy_of_a_wire_tlv():
     fn = ep.fns["oep.wire.swio"]
     RESET = reg.WIRE_SWIO.tlv["attach"]["reset"]
     body = att(ep.pairs[fn][0], speed=1_000_000) + later(RESET, struct.pack("<HH", 23, 20))
-    for copy in (struct.pack("<HH", 5, 20), struct.pack("<HH", 23, ep.max_op_ms + 1)):
-        r = h.raw(fn, W["attach"], body + later(RESET, copy))
-        assert (r.resolution, r.detail, r.payload) == (m.REJECTED, m.UNSUPPORTED, bytes([RESET | 0x80]))
-        assert not ep.conns
+    r = h.raw(fn, W["attach"], body + later(RESET, struct.pack("<HH", 23, 20)))
+    assert (r.resolution, r.detail) == (m.REJECTED, m.MALFORMED)
+    assert not ep.conns
 
 
 def strict_later_copies(model_cls, monkeypatch):
@@ -212,8 +207,8 @@ def test_the_scan_checkers_pass_a_probe_that_checks_later_copies(monkeypatch):
         assert r["status"] == "passed", [(x["id"], x.get("error")) for x in r["checks"] if x["status"] != "passed"]
 
 
-def test_the_scan_checker_refuses_a_probe_that_takes_a_later_copy_below_min_clock():
-    """core §2.3 with debug §1 (min_clock_hz): a model that ignores later max_speed copies fails OEP-SCAN-LATER-LOW."""
+def test_the_scan_checker_refuses_a_probe_that_takes_the_first_of_two_copies():
+    """core §2.3: a model that drops the later max_speed copy and scans with the first fails OEP-SCAN-TWICE."""
     from oep_client.conformance.scan import ScanChecks
     from test_conformance_scan import setup as scan_setup
     model, c, a = scan_setup()
@@ -239,4 +234,4 @@ def test_the_scan_checker_refuses_a_probe_that_takes_a_later_copy_below_min_cloc
     model.restart_fixture = lax
     r = ScanChecks(c, a).run()
     failed = {x["id"] for x in r["checks"] if x["status"] != "passed"}
-    assert "OEP-SCAN-LATER-LOW" in failed
+    assert "OEP-SCAN-TWICE" in failed

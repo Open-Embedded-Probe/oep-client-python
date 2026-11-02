@@ -52,7 +52,9 @@ class ScanOptionsChecks(WireOptionsChecks):
         self.fresh()
         with self.c.holding(3000) as sid:
             fn=3 if swd else 1;pair=self.a.pairs[fn][0];selector=0x01000001 if swd else None;self.a.identity(fn,pair,selector,0x2ba01477 if swd else 0x202)
-            self.scan(sid,fn,[pair],[self.found(fn,pair,0x2ba01477 if swd else 0x202)],selector=selector,idle=None if swd else 1,speed=1500,extra=self.tlv(self.S['targetsel'],struct.pack('<I',0x01000002)) if swd else self.tlv(self.S['idle_clock'],b'\x00')+self.tlv(self.S['max_speed'],struct.pack('<I',2000)))   # valid later copies (core §2.3: checked too)
+            self.scan(sid,fn,[pair],[self.found(fn,pair,0x2ba01477 if swd else 0x202)],selector=selector,idle=None if swd else 1,speed=1500)
+            extra=self.tlv(self.S['targetsel'],struct.pack('<I',0x01000002)) if swd else self.tlv(self.S['idle_clock'],b'\x00')+self.tlv(self.S['max_speed'],struct.pack('<I',2000))
+            self.refused(self.scan_request(sid,fn,[pair],selector=selector,idle=None if swd else 1,speed=1500,extra=extra),'malformed')   # valid copies twice (core §2.3)
     def unmarked(self):
         self.fresh()
         with self.c.holding(3000) as sid:
@@ -94,8 +96,6 @@ class ScanOptionsChecks(WireOptionsChecks):
             elif kind=='IDLE':
                 S=self.S;bad_idle=max(self.idle_values)+1
                 self.refused(self.scan_request(sid,1,pairs,idle=bad_idle),'unsupported',bytes((S['idle_clock']|128,)))
-                self.refused(self.scan_request(sid,1,pairs,idle=1,extra=self.tlv(S['idle_clock'],bytes((bad_idle,)))),'unsupported',bytes((S['idle_clock'],)))   # a later copy too
-                self.refused(self.scan_request(sid,1,pairs,idle=1,speed=1500,extra=self.tlv(S['max_speed'],struct.pack('<I',999))),'unsupported',bytes((S['max_speed'],)))
                 for fn in (2,3):self.refused(self.scan_request(sid,fn,self.a.pairs[fn],idle=1),'unsupported',bytes((S['idle_clock']|128,)))
             elif kind=='WIDTH':
                 for fn,tag,size in ((1,self.S['idle_clock']|128,2),(3,self.S['targetsel']|128,3)):self.refused(self.scan_request(sid,fn,self.a.pairs[fn],extra=self.tlv(tag,b'\0'*size)),'malformed')
@@ -118,7 +118,7 @@ class ScanOptionsChecks(WireOptionsChecks):
         self.c.check('OEP-SCAN-OPTIONS-CONTEXT','debug §1/3/5; explicit finite logical fixture',context)
         if self.c.results[-1]['status']!='passed':self.c.abort=True
         cases=[('IDLE-'+str(v),lambda v=v:self.idle_case(v)) for v in (None,0,1)]+[('SELECTOR-'+str(v),lambda v=v:self.selector_case(v)) for v in (None,0x01000001,0x01000002)]
-        cases += [('ZERO-SELECTOR',self.zero_selector),('FIRST-IDLE',self.first_wins),('FIRST-SELECTOR',lambda:self.first_wins(True)),('UNMARKED',self.unmarked),('PREFIX',self.prefix),('VERSIONS',self.versions),('RETAINED',self.retained),('REPLAY',self.replay_scan)]
+        cases += [('ZERO-SELECTOR',self.zero_selector),('TWICE-IDLE',self.first_wins),('TWICE-SELECTOR',lambda:self.first_wins(True)),('UNMARKED',self.unmarked),('PREFIX',self.prefix),('VERSIONS',self.versions),('RETAINED',self.retained),('REPLAY',self.replay_scan)]
         cases += [('REFUSE-'+kind,lambda kind=kind:self.refused_scan(kind)) for kind in ('ZERO','DUP','BAD-LATE','BUSY-LATE','DISABLED-LATE','OUTPUT-LATE','RESERVED-LATE','IDLE','WIDTH','TARGETSEL-WIRE','TLV','SESSION','FOREIGN','LOW')]
         for name,case in cases:
             first=len(self.a.trace);self.c.check('OEP-SCAN-OPTIONS-'+name,'debug §1/3/5; core §2.3/5/8.1',case);self.c.results[-1]['adapter_trace']=self.a.trace[first:]

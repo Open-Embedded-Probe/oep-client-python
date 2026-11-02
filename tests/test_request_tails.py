@@ -507,26 +507,22 @@ def test_settings_value_of_another_length_is_malformed():
         assert e.value.result.detail == m.MALFORMED
 
 
-# ---- a non-repeating tag twice: the first is used (core §2.3) ------------------------------------------------
+# ---- a non-repeating tag twice: malformed (core §2.3) --------------------------------------------------------
 
-def test_a_tag_sent_twice_uses_the_first():
+def test_a_tag_sent_twice_is_malformed():
     ep, rec, hst = recorded()
     uart = fixture.FixtureUart(hst)
     core.plan_apply(hst, [(uart.fn, 1, 31), (uart.fn, 2, 32)])
     uart.configure(115200, 0)
     tag = uart.TAG_FORMAT
     good, bad, short = (tag, b"\x00"), (tag, b"\x03"), (tag, b"")
-    assert refused(rec.variant(uart.fn, uart.CONFIGURE, 4, lambda t: [good, bad])) == (m.UNSUPPORTED, bytes([tag]))
-    assert refused(rec.variant(uart.fn, uart.CONFIGURE, 4, lambda t: [good, short])) == (m.MALFORMED, b"")  # later copies checked (core §2.3)
-    assert refused(rec.variant(uart.fn, uart.CONFIGURE, 4, lambda t: [bad, good])) == (m.UNSUPPORTED, bytes([tag]))
-    assert refused(rec.variant(uart.fn, uart.CONFIGURE, 4, lambda t: [short, good])) == (m.MALFORMED, b"")
+    for pair in ([good, bad], [good, short], [bad, good], [short, good], [good, good]):
+        assert refused(rec.variant(uart.fn, uart.CONFIGURE, 4, lambda t, pair=pair: pair)) == (m.MALFORMED, b"")
     wire = riscv.Wire(hst, "oep.wire.rvswd")
     wire.attach(halt=True)
     idle = reg.WIRE_RVSWD.tlv["attach"]["idle_clock"]
-    r = rec.variant(wire.fn, wire.ATTACH, 9, lambda t: [(idle | m.TAG_CRITICAL, b"\x01"), (idle, b"\x00")])
-    assert r.resolution == m.COMPLETED                             # the first holds: rests low
-    assert refused(rec.variant(wire.fn, wire.ATTACH, 9, lambda t: [(idle, b"\x01"), (idle, b"\x01\x00")])) \
-        == (m.MALFORMED, b"")
+    for pair in ([(idle | m.TAG_CRITICAL, b"\x01"), (idle, b"\x00")], [(idle, b"\x01"), (idle, b"\x01\x00")]):
+        assert refused(rec.variant(wire.fn, wire.ATTACH, 9, lambda t, pair=pair: pair)) == (m.MALFORMED, b"")
 
 
 def test_an_unknown_critical_and_a_malformed_known_tlv_get_either_reason():

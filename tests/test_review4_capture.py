@@ -207,9 +207,8 @@ def test_analog_checker_requires_unsupported_for_a_frontend_of_a_role_not_planne
 
 
 @pytest.mark.parametrize("model_name", ["logic", "analog", "timeline"])
-def test_models_check_a_later_copy_of_a_configure_tlv(model_name):
-    """core §2.3 (capture §3.3's configure TLVs follow it): "後続の同じtagも上の検証対象である。例えば、正常な既知TLVの
-    後に同じtagで不正な長さの値があれば、要求全体をmalformedで断る。"."""
+def test_models_refuse_a_configure_tlv_twice(model_name):
+    """core §2.3: a known non-repeating TLV twice in a request is malformed, whatever the later copy holds."""
     if model_name == "timeline":
         from oep_client.conformance.capture_timeline_model import Track
         track = Track(2, None, [])
@@ -222,7 +221,7 @@ def test_models_check_a_later_copy_of_a_configure_tlv(model_name):
     from oep_client.virtual_core import Reject, tlv
     C = _LOGIC.tlv["configure"]
     good = tlv(C["mode"], bytes([_LOGIC.enum["mode"]["one_shot"]])) + tlv(C["rate"], struct.pack("<I", 1000))
-    tags(good + tlv(C["rate"], struct.pack("<I", 5)))                          # a well-formed later copy: ignored
-    with pytest.raises(Reject) as e:
-        tags(good + tlv(C["rate"], b"\5"))
-    assert e.value.reason == __import__("oep_client.registry", fromlist=["REJECT_REASONS"]).REJECT_REASONS["malformed"]
+    for later in (struct.pack("<I", 5), b"\5"):
+        with pytest.raises(Reject) as e:
+            tags(good + tlv(C["rate"], later))
+        assert e.value.reason == __import__("oep_client.registry", fromlist=["REJECT_REASONS"]).REJECT_REASONS["malformed"]

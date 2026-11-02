@@ -47,7 +47,7 @@ class Logic(Gpio):
             if not known:                                  # every copy of an unknown tag: critical -> unsupported (core §2.3)
                 if raw&128:raise Reject(R['unsupported'],bytes((raw,)))
                 continue
-            if key in seen:later.append((key,raw,value));continue    # a later copy: checked in settings, not used (core §2.3)
+            if key in seen:raise Reject(R['malformed'])             # a non-repeating tag twice (core §2.3)
             seen.add(key);got[key]=(raw,value)
         got['later']=later;return got
     def release_plans(self,functions):

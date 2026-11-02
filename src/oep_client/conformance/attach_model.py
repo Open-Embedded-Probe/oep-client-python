@@ -54,7 +54,7 @@ class Attachments(Dependencies):
             if tag not in known:
                 if raw&128:raise Reject(R['unsupported'],bytes((raw,)))
                 continue
-            if size!=known[tag]:raise Reject(R['malformed'])                 # every copy is checked; the first is used
+            if size!=known[tag] or tag in result:raise Reject(R['malformed'])   # another length, or the tag twice (core §2.3)
             channel,hold=struct.unpack('<HH',value)
             # not the reset line, or a hold past max_op_ms (debug §3, core §7.5): the tag as received, every copy
             if channel!=self.reset_channel or hold>self.ep.max_op_ms:raise Reject(R['unsupported'],bytes((raw,)))

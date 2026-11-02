@@ -35,6 +35,7 @@ class TlvRequests(Resources):
                 if len(value) != 1: raise Reject(3)
                 if len(repeated) == 255: raise Reject(11, bytes((tag,)))
                 repeated.append(value[0]);continue
+            if number in first: raise Reject(3)                # a non-repeating tag twice (core §2.3)
             width = 2 if (fn, op) == (1, 17) else 1
             if (fn, op) == (2, 16):
                 if not value or len(value) != value[0] + 1: raise Reject(3)
@@ -44,7 +45,7 @@ class TlvRequests(Resources):
             if (fn, op) == (2, 17):
                 if value == b'\x00': raise Reject(3)
                 if value != b'\x01': raise Reject(11, bytes((tag,)))
-            first.setdefault(number, value)              # the first is used; a later copy is checked too (core §2.3)
+            first[number] = value
         first[3] = repeated
         return first
 

@@ -248,7 +248,8 @@ def test_owner_input_validation_and_duplicate_tags():
     assert runner.c.results[-1]['status'] == 'passed', runner.c.results
     rows = runner.c.observed['retention_owner_inputs']
     assert len(rows) == 10
-    assert {tuple(r['tags']) for r in rows if r['case']=='duplicate'} == {(1,1),(1,129),(129,1)}
+    assert {r['case'] for r in rows if r['case'].startswith('duplicate')} == {'duplicate-1-1', 'duplicate-1-129', 'duplicate-129-1'}
+    assert all(r['reason'] == 'malformed' for r in rows if r['case'].startswith('duplicate'))
 
 
 @pytest.mark.parametrize('defect', ['accept', 'owner', 'resources', 'route', 'sequence', 'history', 'lease'])
@@ -278,22 +279,19 @@ def test_invalid_owner_side_effects_are_detected(defect):
     assert expected[defect] in runner.c.results[-1]['error'], runner.c.results
 
 
-@pytest.mark.parametrize('defect', ['last_wins', 'critical_separate', 'critical_unknown'])
+@pytest.mark.parametrize('defect', ['first_wins', 'last_wins'])
 def test_duplicate_owner_rules_are_detected(defect):
+    """core §2.3: a bench that takes either copy of an owner given twice, in place of refusing it malformed, fails."""
     _, model, _, runner = build()
     core = model.ep.current_core; handle = core.handle
     def altered(data, transport, **kwargs):
         _, corr, fn, op, sid = struct.unpack_from('<BHHBI', data)
-        duplicate = fn == 0 and op == 16 and sid != core.holder and b'first' in data[15:] and b'second' in data[15:]
-        if duplicate and defect == 'critical_unknown' and data[15] == 129:
-            return struct.pack('<BHBBB',2,corr,0,11,129)
-        result = handle(data, transport, **kwargs)
-        if duplicate and (defect == 'last_wins' or (defect == 'critical_separate' and data[23] == 129)):
-            core.owner = b'second'
-        return result
+        if fn == 0 and op == 16 and b'first' in data[15:] and b'second' in data[15:]:
+            first, second = data[15:23], data[23:]                         # tag len "first" / tag len "second"
+            data = data[:15] + (first if defect == 'first_wins' else second)
+        return handle(data, transport, **kwargs)
     core.handle = altered
     runner.c.confirm(); runner.c.identity()
     runner.c.check('CORE-RETENTION-OWNER-INPUTS', 'core §2.2/2.3/6.4', runner.owner_inputs)
     assert runner.c.results[-1]['status'] == 'failed', runner.c.results
-    expected = 'expected completed success' if defect == 'critical_unknown' else 'duplicate owner did not use first'
-    assert expected in runner.c.results[-1]['error'], runner.c.results
+    assert 'expected rejected malformed' in runner.c.results[-1]['error'], runner.c.results

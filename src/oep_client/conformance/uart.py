@@ -6,7 +6,7 @@ from .registered_ops import RegisteredOpsChecks, refusal_carries
 
 
 class UartChecks:
-    cases=('DEFAULT','RX-ONLY','TX-ONLY','CONFIGURE','CONFIGURE-FAIL','BAUD-BOUNDARY','FORMAT','FORMAT-SHAPE','FIRST-WINS','TLV','RECONFIGURE','READ','OVERFLOW','MARKS','CLEAR','WRITE','WRITE-REPLAY','CONFIGURE-REPLAY','COUNTS','SESSION','RECREATE','REPLACE','END','EXPIRY','FORCE')
+    cases=('DEFAULT','RX-ONLY','TX-ONLY','CONFIGURE','CONFIGURE-FAIL','BAUD-BOUNDARY','FORMAT','FORMAT-SHAPE','TWICE','TLV','RECONFIGURE','READ','OVERFLOW','MARKS','CLEAR','WRITE','WRITE-REPLAY','CONFIGURE-REPLAY','COUNTS','SESSION','RECREATE','REPLACE','END','EXPIRY','FORCE')
     def __init__(self,checks,adapter):self.c,self.a=checks,adapter
     @staticmethod
     def tlv(tag,value):return bytes((tag,))+struct.pack('<H',len(value))+value
@@ -86,9 +86,8 @@ class UartChecks:
                     for value in (1,2,12,32,255):self.refused(self.config_request(sid,format_value=value,raw=raw),'unsupported',bytes((raw,)))
             elif kind=='FORMAT-SHAPE':
                 for value in (b'',b'\0\0'):self.refused(self.config_request(sid,extra=self.tlv(self.format_tag,value)),'malformed')
-            elif kind=='FIRST-WINS':
-                self.configure(sid,format_value=4,extra=self.tlv(self.format_tag|128,b'\0'));require(self.status()[1]==4,'duplicate format did not retain first')
-                self.refused(self.config_request(sid,57600,0,extra=self.tlv(self.format_tag|128,b'\xff')),'unsupported',bytes((self.format_tag|128,)))   # a later copy is checked too (core §2.3)
+            elif kind=='TWICE':                            # format twice: malformed, whatever the copy (core §2.3)
+                for later in (b'\0',b'\xff'):self.refused(self.config_request(sid,57600,4,extra=self.tlv(self.format_tag|128,later)),'malformed')
             elif kind=='TLV':
                 self.configure(sid,extra=self.tlv(126,b'x'));self.refused(self.config_request(sid,extra=self.tlv(254,b'x')),'unsupported',b'\xfe');self.refused(self.config_request(sid,extra=b'\x7e\3\0x'),'malformed')
             elif kind=='RECONFIGURE':

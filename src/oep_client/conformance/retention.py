@@ -292,7 +292,10 @@ class RetentionChecks(ReplayPressureChecks):
                    ('short-header', b'\x01\x01', 'malformed'),
                    ('short-value', b'\x01\x02\0x', 'malformed'),
                    ('tag-zero', b'\0\x01\0x', 'malformed'),
-                   ('unknown-critical', b'\xfe\0\0', 'unsupported'))
+                   ('unknown-critical', b'\xfe\0\0', 'unsupported'),
+                   # the same tag twice, the critical bit on neither, the second or the first: malformed (core §2.3)
+                   *((f'duplicate-{a}-{b}', bytes((a,)) + b'\x05\0first' + bytes((b,)) + b'\x06\0second', 'malformed')
+                     for a, b in ((1, 1), (1, 129), (129, 1))))
         for name, tail, reason in invalid:
             with self.c.holding(1000, b'\x01\x08\0' + owner) as sid:
                 fn = self.a.functions[0]
@@ -326,16 +329,6 @@ class RetentionChecks(ReplayPressureChecks):
                 self.replay_unchanged(request, frame, reason='result_lost' if len(request) > 16 else None)
                 observations.append({'case': name, 'reason': reason, 'request_hex': request.hex(),
                                      'reply_hex': frame.hex(), 'owner_hex': owner.hex()})
-        for first_tag, second_tag in ((1, 1), (1, 129), (129, 1)):
-            first, second = b'first', b'second'
-            tail = bytes((first_tag,)) + struct.pack('<H', len(first)) + first
-            tail += bytes((second_tag,)) + struct.pack('<H', len(second)) + second
-            with self.c.holding(1000, tail):
-                state = self.c.success(self.c.request(self.c.core['lock_state']))
-                require(len(state) >= 5 and dict(reversed(tlvs(state[5:]))).get(1) == first,
-                        'duplicate owner did not use first tag number')
-                observations.append({'case': 'duplicate', 'tags': [first_tag, second_tag],
-                                     'owner_hex': first.hex(), 'tlv_hex': tail.hex()})
         self.c.observed['retention_owner_inputs'] = observations
 
     def session_zero(self):

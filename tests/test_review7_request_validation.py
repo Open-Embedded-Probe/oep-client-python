@@ -22,17 +22,18 @@ def _open(model, sid=0x1234):
 
 def test_attach_model_refuses_a_reset_hold_past_max_op_ms():
     """debug §3: hold_ms は core の max_op_ms の対象 / core §7.5: 明示的な待ちの引数がこれを超える要求は rejected
-    unsupported - the reset TLV's tag as received (0x85), the first copy and a later one alike (core §2.3)."""
+    unsupported - the reset TLV's tag as received (0x85); the reset twice is malformed (core §2.3)."""
     model = AttachModel(lambda: 0, boot_id=17)
     sid = _open(model)
     limit = model.ep.max_op_ms
     RESET = _WIRE.tlv["attach"]["reset"]
     reset = lambda hold, raw=RESET | 0x80: bytes((raw,)) + struct.pack("<HHH", 4, model.extension.reset_channel, hold)
     attach = struct.pack("<BHHI", 0, 0, 1, 2000)
-    for corr, tail, tag in ((2, reset(limit + 1), RESET | 0x80), (3, reset(10) + reset(limit + 1, RESET), RESET)):
-        reply = model.handle(_request(corr, 1, _WIRE.op["attach"], sid, attach + tail))
-        assert reply[3:6] == bytes((0, _R["unsupported"], tag)), reply.hex()
-        assert not model.extension.connections and not model.extension.touch
+    reply = model.handle(_request(2, 1, _WIRE.op["attach"], sid, attach + reset(limit + 1)))
+    assert reply[3:6] == bytes((0, _R["unsupported"], RESET | 0x80)), reply.hex()
+    reply = model.handle(_request(3, 1, _WIRE.op["attach"], sid, attach + reset(10) + reset(10, RESET)))
+    assert reply[3:5] == bytes((0, _R["malformed"])), reply.hex()
+    assert not model.extension.connections and not model.extension.touch
     reply = model.handle(_request(4, 1, _WIRE.op["attach"], sid, attach + reset(limit)))   # max_op_ms itself is taken
     assert reply[3:5] == b"\1\0", reply.hex()
 

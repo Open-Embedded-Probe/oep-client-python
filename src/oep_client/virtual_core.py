@@ -47,8 +47,8 @@ def tail(data, owner=False):
         if key == _reg.TAG_NAMED_EXTENSION and (not value or value[0] + 1 > len(value)):
             raise Reject(_reg.REJECT_REASONS["malformed"])   # a name_len past its value, critical or not (core §2.2)
         if owner and key == 1:
-            if not 1 <= size <= 32:
-                raise Reject(3)                          # a later copy is checked too (core §2.3)
+            if not 1 <= size <= 32 or key in first:
+                raise Reject(3)                          # another length, or owner twice (core §2.3)
             try:
                 value.decode('utf-8')
             except UnicodeDecodeError:

@@ -33,25 +33,22 @@ def _call(model, c, fn, op, payload, session):
     return model.handle(c.request(op, payload, fn=fn, session=session))
 
 
-def test_the_uart_model_checks_a_later_copy_of_the_format():
-    """configure with format 4 and a later copy 0xff (bit 7): the later copy is checked too - an undefined format is
-    unsupported, the tag as received (0x81), nothing changes. The model skipped every later copy; a later valid copy
-    leaves the first in use."""
+def test_the_uart_model_refuses_the_format_twice():
+    """core §2.3: configure with format 4 and the format again (0xff, bit 7) is malformed, and nothing changes."""
     from oep_client.conformance.uart import UartChecks
     from oep_client.conformance.uart_sample import SampleUartAdapter
     model, c = _uart()
     checker = UartChecks(c, SampleUartAdapter(model))
-    checker.cases = ('FIRST-WINS',)
+    checker.cases = ('TWICE',)
     r = checker.run()
-    assert next(row for row in r['checks'] if row['id'] == 'OEP-UART-FIRST-WINS')['status'] == 'passed'
+    assert next(row for row in r['checks'] if row['id'] == 'OEP-UART-TWICE')['status'] == 'passed'
     e = model.extension
     e.plans[2] = [0, 1]
     from oep_client.conformance.stream_model import Stream
     e.stream = Stream(model.ep, 0, 0)
-    tags = e.request_tags(2, 16, m.tlv(1, b'\x04') + m.tlv(1, b'\xff', critical=True))
     with pytest.raises(Reject) as ex:
-        e.dispatch_request(2, 16, struct.pack('<I', 115200), tags)
-    assert (ex.value.reason, ex.value.payload) == (11, b'\x81') and e.baud == 0
+        e.request_tags(2, 16, m.tlv(1, b'\x04') + m.tlv(1, b'\xff', critical=True))
+    assert ex.value.reason == 3 and e.baud == 0
 
 
 def test_the_uart_checker_requires_a_later_bad_format_copy_refused():

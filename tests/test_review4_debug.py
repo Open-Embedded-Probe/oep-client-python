@@ -119,11 +119,10 @@ def _old_scan_tags(e, fn, op, data):
     return result
 
 
-@pytest.mark.parametrize("case", ["ZERO-SPEED", "LATER-WIDTH"])
-def test_the_scan_checker_requires_max_speed_0_and_a_bad_later_copy_to_be_malformed(case):
-    """debug §1: "max_speed（u32 Hz）: ... 0はmalformed。" (scan: TLV 0x01) and core §2.3 "後続の同じtagも上の検証対象
-    である。" - the logical scan fixture answered max_speed 0 unsupported and skipped a later copy unchecked, and the
-    scan checker did not look; both cases now fail that reading."""
+@pytest.mark.parametrize("case", ["ZERO-SPEED"])
+def test_the_scan_checker_requires_max_speed_0_to_be_malformed(case):
+    """debug §1: "max_speed（u32 Hz）: ... 0はmalformed。" (scan: TLV 0x01) - a scan fixture that answers max_speed 0
+    unsupported fails the scan checker."""
     from oep_client.conformance.scan import ScanChecks
     from test_conformance_scan import setup as scan_setup
     model, c, a = scan_setup()

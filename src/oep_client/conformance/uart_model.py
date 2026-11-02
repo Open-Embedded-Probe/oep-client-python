@@ -29,9 +29,8 @@ class Uart(Gpio):
             if not key or len(data)<3+size:raise Reject(3)
             value,data=data[3:3+size],data[3+size:]
             if op==16 and key==1:
-                if size!=1:raise Reject(3)
-                if key in result:result.setdefault('later',[]).append((raw,value))   # used: the first; a later copy is checked too (core §2.3)
-                else:result[key]=(raw,value)
+                if size!=1 or key in result:raise Reject(3)       # another length, or the tag twice (core §2.3)
+                result[key]=(raw,value)
             elif raw&128:raise Reject(11,bytes((raw,)))
         return result
     def close(self,reason):

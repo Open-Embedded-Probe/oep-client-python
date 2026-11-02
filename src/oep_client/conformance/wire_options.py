@@ -58,6 +58,10 @@ class WireOptionsChecks(AttachChecks):
     def normal(self,fn=1,idle=None,reset=None,targetsel=None,method=0,behavior='ok',extra=b'',marked=True):
         self.fresh();self.a.behavior(behavior)
         with self.c.holding(3000) as sid:self.attached(sid,fn,idle,reset,targetsel,method,marked=marked,extra=extra)
+    def refused_twice(self):                            # idle_clock and reset each twice: malformed (core §2.3)
+        self.fresh()
+        with self.c.holding(3000) as sid:
+            self.refused(self.option_request(sid,idle=1,reset=(6,1),extra=self.tlv(self.T['idle_clock'],b'\x00')+self.tlv(self.T['reset'],struct.pack('<HH',6,2))),'malformed')
     def cleanup(self,fn=1,idle=1,targetsel=None,method=0):
         self.fresh()
         with self.c.holding(3000) as sid:
@@ -97,7 +101,6 @@ class WireOptionsChecks(AttachChecks):
             elif kind=='IDLE':
                 for marked in (True,False):
                     self.refused(self.option_request(sid,idle=bad_idle,marked=marked),'unsupported',bytes((idle_clock|128 if marked else idle_clock,)))
-                    self.refused(self.option_request(sid,idle=1,marked=marked,extra=self.tlv(idle_clock,bytes((bad_idle,)))),'unsupported',bytes((idle_clock,)))   # a later copy is checked too
                 for fn in (2,3):                                   # rvswd's tag: unknown on swio / swd (core §2.3)
                     self.refused(self.option_request(sid,fn,idle=1),'unsupported',bytes((idle_clock|128,)))
                     rid,_=self.attached(sid,fn,extra=self.tlv(idle_clock,b'\x01'));self.detach(sid,fn,rid)
@@ -133,7 +136,7 @@ class WireOptionsChecks(AttachChecks):
         cases += [('RESET-HALT-'+str(fn),lambda fn=fn:self.normal(fn,reset=(6,1),method=1)) for fn in (1,2)]
         cases += [('RESET-ZERO',lambda:self.normal(reset=(6,0))),('RESET-RECOVER',lambda:self.normal(reset=(6,1),behavior='dm-recover')),('RESET-FAILED',self.failed_reset)]
         cases += [('TARGETSEL-'+str(value),lambda value=value:self.normal(3,targetsel=value)) for value in (None,0x01000001,0xffffffff)]
-        cases += [('DORMANT',lambda:self.normal(3,behavior='dormant')),('FIRST-WINS',lambda:self.normal(idle=1,reset=(6,1),extra=self.tlv(self.T['idle_clock'],b'\x00')+self.tlv(self.T['reset'],struct.pack('<HH',6,2)))),('DETACH-IDLE',self.cleanup),('DETACH-SWD',lambda:self.cleanup(3,None,0x01000001)),('REPLAY',self.replay)]
+        cases += [('DORMANT',lambda:self.normal(3,behavior='dormant')),('TWICE',lambda:self.refused_twice()),('DETACH-IDLE',self.cleanup),('DETACH-SWD',lambda:self.cleanup(3,None,0x01000001)),('REPLAY',self.replay)]
         cases += [('DETACH-HALTED',lambda:self.cleanup(method=1)),('END-IDLE',self.end_idle),('UNMARKED-RV',lambda:self.normal(idle=1,reset=(6,1),marked=False)),('UNMARKED-SWD',lambda:self.normal(3,targetsel=0x01000001,marked=False))]
         cases += [('CONFLICT-'+str(value),lambda value=value:self.target_conflict(value)) for value in (None,0x01000001,0x01000002)]
         cases += [(kind,lambda kind=kind:self.refusal(kind)) for kind in ('NO-RESET','CHANNEL','HOLD','SELF-CONFLICT','BUSY-RESET','DISABLED','OUTPUT','RESERVED','IDLE','WIDTH','TARGETSEL-WIRE','MISSING-SPEED','SESSION')]

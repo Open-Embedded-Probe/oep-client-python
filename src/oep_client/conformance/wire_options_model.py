@@ -37,12 +37,7 @@ class WireOptions(Attachments):
                 if raw&128:raise Reject(R['unsupported'],bytes((raw,)))
                 continue
             if size!=known[tag]:raise Reject(R['malformed'])
-            if tag in result:                                  # a later copy is checked too (core §2.3); the first is used
-                if tag==AT['idle_clock'] and value[0] not in IDLE.values():raise Reject(R['unsupported'],bytes((raw,)))
-                if tag==AT['reset']:
-                    channel,hold=struct.unpack('<HH',value)
-                    if not self.reset_supported or channel!=6 or hold>self.ep.max_op_ms:raise Reject(R['unsupported'],bytes((raw,)))
-                continue
+            if tag in result:raise Reject(R['malformed'])     # a non-repeating tag twice (core §2.3)
             result[tag]=(raw,value)
         return result
     def close_connection(self,rid):

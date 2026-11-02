@@ -79,18 +79,15 @@ def test_required_missing_does_not_use_broken_transport_values():
     assert "confirm's transport TLV" in dump.required_missing(_confirm(b"\x00\x00"), good + [(TRANSPORT, bytes([0, 6, 0xFF]))])
 
 
-# ---- the TLV-request model checks a later copy too ------------------------------------------------------------------
+# ---- the TLV-request model refuses a non-repeating tag twice (core §2.3) ----------------------------------------------
 
-def test_tlv_request_model_checks_a_later_copy():
+def test_tlv_request_model_refuses_a_tag_twice():
     from oep_client.conformance.tlv_request_model import TlvRequests
     e = TlvRequests()
-    with pytest.raises(Reject) as r:
-        e.request_tags(1, 16, m.tlv(1, b"\x07") + m.tlv(1, b"", critical=True))
-    assert r.value.reason == 3
-    with pytest.raises(Reject) as r:
-        e.request_tags(2, 17, m.tlv(1, b"\x01") + m.tlv(1, b"\x02", critical=True))
-    assert (r.value.reason, r.value.payload) == (11, b"\x81")
-    assert e.request_tags(1, 16, m.tlv(1, b"\x07") + m.tlv(1, b"\x09"))[1] == b"\x07"
+    for context, first, second in ((16, b"\x07", b""), (17, b"\x01", b"\x02"), (16, b"\x07", b"\x09")):
+        with pytest.raises(Reject) as r:
+            e.request_tags(1 if context == 16 else 2, context, m.tlv(1, first) + m.tlv(1, second, critical=True))
+        assert r.value.reason == 3
 
 
 def test_tlv_request_checker_fails_a_model_that_skips_later_copies():
@@ -158,20 +155,6 @@ def test_logic_checker_runs_raw_tags_and_first_wins_on_the_models():
     assert report["status"] == "passed", [(x["id"], x.get("error")) for x in report["checks"]]
 
 
-def test_logic_checker_fails_a_model_that_does_not_check_later_copies(monkeypatch):
-    from test_conformance_logic import setup
-    from oep_client.conformance import logic_model as virtual_logic_model
-    from oep_client.conformance.logic import LogicChecks
-    from oep_client.conformance.logic_sample import SampleLogicAdapter
-    original = virtual_logic_model.Logic.settings
-    monkeypatch.setattr(virtual_logic_model.Logic, "settings",
-                        lambda self, tags: original(self, {k: v for k, v in tags.items() if k != "later"}))
-    model, checks = setup()
-    checker = LogicChecks(checks, SampleLogicAdapter(model))
-    checker.cases = ("FIRST-WINS",)
-    assert checker.run()["status"] == "failed"
-
-
 def test_logic_checker_fails_a_model_that_skips_a_repeated_unknown_tag(monkeypatch):
     from test_conformance_logic import setup
     from oep_client.conformance import logic_model as virtual_logic_model
@@ -201,7 +184,7 @@ def test_logic_checker_fails_a_model_that_skips_a_repeated_unknown_tag(monkeypat
 
 
 @pytest.mark.parametrize("which", ["analog", "timeline"])
-def test_other_capture_models_check_later_copies(which):
+def test_other_capture_models_refuse_a_tag_twice(which):
     C, OP = _CAP.tlv["configure"], _CAP.op
     good = tlv(C["mode"], bytes([_CAP.enum["mode"]["one_shot"]])) + tlv(C["rate"], struct.pack("<I", 1000)) + tlv(C["samples"], struct.pack("<I", 8))
     if which == "timeline":
@@ -214,13 +197,10 @@ def test_other_capture_models_check_later_copies(which):
         e.roles = [1, 3]
         parse, settle = (lambda data: e.request_tags(2, OP["configure"], data)), e.settings
     rate = C["rate"] | 0x80                                                    # the rate, critical
-    settle(parse(good + tlv(rate, struct.pack("<I", 500))))                    # a later copy the probe handles: ignored
-    with pytest.raises(Reject) as r:
-        settle(parse(good + tlv(rate, struct.pack("<I", 1))))
-    assert (r.value.reason, r.value.payload) == (_R["unsupported"], bytes([rate]))
-    with pytest.raises(Reject) as r:
-        settle(parse(good + tlv(C["rate"], struct.pack("<I", 0))))
-    assert r.value.reason == _R["malformed"]
+    for later in (500, 1, 0):                                                  # a non-repeating tag twice (core §2.3)
+        with pytest.raises(Reject) as r:
+            settle(parse(good + tlv(rate, struct.pack("<I", later))))
+        assert r.value.reason == _R["malformed"]
 
 
 # ---- the bench: a later copy of a capture configure TLV is checked for its value too ---------------------------------
@@ -240,11 +220,13 @@ def _configure(rate=1000):
 @pytest.mark.parametrize("later, expected", [
     (m.tlv(c.RATE, struct.pack("<I", 0), critical=True), (m.REJECTED, m.MALFORMED, b"")),
     (m.tlv(c.SAMPLES, struct.pack("<I", 0)), (m.REJECTED, m.MALFORMED, b"")),
-    (m.tlv(c.RATE, struct.pack("<I", 0xFFFFFFFF), critical=True), (m.REJECTED, m.UNSUPPORTED, bytes([c.RATE | 0x80]))),
-    (m.tlv(c.MODE, b"\x09", critical=True), (m.REJECTED, m.UNSUPPORTED, bytes([c.MODE | 0x80]))),
-    (m.tlv(c.TRIGGER, struct.pack("<BBI", c.LEVEL, 0, 2)), (m.REJECTED, m.UNSUPPORTED, bytes([c.TRIGGER]))),
-], ids=["rate-0", "samples-0", "rate-out-of-range", "mode-undefined", "trigger-value-undefined"])
-def test_bench_checks_a_later_copy_of_a_configure_tlv(later, expected):
+    (m.tlv(c.RATE, struct.pack("<I", 0xFFFFFFFF), critical=True), (m.REJECTED, m.MALFORMED, b"")),
+    (m.tlv(c.MODE, b"\x09", critical=True), (m.REJECTED, m.MALFORMED, b"")),
+    (m.tlv(c.TRIGGER, struct.pack("<BBI", c.LEVEL, 0, 2)), (m.REJECTED, m.MALFORMED, b"")),
+    (m.tlv(c.RATE, struct.pack("<I", 5000), critical=True), (m.REJECTED, m.MALFORMED, b"")),
+], ids=["rate-0", "samples-0", "rate-out-of-range", "mode-undefined", "trigger-value-undefined", "rate-good"])
+def test_bench_refuses_a_configure_tlv_twice(later, expected):
+    """core §2.3: a non-repeating configure TLV twice is malformed, whatever the later copy holds."""
     from test_virtual_bench_capture import bench
     ep, hst, lc, clock = bench()
     core.plan_apply(hst, [(lc.fn, 0, 20), (lc.fn, 1, 21)])
@@ -253,7 +235,7 @@ def test_bench_checks_a_later_copy_of_a_configure_tlv(later, expected):
         payload += m.tlv(c.TRIGGER, struct.pack("<BBI", c.LEVEL, 0, 1))
     r = _ask(hst, lc.fn, lc.CONFIGURE, payload + later)
     assert (r.resolution, r.detail, r.payload) == expected
-    ok = _ask(hst, lc.fn, lc.CONFIGURE, _configure() + m.tlv(c.RATE, struct.pack("<I", 5000), critical=True))
+    ok = _ask(hst, lc.fn, lc.CONFIGURE, _configure())
     assert ok.resolution == m.COMPLETED and ok.detail == m.SUCCESS
 
 

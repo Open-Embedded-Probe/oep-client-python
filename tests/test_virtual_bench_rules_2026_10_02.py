@@ -194,15 +194,14 @@ def test_c02_probe_config_a_mode_a_later_revision_may_define():
     assert (r.detail, r.payload) == (m.UNSUPPORTED, item_refused())
 
 
-# ---- C-03 (as the rule review 2026-10-07 left it): repeated, short and long request TLVs -------------------------
+# ---- C-03: repeated, short and long request TLVs ----------------------------------------------------------------
 
-def test_a_non_repeating_tag_twice_the_first_is_used():
-    """core §2.3 (rule review 2026-10-07): a tag the definition does not repeat, twice - the reader uses the first
-    (no malformed any more)."""
+def test_a_non_repeating_tag_twice_is_malformed():
+    """core §2.3: a tag the definition does not repeat, twice in a request - malformed, and nothing runs."""
     ep, h = bench()
     once = m.tlv(IDLE_TLV, b"\x01", critical=True)
-    r = h.raw(1, W["attach"], att(ep.pairs[1][0]) + once + m.tlv(IDLE_TLV, b"\x00"))
-    assert r.succeeded and ep.conns[struct.unpack_from("<I", r.payload)[0]].idle_clock == 1
+    assert h.raw(1, W["attach"], att(ep.pairs[1][0]) + once + m.tlv(IDLE_TLV, b"\x00")).detail == m.MALFORMED
+    assert not ep.conns
 
 
 @pytest.mark.parametrize("critical", [False, True])

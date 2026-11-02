@@ -39,7 +39,7 @@ def test_invalid_fixture_or_registry_blocks_before_wire(invalid):
 
 
 @pytest.mark.parametrize('defect,case',[('zero_speed_taken','WIRE-ZERO-SPEED'),('critical_ignored','WIRE-TLV'),
-    ('noncritical_rejected','WIRE-UNMARKED'),('raw_tag_lost','WIRE-TLV'),('last_wins','WIRE-FIRST-WINS'),
+    ('noncritical_rejected','WIRE-UNMARKED'),('raw_tag_lost','WIRE-TLV'),('accept_twice','WIRE-TWICE'),
     ('later_copy_unchecked','WIRE-MALFORMED'),
     ('refusal_touches','WIRE-PINS'),('console_extra_byte','CONSOLE-RESOURCE'),('arm_console','CONSOLE-RESOURCE'),
     ('duplicate_stream','CONSOLE-DUPLICATE'),('streams_reversed','CONSOLE-INDEPENDENT'),('speed_exceeds','WIRE-BUSY'),('replay_executes','WIRE-REPLAY')])
@@ -49,11 +49,13 @@ def test_attach_and_console_mutants_fail(defect,case):
         result=restart();e=model.extension;parse=e.request_tags;dispatch=e.dispatch_request
         def bad_tags(fn,op,data):
             if defect=='critical_ignored':data=data.replace(bytes((UNKNOWN|128,1,0))+b'x',bytes((UNKNOWN,1,0))+b'x')
+            if defect=='accept_twice' and fn==1 and op==WOP['attach']:   # a bench that takes the first of two resets
+                first=data.find(bytes((RESET|128,4,0)));again=data.find(bytes((RESET|128,4,0)),first+7) if first>=0 else -1
+                if again>=0:data=data[:again]+data[again+7:]
             values=parse(fn,op,data)
             if defect=='noncritical_rejected' and RESET in values and values[RESET][0]==RESET:
                 from oep_client.virtual_core import Reject
                 raise Reject(R['unsupported'],bytes((RESET,)))
-            if defect=='last_wins' and fn==1 and op==WOP['attach'] and bytes((RESET|128,4,0,8,0,20,0)) in data:values[RESET]=(RESET|128,b'\x08\0\x14\0')
             return values
         def raw_lost(fn,op,data):
             from oep_client.virtual_core import Reject

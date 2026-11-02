@@ -29,11 +29,9 @@ class ScanOptions(WireOptions):
             if tag not in known:
                 if raw&128:raise Reject(R['unsupported'],bytes((raw,)))
                 continue
-            if size!=known[tag]:raise Reject(R['malformed'])     # every copy's length is checked (core §2.3)
+            if size!=known[tag] or tag in result:raise Reject(R['malformed'])   # another length, or the tag twice (core §2.3)
             if tag==SC['max_speed'] and not struct.unpack('<I',value)[0]:raise Reject(R['malformed'])   # max_speed 0 (debug §1)
-            if tag in result and (tag==SC['max_speed'] and struct.unpack('<I',value)[0]<1000 or tag==SC['idle_clock'] and value[0] not in IDLE.values()):
-                raise Reject(R['unsupported'],bytes((raw,)))                  # a later copy's unhandled value (core §2.3)
-            result.setdefault(tag,(raw,value))
+            result[tag]=(raw,value)
         return result
     def dispatch_request(self,fn,op,payload,tags):
         if fn>3 or op!=WOP['scan']:return super().dispatch_request(fn,op,payload,tags)

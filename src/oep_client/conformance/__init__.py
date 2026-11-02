@@ -781,13 +781,16 @@ class Checks:
         tail = b'\x01' + struct.pack('<H', len(owner)) + owner
         if not self.owner_displayed(tail):
             raise NotApplicable('owner display not implemented (core §6.4: optional); a non-critical owner is ignored')
-        tail += b'\x81\x06\x00second'  # same tag, critical flag, first occurrence wins
+        twice = tail + b'\x81\x06\x00second'  # the same tag again (critical bit set): malformed (core §2.3)
+        self.corr = 0
+        self.rejected(self.request(self.core['open'], struct.pack('<IB', 3000, 0) + twice,
+                                   session=secrets.randbelow(0xffffffff) + 1), 'malformed')
         with self.holding(tail=tail) as sid:
             def observed_owner():
                 p = self.success(self.request(self.core['lock_state']))
                 require(len(p) >= 5 and p[0] == 1, 'owner lock state')
                 values = dict(reversed(tlvs(p[5:])))
-                require(values.get(1) == owner, 'owner changed or first duplicate not used')
+                require(values.get(1) == owner, 'owner changed')
             observed_owner()
             self.success(self.request(self.core['open'], struct.pack('<IB', 3000, 0) + b'\x01\x06\x00second', session=sid))
             observed_owner()

@@ -6,7 +6,7 @@ from .registered_ops import RegisteredOpsChecks, refusal_carries
 
 
 class LogicChecks:
-    cases=('STATE0','QUERY','CONTRACT','WIDTH','RAW-TAGS','FIRST-WINS','RATE','SAMPLES','TRIGGER','PRETRIGGER','WAIT','ONE-SHOT','READ','READ-GAP','GENERATION','GEN-EXHAUST','PAGES','REPEAT','RELEASE','SHORT-STOP','ERROR','RECONFIGURE','REPLAY-START','REPLAY-RELEASE','PLAN-REPLACE','PLAN-RELEASE','END','EXPIRY','FORCE','SESSION')
+    cases=('STATE0','QUERY','CONTRACT','WIDTH','RAW-TAGS','TWICE','RATE','SAMPLES','TRIGGER','PRETRIGGER','WAIT','ONE-SHOT','READ','READ-GAP','GENERATION','GEN-EXHAUST','PAGES','REPEAT','RELEASE','SHORT-STOP','ERROR','RECONFIGURE','REPLAY-START','REPLAY-RELEASE','PLAN-REPLACE','PLAN-RELEASE','END','EXPIRY','FORCE','SESSION')
     sample_trigger=(1,0,1)   # a trigger the fixture takes (level, role 0)
     def __init__(self,checks,adapter):self.c,self.a=checks,adapter
     @staticmethod
@@ -100,12 +100,8 @@ class LogicChecks:
                 self.configure(sid);self.refused(self.req(2,'configure',sid,self.settings()+self.tlv(254,b'x')),'unsupported',b'\xfe')
                 # core §2.3: every copy of an unknown tag counts - a critical one after a non-critical one is refused
                 self.refused(self.req(2,'configure',sid,self.settings()+self.tlv(126,b'x')+self.tlv(254,b'x')),'unsupported',b'\xfe')
-            elif kind=='FIRST-WINS':
-                v=self.answer(self.c.success(self.req(2,'configure',sid,self.settings()+self.tlv(self.tags['rate']|128,struct.pack('<I',500)))));require(struct.unpack('<II',v[self.answers['actual_rate']])==(1000,1),'duplicate rate did not retain first')
-                # core §2.3: a later copy is checked too - a value excluded (rate 0) is malformed, one the probe does not
-                # handle (below the declared range) unsupported with that copy's tag as received
-                self.refused(self.req(2,'configure',sid,self.settings()+self.tlv(self.tags['rate'],struct.pack('<I',0))),'malformed')
-                self.refused(self.req(2,'configure',sid,self.settings()+self.tlv(self.tags['rate']|128,struct.pack('<I',1))),'unsupported',bytes((self.tags['rate']|128,)))
+            elif kind=='TWICE':                            # a non-repeating tag twice: malformed, whatever the copy (core §2.3)
+                for later in (500,0,1):self.refused(self.req(2,'configure',sid,self.settings()+self.tlv(self.tags['rate']|128,struct.pack('<I',later))),'malformed')
             elif kind=='RATE':
                 for rate in (100,537,1000):require(struct.unpack('<II',self.configure(sid,rate=rate)[self.answers['actual_rate']])==(rate,1),'exact fixture rate')
                 for rate in (99,1001):self.refused(self.req(2,'configure',sid,self.settings(rate=rate)),'unsupported',bytes((self.tags['rate'],)))

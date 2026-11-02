@@ -508,14 +508,13 @@ def test_a_request_tlvs_value_is_not_extended():
     assert w.raw(plan, PLAN.op["plan_apply"], assign(4, 1, 20)).succeeded
 
 
-def test_a_tag_twice_the_first_is_used_and_the_later_is_checked_too(ep):
-    """core §2.3: a non-repeating tag sent twice: the first is used; the later one is checked as well - a good owner
-    followed by an owner of a wrong length makes the whole open malformed."""
+def test_a_request_tag_twice_is_malformed_and_an_answer_tag_twice_reads_the_first(ep):
+    """core §2.3: a non-repeating tag twice in a request is malformed, whatever the later copy holds, and nothing
+    changes; a reader of an answer uses the first copy."""
     w = Wire(ep)
-    rejected(w.open(tail=m.tlv(OWNER, b"good") + m.tlv(OWNER, b"x" * 33)), m.MALFORMED)
-    assert ep_holder(ep) is None
-    assert w.open(tail=m.tlv(OWNER, b"one") + m.tlv(OWNER, b"two")).succeeded
-    assert w.lock_state()[2] == b"one"
+    for later in (b"x" * 33, b"two"):
+        rejected(w.open(tail=m.tlv(OWNER, b"good") + m.tlv(OWNER, later)), m.MALFORMED)
+        assert ep_holder(ep) is None
     assert m.Tail.parse(m.tlv(5, b"a") + m.tlv(5, b"b")).get(5) == b"a"
 
 
@@ -2186,18 +2185,23 @@ def test_bit_7_alias_in_an_answer_mutant(monkeypatch):
         test_bit_7_is_the_critical_mark_in_requests_and_an_unknown_tag_in_answers(build())
 
 
-def test_later_duplicate_unchecked_mutant(monkeypatch):
-    """core §2.3 mutant: a probe that checks only the first copy of a non-repeating tag is caught."""
+def test_duplicate_accepted_mutant(monkeypatch):
+    """core §2.3 mutant: a probe that takes the first copy of a non-repeating tag given twice is caught."""
     orig = endpoint.Take.tail
 
     def first_only(self, known=frozenset(), repeats=frozenset(), defer=False):
-        got = orig(self, known, repeats, defer)
-        seen = set()
-        self.repeated = [(t, v) for t, v in self.repeated if not (t & 0x7F in seen or seen.add(t & 0x7F))]
-        return got
+        kept, seen, rest = b"", set(), self.data[self.at:]
+        while len(rest) >= 3:
+            tag, size = struct.unpack_from("<BH", rest)
+            item, rest = rest[:3 + size], rest[3 + size:]
+            if tag & 0x7F not in seen or tag & 0x7F in repeats:
+                kept += item
+            seen.add(tag & 0x7F)
+        self.data = self.data[:self.at] + kept + rest
+        return orig(self, known, repeats, defer)
     monkeypatch.setattr(endpoint.Take, "tail", first_only)
     with pytest.raises(AssertionError):
-        test_a_tag_twice_the_first_is_used_and_the_later_is_checked_too(build())
+        test_a_request_tag_twice_is_malformed_and_an_answer_tag_twice_reads_the_first(build())
 
 
 def test_header_order_mutant(monkeypatch):

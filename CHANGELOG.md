@@ -1,6 +1,14 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Changed (breaking): follows oep-spec 364827b (core §2.3) - a request with a known non-repeating TLV given twice
+  is malformed. The virtual bench refuses it; the conformance checkers and their models check that refusal in place of
+  "the first copy is used" (core owner, attach reset, scan / scan options, wire options, logic / analog / timeline
+  configure, UART format, TLV requests). An answer's reader still uses the first copy.
+- (JA) 変更（壊す変更）: oep-spec 364827b（core §2.3）に従う。繰り返さない既知の TLV を 2 回持つ要求は malformed。仮想ベンチは
+  それを断り、適合検査とそのモデルは「最初のものを使う」の代わりにその断りを確かめる（core の owner、attach の reset、scan と
+  scan の option、wire の option、logic / analog / timeline の configure、UART の format、TLV の要求）。応答の読み手は、これまで
+  どおり最初のものを使う。
 - (EN) Changed (breaking): the conformance checkers and their models are one subpackage, `oep_client.conformance`
   (`conformance_<x>` -> `oep_client.conformance.<x>`, `virtual_<x>_model` -> `oep_client.conformance.<x>_model`); the
   package's top level keeps the host library, the CLI and the virtual bench. `oep-conformance` is unchanged.

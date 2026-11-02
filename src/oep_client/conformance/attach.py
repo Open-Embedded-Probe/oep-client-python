@@ -96,9 +96,8 @@ class AttachChecks:
                 for tail in (b'\0\0\0',bytes((reset,)),bytes((self.unknown|128,4,0))+b'x',self.reset_tlv()+self.tlv(reset,b'x')):
                     self.refused(self.attach_request(sid,extra=tail),'malformed')
             elif kind=='UNMARKED':self.attach(sid,extra=self.reset_tlv(marked=False)+self.tlv(self.unknown,b'x'))
-            elif kind=='FIRST-WINS':
-                self.attach(sid,speed=1500,extra=self.reset_tlv(hold=10)+self.reset_tlv(hold=20))
-                require(self.a.state()['touch'][-1][2]==10,'a later copy of reset was used')
+            elif kind=='TWICE':                            # a non-repeating tag twice: malformed (core §2.3)
+                self.refused(self.attach_request(sid,speed=1500,extra=self.reset_tlv(hold=10)+self.reset_tlv(hold=20)),'malformed')
             elif kind=='BUSY':
                 self.attach(sid);self.refused(self.attach_request(sid,pair=(0,1)),'unavailable',cause='pin_in_use')   # never joined
                 self.refused(self.attach_request(sid,fn=2,pair=(0,65535)),'unavailable',cause='pin_in_use')
@@ -186,7 +185,7 @@ class AttachChecks:
             self.c.observed['attach_fixture']={'selection':self.a.selection,'pairs':self.a.pairs,'mechanisms':self.a.mechanisms,'scope':'logical-model','reference':self.a.reference}
         self.c.check('OEP-ATTACH-CONTEXT','debug §1/3/5; console §1',context)
         if self.c.results[-1]['status']!='passed':self.c.abort=True
-        cases=[('WIRE-'+kind,lambda kind=kind:self.wire_case(kind)) for kind in ('SHORT','ZERO-SPEED','WIDTH','LOW-SPEED','PINS','METHOD','TLV','MALFORMED','UNMARKED','FIRST-WINS','BUSY','CAPACITY','FAILED','REPLAY')]
+        cases=[('WIRE-'+kind,lambda kind=kind:self.wire_case(kind)) for kind in ('SHORT','ZERO-SPEED','WIDTH','LOW-SPEED','PINS','METHOD','TLV','MALFORMED','UNMARKED','TWICE','BUSY','CAPACITY','FAILED','REPLAY')]
         cases += [('CONSOLE-'+kind,lambda kind=kind:self.console_case(kind)) for kind in ('UNSUPPORTED','RESOURCE','DUPLICATE','MALFORMED','INDEPENDENT','RECREATE-REPLAY')]+[('LOCKS',self.locks)]
         for name,case in cases:
             first=len(self.a.trace);self.c.check('OEP-ATTACH-'+name,'debug §1/3/5; console §1/2/3; core §2.3/5.2',case);self.c.results[-1]['adapter_trace']=self.a.trace[first:]

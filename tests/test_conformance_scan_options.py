@@ -29,10 +29,10 @@ from oep_client.virtual_core import Reject
 @pytest.mark.parametrize('fault,case',[
     ('clock','IDLE-1'),('data','IDLE-None'),('selector_ignored','SELECTOR-16777217'),
     ('default_selected','SELECTOR-None'),('zero_ignored','ZERO-SELECTOR'),
-    ('wrong_kind','SELECTOR-16777217'),('wrong_identity','FIRST-IDLE'),
+    ('wrong_kind','SELECTOR-16777217'),('wrong_identity','TWICE-IDLE'),
     ('implicit_select','IDLE-None'),('release_leaked','IDLE-1'),
     ('allocated','PREFIX'),('prefix_ignored','PREFIX'),('existing_buffer','RETAINED'),
-    ('early_release','IDLE-1'),('read_level','IDLE-1'),('speed','FIRST-IDLE'),
+    ('early_release','IDLE-1'),('read_level','IDLE-1'),('speed','TWICE-IDLE'),
     ('bad_version','VERSIONS'),('early_touch','REFUSE-BAD-LATE'),
     ('idle_value_ignored','REFUSE-IDLE'),
 ])

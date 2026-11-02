@@ -284,7 +284,7 @@ class Take:
 
     def tail(self, known: set[int] = frozenset(), repeats: set[int] = frozenset(),
              defer: bool = False) -> dict[int, bytes]:
-        """-> known tags without the critical bit -> value (the first of a non-repeating tag sent twice)."""
+        """-> known tags without the critical bit -> value. A known tag not in `repeats` given twice is malformed (core §2.3)."""
         rest, at, got = self.data[self.at:], 0, {}
         self.critical = set()                                      # known tags that came with the critical bit
         self.repeated = []                                         # every known TLV in order, critical bit kept
@@ -303,9 +303,9 @@ class Take:
             if number == reg.TAG_NAMED_EXTENSION and (not value or value[0] + 1 > len(value)):
                 raise Reject(m.MALFORMED)                          # a name_len past its value, critical or not (core §2.2)
             if number in known:
-                self.repeated.append((tag, value))                 # later copies are checked too (core §2.3)
                 if number in got and number not in repeats:
-                    continue                                       # the first is used (core §2.3)
+                    raise Reject(m.MALFORMED)                      # a non-repeating tag twice (core §2.3)
+                self.repeated.append((tag, value))
                 got.setdefault(number, value)
                 if tag & m.TAG_CRITICAL:
                     self.critical.add(number)
