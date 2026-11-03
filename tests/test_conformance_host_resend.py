@@ -96,7 +96,7 @@ def test_missing_controls_do_not_pass(missing):
 
 @pytest.mark.parametrize('case',['LOST-COBS','LOST-LENGTH','PIPELINE-COBS','FAILURE-RECOVER'])
 def test_argument_time_resend_floor_is_detected(monkeypatch,case):
-    # core §4.4 at a09fa45: a resend waits max_op_ms + 1000 ms + transfer, not the argument time (0) + 1000 + transfer.
+    # core §4.4: a resend waits max_op_ms + 1000 ms + transfer, not the argument time (0) + 1000 + transfer.
     from oep_client import link
     monkeypatch.setattr(link.SerialLink,'_wait',lambda d:1+d.transfer_s())
     r=HostResendChecks(SampleHostResendAdapter(),spec=SPEC).run();row=next(x for x in r['checks'] if x['id']=='HOST-RESEND-'+case)

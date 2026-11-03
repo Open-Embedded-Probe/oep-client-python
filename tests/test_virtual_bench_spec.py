@@ -165,7 +165,7 @@ def test_core_describe_lists_the_transports_and_max_op_ms():
 
 @pytest.mark.parametrize("profile", sorted(virtual_bench.PROFILES))
 def test_core_describe_has_no_removed_tags(profile):
-    """core §7.5 (rule review 2026-10-07): reserved (0x44), profile (0x45), resets_on_open (0x47) and discoverable
+    """core §7.5: reserved (0x44), profile (0x45), resets_on_open (0x47) and discoverable
     (0x4A) are gone - the registry names none of them and no virtual bench profile describes them (implementation went
     from the common tags, whose 0x07 is now ops). 0x44 and 0x45 are channel_name and netif now (core §7.5: numbers
     removed before the freeze may be used again)."""
@@ -386,7 +386,7 @@ def test_dmi_and_run_answers_count_their_values_and_rejects_follow_the_order():
 
 @pytest.mark.parametrize("profile", sorted(virtual_bench.PROFILES))
 def test_max_length_fits_a_read_answer_and_a_write_request_in_max_frame(profile):
-    """The bench profiles' choice (the reference firmware's), not a rule of oep-if-debug §4.5 (a09fa45: max_length is
+    """The bench profiles' choice (the reference firmware's), not a rule of oep-if-debug §4.5 (max_length is
     the function's limit and the host sizes each route's count): max_length (bytes, a multiple of 4) = max_frame - 24
     rounded down to a word, so that read_block's answer (5 + 2 + 1 + words) and write_block's request
     (10 + 4 + 4 + 2 + words) both fit max_frame."""

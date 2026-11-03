@@ -1,4 +1,4 @@
-"""Rules of oep-spec a09fa45 sections no other test names, on the client and the virtual bench: core §2.7 (one clock),
+"""Rules of sections no other test names, on the client and the virtual bench: core §2.7 (one clock),
 §12.1 (values a response may gain), capture §3.1 (plan roles) and §3.6 (extension boundary)."""
 
 import struct

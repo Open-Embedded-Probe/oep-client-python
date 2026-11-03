@@ -19,7 +19,7 @@ guide §17.4), `passed` true / false / null (the same, for a reader of the older
   rec.note("/dev/ttyUSB0", "fafe00000003", 921600, passed=True, phase="verify")
 
 `link.raise_speed(..., record=True)` (the `oep speed` CLI's default) reads and writes it; the library default is off.
-A unit_id starting with `x-` names no unit (core §7.5, C-24: a probe with neither a unique number nor storage): nothing
+A unit_id starting with `x-` names no unit (core §7.5: a probe with neither a unique number nor storage): nothing
 is kept or found under it, so another unit on the same port inherits nothing.
 """
 

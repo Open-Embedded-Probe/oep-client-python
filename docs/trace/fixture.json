@@ -251,7 +251,7 @@
    "verify": [
     "tests/test_trace_fixture.py::test_gpio_plan_keeps_the_line_as_it_was_until_the_first_set",
     "tests/test_conformance_gpio.py::test_gpio_plan_checks",
-    "tests/test_virtual_bench_rules_2026_10_02.py::test_p2_o13_taking_a_plan_changes_no_pin_and_an_analog_plan_on_an_output_idle_is_refused"
+    "tests/test_virtual_bench_rules_core.py::test_p2_o13_taking_a_plan_changes_no_pin_and_an_analog_plan_on_an_output_idle_is_refused"
    ],
    "mutants": [
     "tests/test_conformance_gpio.py::test_checker_rejects_wrong_wire_results[PLAN-IDLE]"
@@ -262,7 +262,7 @@
    "text": "- GPIOのplanは出力のidleのchannelも受け付ける。",
    "verify": [
     "tests/test_trace_fixture.py::test_gpio_plan_takes_an_output_idle_channel_another_fixture_does_not",
-    "tests/test_virtual_bench_rules_2026_10_02.py::test_p2_o13_taking_a_plan_changes_no_pin_and_an_analog_plan_on_an_output_idle_is_refused"
+    "tests/test_virtual_bench_rules_core.py::test_p2_o13_taking_a_plan_changes_no_pin_and_an_analog_plan_on_an_output_idle_is_refused"
    ],
    "mutants": [],
    "note": "a gpio plan takes an output-idle channel (a uart TX there is held_by_settings)"
@@ -472,7 +472,7 @@
    "text": "- **TX の線は、plan で割り当てている間（configure の前も）",
    "verify": [
     "tests/test_trace_fixture.py::test_uart_tx_idles_high_from_the_plan_and_its_release_frees_the_line",
-    "tests/test_virtual_bench_rules_2026_10_02.py::test_p2_o13_taking_a_plan_changes_no_pin_and_an_analog_plan_on_an_output_idle_is_refused",
+    "tests/test_virtual_bench_rules_core.py::test_p2_o13_taking_a_plan_changes_no_pin_and_an_analog_plan_on_an_output_idle_is_refused",
     "tests/test_conformance_uart.py::test_uart_checks",
     "tests/test_review5_small.py::test_the_uart_model_keeps_a_kept_tx_through_an_unconfigured_replacement"
    ],
@@ -693,7 +693,7 @@
    "verify": [
     "tests/test_trace_fixture.py::test_i2c_drives_open_drain_only_with_its_pullups_as_declared[False]",
     "tests/test_trace_fixture.py::test_i2c_drives_open_drain_only_with_its_pullups_as_declared[True]",
-    "tests/test_virtual_bench_rules_2026_10_02.py::test_p2_3_i2c_target_open_drain_and_declared_pullups",
+    "tests/test_virtual_bench_rules_core.py::test_p2_3_i2c_target_open_drain_and_declared_pullups",
     "tests/test_conformance_i2c.py::test_i2c_contract[True-False]",
     "tests/test_conformance_i2c.py::test_features_may_be_absent",
     "tests/test_conformance_fixture_metadata.py::test_optional_metadata_absent[12-5]"
@@ -721,8 +721,8 @@
    "verify": [
     "tests/test_trace_fixture.py::test_i2c_configure_makes_the_target_anew_and_refuses_in_order",
     "tests/test_virtual_bench_targets.py::test_i2c_refusals_before_configure_and_in_order",
-    "tests/test_virtual_bench_rules_2026_10_06.py::test_t5_i2c_target_refuses_the_reserved_addresses[0-11]",
-    "tests/test_virtual_bench_rules_2026_10_06.py::test_t5_i2c_target_refuses_the_reserved_addresses[128-3]",
+    "tests/test_virtual_bench_rules_ops_lines.py::test_t5_i2c_target_refuses_the_reserved_addresses[0-11]",
+    "tests/test_virtual_bench_rules_ops_lines.py::test_t5_i2c_target_refuses_the_reserved_addresses[128-3]",
     "tests/test_conformance_i2c.py::test_i2c_contract[True-True]",
     "tests/test_conformance_i2c.py::test_i2c_contract[False-False]",
     "tests/test_review6_rest.py::test_fixture_checkers_accept_more_tlvs_in_refusals[i2c]"
@@ -989,7 +989,7 @@
    "verify": [
     "tests/test_virtual_bench_targets.py::test_spi_refusals_in_order",
     "tests/test_virtual_bench_targets.py::test_spi_armed_consumed_unarmed_and_overflow",
-    "tests/test_virtual_bench_rules_2026_10_06.py::test_t6_spi_arm_count_over_length_is_malformed",
+    "tests/test_virtual_bench_rules_ops_lines.py::test_t6_spi_arm_count_over_length_is_malformed",
     "tests/test_conformance_spi.py::test_spi_contract[True]",
     "tests/test_conformance_spi.py::test_spi_contract[False]"
    ],
@@ -1016,7 +1016,7 @@
   "fixture:4:12": {
    "text": "- **state 1の間、probe は CS が有効な間だけ MISO を駆",
    "verify": [
-    "tests/test_virtual_bench_rules_2026_10_02.py::test_p2_2_spi_target_drives_miso_only_while_cs_is_active",
+    "tests/test_virtual_bench_rules_core.py::test_p2_2_spi_target_drives_miso_only_while_cs_is_active",
     "tests/test_trace_fixture.py::test_spi_failed_configure_goes_back_to_state_0_and_the_idle_lines",
     "tests/test_conformance_spi.py::test_spi_contract[True]",
     "tests/test_conformance_spi.py::test_spi_contract[False]"

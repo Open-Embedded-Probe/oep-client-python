@@ -112,7 +112,7 @@ def test_registry_guard(monkeypatch,field):
     ('argument_only','SINGLE'),('argument_only','TIMEOUT'),('argument_only','PIPELINE'),
     ('quick_zero','QUICK'),('quick_before_describe_zero','QUICK')])
 def test_old_argument_time_floor_is_detected(monkeypatch,fault,group):
-    # core §4.4 at a09fa45: the floor is the whole-request processing bound (max_op_ms, or the fn 0 quick
+    # core §4.4: the floor is the whole-request processing bound (max_op_ms, or the fn 0 quick
     # bound, 1000 ms while max_op_ms is unknown) + 1000 ms + transfer; the argument time alone is too short.
     from oep_client.conformance import host_deadline_sample as sample
     real=sample.bound_ms

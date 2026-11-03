@@ -1,4 +1,4 @@
-"""oep.probe.link (oep-spec a09fa45 interfaces/oep-if-link.ja.md): the rules tests/test_port_speed.py and the link
+"""oep.probe.link: the rules tests/test_port_speed.py and the link
 checkers leave to the trace - at most one oep.probe.link, source / sink / port_state change nothing, sink's count
 bound, the host's wait for a line test, the session and lock kept while trying, and the host's switches (the
 20 ms after try, back to the boot speed on another session's force open or a restart, not on the same id's)."""

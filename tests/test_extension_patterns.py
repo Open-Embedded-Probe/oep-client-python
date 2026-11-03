@@ -1,5 +1,5 @@
 """How an application that only shares OEP's core (and the project's USB ID, PID-USE.md) defines its own interface, and
-how others extend it, under oep-spec e49550d (core §2.2, §2.5, §2.8, §7.2, §7.7, §12 rule 7, §12.1).
+how others extend it, (core §2.2, §2.5, §2.8, §7.2, §7.7, §12 rule 7, §12.1).
 
 The application is a thermometer that is no probe of pins: its maker A defines `io.example.thermo` revision 1. Then:
 

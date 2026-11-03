@@ -1,7 +1,6 @@
-"""The virtual bench against the rule changes of oep-spec docs/v1-rule-change-proposal-2026-10-02.md (applied 09622ef..
-536fc99): each test names its item. The final text is the spec's (core, debug, fixture, capture, probe-config); the
-tests follow oep-spec 0f455a0 (rule review 2026-10-07 §2): no ignored TLV, any one reason after the session check,
-implemented TLVs checked alike with or without bit 7, list = first alone; probe.config as oep-spec a09fa45 has it."""
+"""The virtual bench: request TLVs (repeated, short, long, with or without bit 7), values a later revision may define,
+confirm, list, the session, names, instances and unit_id, the refusal order after the session check (core §4.3), and
+rules of debug, fixture, capture and the settings."""
 
 import socket
 import struct
@@ -128,10 +127,10 @@ def att(pair, method=0, speed=4_000_000):
     return struct.pack("<BHHI", method, *pair, speed)
 
 
-# ---- C-02: a value a later revision may define is unsupported ----------------------------------------------------
+# ---- a value a later revision may define is unsupported ----------------------------------------------------
 
 def test_list_request_is_first_alone_and_its_tail_follows_the_general_tlv_rule():
-    """core §7.2 (rule review 2026-10-07): list is first(u16) [TLV] - no flags, prefix or exact any more. An unknown
+    """core §7.2: list is first(u16) [TLV] - no flags, prefix or exact any more. An unknown
     non-critical TLV is ignored silently, an unknown critical one unsupported with the tag as received (§2.3)."""
     ep, h = bench()
     whole = h.raw(0, m.OP_LIST, struct.pack("<H", 0), session=False)
@@ -142,9 +141,9 @@ def test_list_request_is_first_alone_and_its_tail_follows_the_general_tlv_rule()
     assert h.raw(0, m.OP_LIST, b"\x00", session=False).detail == m.MALFORMED          # shorter than first(u16)
 
 
-def test_c02_attach_method_and_reset_mode_a_later_revision_may_define():
+def test_attach_method_and_reset_mode_a_later_revision_may_define():
     """A value a later revision may define is unsupported (core §2.5); where the connection is also unknown, any one
-    reason that applies answers (core §4.3, rule review 2026-10-07)."""
+    reason that applies answers (core §4.3)."""
     ep, h = bench()
     r = h.raw(1, W["attach"], att(ep.pairs[1][0], method=2))
     assert (r.detail, r.payload) == (m.UNSUPPORTED, b"\x00")
@@ -157,7 +156,7 @@ def test_c02_attach_method_and_reset_mode_a_later_revision_may_define():
 
 
 def test_riscv_dm_reset_has_no_method_tlv():
-    """debug §4.3 (rule review 2026-10-07): reset is mode(u8) [TLV] alone - the old method tag 0x01 is an unknown TLV:
+    """debug §4.3: reset is mode(u8) [TLV] alone - the old method tag 0x01 is an unknown TLV:
     ignored without bit 7, unsupported with the tag as received with it (core §2.3)."""
     ep, h = bench()
     cid = struct.unpack_from("<I", h.ok(1, W["attach"], att(ep.pairs[1][0])))[0]
@@ -169,8 +168,8 @@ def test_riscv_dm_reset_has_no_method_tlv():
     assert (r.detail, r.payload) == (m.UNSUPPORTED, b"\x81")
 
 
-def test_c02_read_from_4_unsupported_and_from_3_with_a_wide_arg_reads_from_now():
-    """common §1.2 (rule review 2026-10-07): from 4 or more is unsupported; from 3 with an arg above 0xFF is no mark
+def test_read_from_4_unsupported_and_from_3_with_a_wide_arg_reads_from_now():
+    """common §1.2: from 4 or more is unsupported; from 3 with an arg above 0xFF is no mark
     kind there is, so it reads from now like from 2 (no malformed any more)."""
     ep, h = bench()
     read = reg.FIXTURE_UART.op["read"]
@@ -188,13 +187,13 @@ def test_c02_read_from_4_unsupported_and_from_3_with_a_wide_arg_reads_from_now()
         assert r.succeeded and r.payload == struct.pack("<QBH", 3, 0, 0)          # from now: the write position
 
 
-def test_c02_probe_config_a_mode_a_later_revision_may_define():
+def test_probe_config_a_mode_a_later_revision_may_define():
     ep, h = bench()
     r = h.raw(0, SET, cset(idle_item(20, 5)))
     assert (r.detail, r.payload) == (m.UNSUPPORTED, item_refused())
 
 
-# ---- C-03: repeated, short and long request TLVs ----------------------------------------------------------------
+# ---- repeated, short and long request TLVs ----------------------------------------------------------------
 
 def test_a_non_repeating_tag_twice_is_malformed():
     """core §2.3: a tag the definition does not repeat, twice in a request - malformed, and nothing runs."""
@@ -206,7 +205,7 @@ def test_a_non_repeating_tag_twice_is_malformed():
 
 @pytest.mark.parametrize("critical", [False, True])
 def test_an_implemented_tlv_of_another_length_is_malformed_with_or_without_bit_7(critical):
-    """core §2.3 (rule review 2026-10-07): a TLV the probe implements is checked the same with or without bit 7 - a
+    """core §2.3: a TLV the probe implements is checked the same with or without bit 7 - a
     value shorter or longer than its definition is malformed, and nothing runs."""
     ep, h = bench()
     pair = ep.pairs[1][0]
@@ -229,7 +228,7 @@ def test_an_implemented_tlvs_value_the_probe_does_not_handle_is_unsupported_with
 
 
 def test_an_unknown_tlv_is_ignored_silently_or_refused_when_critical():
-    """core §2.3 (rule review 2026-10-07): no ignored TLV (0x7F) in the answer any more - an unknown non-critical TLV
+    """core §2.3: no ignored TLV (0x7F) in the answer any more - an unknown non-critical TLV
     is ignored, an unknown critical one is unsupported with the tag as received."""
     ep, h = bench()
     tail = b"".join(m.tlv(0x30 + k, b"x") for k in range(20))
@@ -241,7 +240,7 @@ def test_an_unknown_tlv_is_ignored_silently_or_refused_when_critical():
 
 
 def test_an_unknown_critical_and_a_malformed_tlv_any_one_reason():
-    """core §4.3 (rule review 2026-10-07): after the session check every reason that applies may answer - an unknown
+    """core §4.3: after the session check every reason that applies may answer - an unknown
     critical TLV (unsupported) and a cut-short idle_clock (malformed) in one request get either, and nothing runs."""
     ep, h = bench()
     r = h.raw(1, W["attach"], att(ep.pairs[1][0]) + m.tlv(UNKNOWN, b"", critical=True) + m.tlv(IDLE_TLV, b"", critical=True))
@@ -265,13 +264,13 @@ def test_an_answer_that_fills_the_frame_has_no_ignored_list():
     assert flags & 1 and r.payload[11 + n:] == b"" and n == 64 - m.RESULT_HEADER - 11
 
 
-# ---- C-05 / C-15: confirm ----------------------------------------------------------------------------------------
+# ---- confirm ----------------------------------------------------------------------------------------
 
 def confirm(h, lo=1, hi=1, corr=None):
     return h.raw(0, m.OP_CONFIRM, m.CONFIRM_REQUEST + bytes([lo, hi]), session=False, corr=corr)
 
 
-def test_c05_confirm_names_the_transport_it_came_on():
+def test_confirm_names_the_transport_it_came_on():
     ep = endpoint.Endpoint(virtual_bench.p4_x035(), Clock())
     for index in (0, 1, 3):
         r = confirm(Host(ep, transport=index))
@@ -280,7 +279,7 @@ def test_c05_confirm_names_the_transport_it_came_on():
         assert ep.revision_in_use[index] == 1
 
 
-def test_c15_no_revision_in_range_carries_the_supported_range_and_min_above_max_is_malformed():
+def test_no_revision_in_range_carries_the_supported_range_and_min_above_max_is_malformed():
     ep = endpoint.Endpoint(virtual_bench.p4_x035(), Clock())
     h = Host(ep)
     r = confirm(h, 2, 3)
@@ -288,9 +287,9 @@ def test_c15_no_revision_in_range_carries_the_supported_range_and_min_above_max_
     assert confirm(h, 2, 1).detail == m.MALFORMED
 
 
-# ---- C-10: a probe without plan roles has no oep.probe.plan ---------------------------------------------------------
+# ---- a probe without plan roles has no oep.probe.plan ---------------------------------------------------------
 
-def test_c10_a_probe_without_plan_roles_lists_no_plan():
+def test_a_probe_without_plan_roles_lists_no_plan():
     """oep-if-plan: a probe lists oep.probe.plan exactly when an interface has plan roles; fn 0's old plan_release
     number (0x05) is no core op (unknown_operation)."""
     keep = (virtual_bench.CORE_NAME, "oep.wire.rvswd", "oep.target.riscv-dm")
@@ -305,9 +304,9 @@ def test_c10_a_probe_without_plan_roles_lists_no_plan():
     assert "oep.probe.plan" in endpoint.Endpoint(virtual_bench.p4_bench(), Clock()).fns   # gpio, uart: plan roles
 
 
-# ---- C-16 / C-17 / C-18 / C-22: the session ----------------------------------------------------------------------
+# ---- the session ----------------------------------------------------------------------
 
-def test_c16_a_rejected_answer_is_remembered_and_a_resend_replays_it():
+def test_a_rejected_answer_is_remembered_and_a_resend_replays_it():
     ep, h = bench()
     body = struct.pack("<HBH", 4, 1, 3)                           # channel 3: not the gpio's
     first = h.raw(h.plan_fn, PLAN_APPLY, m.tlv(0x10, body, critical=True), corr=50)
@@ -318,7 +317,7 @@ def test_c16_a_rejected_answer_is_remembered_and_a_resend_replays_it():
     assert 51 not in ep.resend
 
 
-def test_c17_the_lease_is_rounded_into_1000_to_60000_and_restarts_on_rejected_answers():
+def test_the_lease_is_rounded_into_1000_to_60000_and_restarts_on_rejected_answers():
     ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
     h = Host(ep)
     assert struct.unpack_from("<I", h.open(lease=1).payload)[0] == 1000
@@ -332,7 +331,7 @@ def test_c17_the_lease_is_rounded_into_1000_to_60000_and_restarts_on_rejected_an
     assert ep.expires_ms == 1900
 
 
-def test_c18_session_id_0_is_malformed():
+def test_session_id_0_is_malformed():
     ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
     h = Host(ep, session=0)
     assert h.open().detail == m.MALFORMED and ep.holder is None
@@ -340,7 +339,7 @@ def test_c18_session_id_0_is_malformed():
 
 @pytest.mark.parametrize("force", [1, 2, 0xFF])
 def test_a_boolean_in_a_request_is_true_when_not_zero(force):
-    """core §2.1 (rule review 2026-10-07): the reader takes every non-zero boolean as true - open's force 2 takes the
+    """core §2.1: the reader takes every non-zero boolean as true - open's force 2 takes the
     lock like force 1, it is not malformed."""
     ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
     assert Host(ep, session=0x99).open().succeeded
@@ -351,7 +350,7 @@ def test_a_boolean_in_a_request_is_true_when_not_zero(force):
 @pytest.mark.parametrize("owner, ok", [(b"bad\x1b[31m", True), (b"\xff\xfe", True), (b"x" * 32, True),
                                        (b"x" * 33, False), (b"", False)])
 def test_request_text_is_not_validated_but_owner_keeps_its_length(owner, ok):
-    """core §2.1 / §6.4 (rule review 2026-10-07): a probe does not check request text (the host replaces what it
+    """core §2.1 / §6.4: a probe does not check request text (the host replaces what it
     shows); owner keeps its 1-32 byte length rule."""
     ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
     r = Host(ep).open(owner=owner)
@@ -361,15 +360,15 @@ def test_request_text_is_not_validated_but_owner_keeps_its_length(owner, ok):
         assert r.detail == m.MALFORMED and ep.holder is None
 
 
-def test_c22_a_utf8_owner_is_taken():
+def test_a_utf8_owner_is_taken():
     ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
     h = Host(ep)
     assert h.open(owner="日本 bench".encode()).succeeded and ep.owner == "日本 bench".encode()
 
 
-# ---- C-23 / C-30 / C-24: names, instances, unit_id --------------------------------------------------------------
+# ---- names, instances, unit_id --------------------------------------------------------------
 
-def test_c30_every_profile_numbers_its_instances_per_name_and_revision():
+def test_every_profile_numbers_its_instances_per_name_and_revision():
     for name, profile in virtual_bench.PROFILES.items():
         assert profile().instance_errors() == [], name
     bad = virtual_bench.VirtualProbe("x", 256, [virtual_bench.Offered(0, 0, virtual_bench.CORE_NAME), virtual_bench.Offered(1, 1, "oep.fixture.gpio"),
@@ -377,14 +376,14 @@ def test_c30_every_profile_numbers_its_instances_per_name_and_revision():
     assert bad.instance_errors()
 
 
-def test_c24_a_profile_with_an_x_unit_id():
+def test_a_profile_with_an_x_unit_id():
     probe = virtual_bench.with_unit_id(virtual_bench.esp32_v003(), "x-esp32")
     ep = endpoint.Endpoint(probe, Clock())
     r = Host(ep).raw(0, m.OP_DESCRIBE, struct.pack("<HH", 0, 0), session=False)
     assert (CORE.tlv["describe"]["unit_id"], b"x-esp32") in m.split_tlvs(r.payload[1:])
 
 
-# ---- debug: P2-★1 / ★5 / ○1 / ○4 / ★4 -------------------------------------------------------------------------------
+# ---- debug -------------------------------------------------------------------------------
 
 def test_p2_1_scan_has_no_implicit_list_and_takes_an_input_idle_pair():
     """debug §1: count 0 is malformed (no implicit candidate list, no skip); a pair twice is malformed; a named pair
@@ -399,7 +398,7 @@ def test_p2_1_scan_has_no_implicit_list_and_takes_an_input_idle_pair():
 
 
 def test_p2_1_a_named_output_idle_channel_is_unavailable_cause_5_and_the_channel():
-    """debug §1; the unavailable payload is cause, channel, fn only (core §4.3, rule review 2026-10-07)."""
+    """debug §1; the unavailable payload is cause, channel, fn only (core §4.3)."""
     ep, h = bench()
     a = ep.pairs[1][0]
     h.ok(0, SET, cset(idle_item(a[1], IDLE["output_high"])))
@@ -479,7 +478,7 @@ def test_p2_o4_a_halt_that_times_out_clears_haltreq_and_a_step_that_cannot_halt_
     assert m.Tail.parse(r.payload[10:]).get(0x01) is None and cid in ep.conns
 
 
-# ---- fixture: P2-★2 / ★3 / ○13 ---------------------------------------------------------------------------------------
+# ---- fixture ---------------------------------------------------------------------------------------
 
 def x035():
     ep = endpoint.Endpoint(virtual_bench.with_i2c_pullups(virtual_bench.p4_x035()), Clock())
@@ -505,7 +504,7 @@ def test_p2_2_spi_target_drives_miso_only_while_cs_is_active():
 
 
 def test_p2_3_i2c_target_open_drain_and_declared_pullups():
-    """fixture §3 (rule review 2026-10-07): configure is address(u8) alone; a probe with pull-ups of its own declares
+    """fixture §3: configure is address(u8) alone; a probe with pull-ups of its own declares
     features bit2 (no pullup_ohms any more)."""
     ep, h = x035()
     i2c = 8
@@ -538,13 +537,13 @@ def test_p2_o13_taking_a_plan_changes_no_pin_and_an_analog_plan_on_an_output_idl
     assert r.detail == m.UNAVAILABLE and t == {UNA["cause"]: b"\x05", UNA["channel"]: struct.pack("<H", 16)}
 
 
-# ---- capture: P2-○8 / ○10 / ○11 ----------------------------------------------------------------------------------------
+# ---- capture ----------------------------------------------------------------------------------------
 
 CAP_TLV = virtual_bench_capture.TLV
 
 
 def test_p2_o8_samples_rounded_down_and_the_configure_tlvs():
-    """capture §3.3 (rule review 2026-10-07): configure's TLVs follow core §2.3 alone - an unhandled mode / rate /
+    """capture §3.3: configure's TLVs follow core §2.3 alone - an unhandled mode / rate /
     trigger is unsupported with the tag as received, critical or not."""
     ep = endpoint.Endpoint(virtual_bench.esp32_v003(), Clock())            # logic: max_samples 65536, one-shot only
     h = Host(ep)
@@ -596,9 +595,9 @@ def test_p2_o11_a_read_past_the_write_position():
     assert r.payload == struct.pack("<QBH", 3, 0, 0)
 
 
-# ---- probe.config: PC-3 / PC-4 / PC-5 ---------------------------------------------------------------------
+# ---- settings -----------------------------------------------------------------------
 
-def test_pc3_an_idle_pull_the_channel_lacks_is_unsupported():
+def test_an_idle_pull_the_channel_lacks_is_unsupported():
     ep, h = bench()
     ep.no_pull = {20: {IDLE["pull_down"]}}
     r = h.raw(0, SET, cset(idle_item(20, IDLE["pull_down"])))
@@ -606,7 +605,7 @@ def test_pc3_an_idle_pull_the_channel_lacks_is_unsupported():
     assert h.raw(0, SET, cset(idle_item(20, IDLE["pull_up"]))).succeeded
 
 
-def test_pc3_a_saved_idle_pull_the_channel_lacks_is_left_out_at_boot():
+def test_a_saved_idle_pull_the_channel_lacks_is_left_out_at_boot():
     """probe.config §3: an item this firmware cannot take is left out at boot and the others applied (partial,
     reason 2)."""
     ep, h = bench()
@@ -618,7 +617,7 @@ def test_pc3_a_saved_idle_pull_the_channel_lacks_is_left_out_at_boot():
 
 
 @pytest.mark.parametrize("ch", [24, 55, 0xFFFF])                  # the probe's own, = channels, far past
-def test_pc4_the_channel_of_an_item(ch):
+def test_the_channel_of_an_item(ch):
     ep, h = bench()
     for item in (label_item(ch, b"x"), idle_item(ch, IDLE["hi_z"]), disable_item(ch)):
         r = h.raw(0, SET, cset(item))
@@ -628,15 +627,15 @@ def test_pc4_the_channel_of_an_item(ch):
 
 @pytest.mark.parametrize("text, ok", [(b"x" * 32, True), (b"x" * 33, False), (b"", False), (b"a\nb", True),
                                       (b"\x7f", True), (b"\xc3", True), ("nrst ✓".encode(), True)])
-def test_pc5_label_text(text, ok):
-    """probe.config §1 (rule review 2026-10-07): a label's text is checked for its length (1-32) only - request text
+def test_label_text(text, ok):
+    """probe.config §1: a label's text is checked for its length (1-32) only - request text
     is not validated (core §2.1); the host replaces what it shows."""
     ep, h = bench()
     r = h.raw(0, SET, cset(label_item(20, text)))
     assert r.succeeded if ok else r.detail == m.MALFORMED
 
 
-# ---- C-07 / C-05 on virtual_bench_serve's TCP -----------------------------------------------------------------------------
+# ---- virtual_bench_serve's TCP -----------------------------------------------------------------------------
 
 def tcp_serve(*argv):
     proc = subprocess.Popen([sys.executable, "-m", "oep_client.virtual_bench_serve", "--tcp", "0", "--framing", "length",
@@ -657,7 +656,7 @@ def exchange(sock, message: bytes) -> bytes:
     return body
 
 
-def test_c05_c07_virtual_bench_serve_tcp_is_a_tcp_transport_and_closes_on_an_over_long_length():
+def test_virtual_bench_serve_tcp_is_a_tcp_transport_and_closes_on_an_over_long_length():
     proc, port = tcp_serve("--profile", "p4-x035")
     try:
         with socket.create_connection(("127.0.0.1", port), timeout=5) as s:
@@ -675,7 +674,7 @@ def test_c05_c07_virtual_bench_serve_tcp_is_a_tcp_transport_and_closes_on_an_ove
 
 
 def test_swio_swclk_other_than_0xffff_is_an_undeclared_combination_in_scan_and_attach():
-    """oep-if-debug §3 (oep-spec e9cd891): a swio pair whose swclk is not 0xFFFF is unsupported, as §1 says."""
+    """oep-if-debug §3: a swio pair whose swclk is not 0xFFFF is unsupported, as §1 says."""
     ep = endpoint.Endpoint(virtual_bench.esp32_v003(), Clock())
     h = Host(ep)
     h.open()

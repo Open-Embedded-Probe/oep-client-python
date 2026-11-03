@@ -177,7 +177,7 @@ def test_active_cs_release_must_restore_miso(case):
 
 @pytest.mark.parametrize('fault',['bits','timestamp'])
 def test_empty_rx_must_be_zero_without_timestamp(fault):
-    """fixture §4 (a09fa45): read_rx with nothing queued answers pending / bits / count all 0, no data and no
+    """fixture §4: read_rx with nothing queued answers pending / bits / count all 0, no data and no
     timestamp; an empty answer with stray bits or an ns TLV fails the checker."""
     model,c=setup();original=model.handle
     def stray(req):
@@ -210,7 +210,7 @@ def test_state0_arm_refusal_faults(fault,planned):
 
 
 def test_features_may_be_absent():
-    """core §7.4 / fixture §4 (a09fa45): features holds optional bits ("features の bit0 が無いのに bit_order 1 は
+    """core §7.4 / fixture §4: features holds optional bits ("features の bit0 が無いのに bit_order 1 は
     unsupported"); an MSB-only probe need not declare it - the metadata and behaviour checkers pass without the tag."""
     from oep_client.conformance.fixture_metadata import FixtureMetadataChecks
     for checker in ('metadata','behaviour'):

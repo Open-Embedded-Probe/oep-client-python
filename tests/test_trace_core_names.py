@@ -1,4 +1,4 @@
-"""Trace of oep-spec 2b3d89a core §2.2 (the named extension TLV), §7.7 (named lists) and §12 rule 7 (how another party
+"""Trace of core §2.2 (the named extension TLV), §7.7 (named lists) and §12 rule 7 (how another party
 adds), on the virtual bench and the client. Every number is looked up by name (the registry, describe's lists)."""
 
 import struct

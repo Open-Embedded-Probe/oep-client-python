@@ -1,4 +1,4 @@
-"""oep-spec 283e5b5 (af3d52b, 4f6d464) and f8bb2de against the virtual bench and the client:
+"""The virtual bench and the client:
 
 - transports §3: a closed transport does not end the session - the session, its lock, subscriptions and the resend table
   stay until the lease runs out; a new connection's open with the same id takes it back (core §6.2)

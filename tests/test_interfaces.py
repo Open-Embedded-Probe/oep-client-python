@@ -305,7 +305,7 @@ def test_console_write_partial_and_a_closed_stream_is_gone(dm):
 
 
 def test_console_io_writes_through_the_send_queue_and_sdi_takes_no_write():
-    """console §2 / §3 (oep-spec f0c68bf, R-A): a write takes min(count, the send queue's free space); the probe hands
+    """console §2 / §3: a write takes min(count, the send queue's free space); the probe hands
     the queue to the target 2 (dmseq) or 3 (DMDATA) bytes a poll; ConsoleIO writes what one frame carries, goes on from
     each answer's accepted, and gives up (TimeoutError) when nothing is taken for stall_s; an SDI stream's write is
     unsupported. The
@@ -384,7 +384,7 @@ def test_uart_configure_format_and_reads_that_do_not_consume(bench):
         io.uart.configure(9600, 0x01)                             # 7N1: defined, not declared -> unsupported, the tag
     assert e.value.tag == 0x81
     with pytest.raises(host.Unsupported) as e:
-        io.uart.configure(9600, 0x80)                             # a reserved format bit (core §2.5, C-02): the tag
+        io.uart.configure(9600, 0x80)                             # a reserved format bit (core §2.5): the tag
     assert e.value.tag == 0x81
     with pytest.raises(host.Unsupported) as e:
         io.uart.configure(50_000_000)                             # more than 5 % off what the probe can do

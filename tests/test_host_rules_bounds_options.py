@@ -1,8 +1,7 @@
-"""The host side of the rules added since the 2026-10-02 rule changes: docs/v1-rule-change-proposal-2026-10-06.md
-(oep-spec b4b08f1, 40291a4) and 2e70f40 / 73a0c37 - confirm's bounds (C-20), max_op_ms's ceiling (C-47), the transfer
-time before the first confirm answer (N-1), resumed = 0 for the last session_id (C-19), clock's boot_id and times, short
-answers and wrong-direction roles (C-36), an unanswered resend fails the transport (C-38), the last page's storage
-(PC-9), the optional ops (C-21), cs_setup_ns and i2c-target's reserved addresses."""
+"""The host: confirm's bounds (core §7.1), max_op_ms's ceiling, the transfer time before the first confirm answer
+(core §4.4), no resume (core §6.5, §9), clock's boot_id and times, short answers and wrong-direction roles (core §2.4),
+an unanswered resend fails the transport (core §5.2), the optional ops, cs_setup_ns and i2c-target's reserved addresses,
+and the ops encoding (core §7.4)."""
 
 import struct
 import time
@@ -12,7 +11,7 @@ import pytest
 from oep_client import catalog, cobs, core, endpoint, virtual_bench, fixture, host as h, link, message as m
 from oep_client import registry as reg, riscv
 
-from test_virtual_bench_rules_2026_10_02 import Clock
+from test_virtual_bench_rules_core import Clock
 from test_link_host import CONFIRM_V1, Stream, answering, frame, make_link, result
 from test_link_serial import Scripted
 
@@ -31,10 +30,10 @@ def in_process(probe=None, transport=0, **kw):
     return ep, h.Host(send), sent
 
 
-# ---- C-20: confirm's bounds ---------------------------------------------------------------------------------------
+# ---- confirm's bounds ---------------------------------------------------------------------------------------
 
 @pytest.mark.parametrize("max_frame, window, inflight", [(63, 4096, 4), (1024, 1000, 4), (1024, 4096, 0)])
-def test_c20_a_confirm_outside_the_bounds_makes_the_transport_unusable(max_frame, window, inflight):
+def test_a_confirm_outside_the_bounds_makes_the_transport_unusable(max_frame, window, inflight):
     sent = []
 
     def send(b):
@@ -49,7 +48,7 @@ def test_c20_a_confirm_outside_the_bounds_makes_the_transport_unusable(max_frame
     assert len(sent) == 1                                                      # nothing more went out
 
 
-def test_c20_on_a_link_the_probe_is_closed_and_nothing_more_is_sent():
+def test_on_a_link_the_probe_is_closed_and_nothing_more_is_sent():
     s = Stream(lambda msg: [result(m.Request.unpack(msg).corr, confirm_payload(1024, 512, 4))])
     lk = make_link(s)
     hst = h.Host(lk.send)
@@ -58,11 +57,11 @@ def test_c20_on_a_link_the_probe_is_closed_and_nothing_more_is_sent():
     assert len(s.writes) == 1
 
 
-# ---- C-47: max_op_ms 1..600000 ------------------------------------------------------------------------------------
+# ---- max_op_ms 1..600000 ------------------------------------------------------------------------------------
 
 @pytest.mark.parametrize("value, usable", [(0, False), (1, True), (600_000, True), (600_001, False),
                                            (0xFFFFFFFF, False)])
-def test_c47_a_max_op_ms_outside_1_to_600000_is_a_probe_not_used(value, usable):
+def test_a_max_op_ms_outside_1_to_600000_is_a_probe_not_used(value, usable):
     ep, hst, sent = in_process()
     ep.static[0] = tuple(catalog.u32(virtual_bench.CORE_MAX_OP_MS, value) if t[0] == virtual_bench.CORE_MAX_OP_MS else t
                          for t in ep.static[0])
@@ -78,9 +77,9 @@ def test_c47_a_max_op_ms_outside_1_to_600000_is_a_probe_not_used(value, usable):
     assert len(sent) == n
 
 
-# ---- N-1: min_max_frame until the first confirm answer, then the latest -------------------------------------------
+# ---- min_max_frame until the first confirm answer, then the latest -------------------------------------------
 
-def test_n1_the_transfer_time_counts_64_until_a_confirm_answer_then_the_latest():
+def test_the_transfer_time_counts_64_until_a_confirm_answer_then_the_latest():
     answers = [confirm_payload(1024)]
 
     def respond(msg):
@@ -96,9 +95,9 @@ def test_n1_the_transfer_time_counts_64_until_a_confirm_answer_then_the_latest()
     assert lk.max_frame == 512 and lk.frames.max_frame == 512
 
 
-# ---- C-19 under no resume (core §6.5, §9): the boot_id tells a reboot, no_session a session that ended ---------------
+# ---- no resume (core §6.5, §9): the boot_id tells a reboot, no_session a session that ended ---------------
 
-def test_c19_after_a_reboot_with_a_repeated_boot_id_the_session_is_no_session_and_open_starts_anew():
+def test_after_a_reboot_with_a_repeated_boot_id_the_session_is_no_session_and_open_starts_anew():
     """core §6.5: open's boot_id is the host's sign of a reboot; a probe whose only source repeated it gives none, and
     the host learns its session ended from no_session (§6.2) - the resources are gone (epoch), the names stay (only a
     changed boot_id drops them)."""
@@ -117,7 +116,7 @@ def test_c19_after_a_reboot_with_a_repeated_boot_id_the_session_is_no_session_an
     assert hst._fns == {} and hst._describes == {} and hst.epoch == epoch + 2
 
 
-def test_c19_end_then_a_new_open_counts_the_loss_once_and_keeps_the_names():
+def test_end_then_a_new_open_counts_the_loss_once_and_keeps_the_names():
     ep, hst, _ = in_process()
     hst.open(3000)
     core.find(hst, "oep.fixture.gpio")
@@ -184,9 +183,9 @@ def test_clock_from_the_virtual_bench_through_a_link_and_no_heartbeat_any_more()
     assert not hasattr(lk, "heartbeats") and "heartbeat_default_ms" not in reg.TIMING
 
 
-# ---- C-36: short answers, events and data; request roles ----------------------------------------------------------
+# ---- short answers, events and data; request roles ----------------------------------------------------------
 
-def test_c36_a_short_answer_is_a_broken_frame_on_length_links_resynced_and_resent():
+def test_a_short_answer_is_a_broken_frame_on_length_links_resynced_and_resent():
     calls = []
 
     def respond(msg):
@@ -205,7 +204,7 @@ def test_c36_a_short_answer_is_a_broken_frame_on_length_links_resynced_and_resen
     assert lk.resyncs == 1 and lk.retries == 1
 
 
-def test_c36_short_events_and_request_roles_from_the_probe_are_dropped_on_a_serial_port():
+def test_short_events_and_request_roles_from_the_probe_are_dropped_on_a_serial_port():
     s = Scripted()
     lk = link.SerialLink.on_stream(s, "cobs", 0.3)
     s.rx += (cobs.frame(bytes([m.ROLE_EVENT, 0, 0, 0])) + cobs.frame(m.Request(7, 0, m.OP_KEEPALIVE).pack())
@@ -214,7 +213,7 @@ def test_c36_short_events_and_request_roles_from_the_probe_are_dropped_on_a_seri
     assert lk.noise == 4 and lk.dropped == 1 and not lk.events
 
 
-def test_c36_a_short_answer_on_a_held_serial_port_is_resent_at_once():
+def test_a_short_answer_on_a_held_serial_port_is_resent_at_once():
     s = Scripted()
     lk = link.SerialLink.on_stream(s, "cobs", 0.3)
     lk.held = lambda: True
@@ -229,7 +228,7 @@ def test_c36_a_short_answer_on_a_held_serial_port_is_resent_at_once():
     assert lk.retries == 1 and time.monotonic() - t0 < 0.5                   # not waited out
 
 
-# ---- C-38: an unanswered resend fails the transport; recover with a confirm, COBS included -----------------------
+# ---- an unanswered resend fails the transport; recover with a confirm, COBS included -----------------------
 
 class Probe:
     """A COBS probe stand-in on a Scripted stream: answers confirms (with its boot_id) and other requests, or nothing
@@ -262,7 +261,7 @@ def cobs_host():
     return lk, hst, p
 
 
-def test_c38_an_unanswered_resend_fails_the_transport_and_the_next_request_confirms_first():
+def test_an_unanswered_resend_fails_the_transport_and_the_next_request_confirms_first():
     lk, hst, p = cobs_host()
     p.silent = True
     with pytest.raises(link.TransportFailed):
@@ -275,7 +274,7 @@ def test_c38_an_unanswered_resend_fails_the_transport_and_the_next_request_confi
     assert not lk.failed_transport and lk.recoveries == 1 and hst.epoch == 1 # the changed boot_id: a reboot
 
 
-def test_c38_no_confirm_in_the_recovery_is_a_connection_error_and_stays_failed():
+def test_no_confirm_in_the_recovery_is_a_connection_error_and_stays_failed():
     lk, hst, p = cobs_host()
     p.silent = True
     with pytest.raises(link.TransportFailed):
@@ -285,7 +284,7 @@ def test_c38_no_confirm_in_the_recovery_is_a_connection_error_and_stays_failed()
     assert lk.failed_transport and m.OP_KEEPALIVE not in p.seen[-3:]         # only confirms went out
 
 
-def test_c38_pipelined_requests_fail_together():
+def test_pipelined_requests_fail_together():
     lk, hst, p = cobs_host()
     p.silent = True
     with pytest.raises(link.TransportFailed):
@@ -293,9 +292,9 @@ def test_c38_pipelined_requests_fail_together():
     assert lk.failed_transport
 
 
-# ---- C-21: optional ops are used when declared ------------------------------------------------------------------
+# ---- optional ops are used when declared ------------------------------------------------------------------
 
-def test_c21_riscv_dm_says_which_optional_ops_the_probe_offers():
+def test_riscv_dm_says_which_optional_ops_the_probe_offers():
     ep, hst, _ = in_process(virtual_bench.esp32_v003())
     hst.open(3000)
     wire = riscv.Wire(hst, "oep.wire.swio")
@@ -341,7 +340,7 @@ def _with_ops(name: str, value: bytes) -> virtual_bench.VirtualProbe:
 
 @pytest.mark.parametrize("value", ["f901", "f80100", "01", "ff0000"])
 def test_an_fn_whose_ops_break_the_encoding_is_not_used(value):
-    """core §7.4 (rule review 2026-10-07): base(u8) + a bitmap of at least 1 byte, base + 8 x bytes <= 256 - nothing
+    """core §7.4: base(u8) + a bitmap of at least 1 byte, base + 8 x bytes <= 256 - nothing
     more (no bit-0 or last-byte rule)."""
     ep = endpoint.Endpoint(_with_ops("oep.fixture.gpio", bytes.fromhex(value)), Clock())
     hst = h.Host(lambda b: ep.handle(b, 1))

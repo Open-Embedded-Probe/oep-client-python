@@ -1,4 +1,4 @@
-"""Rule-by-rule trace of oep-spec a09fa45 interfaces/oep-if-capture.ja.md (docs/trace/capture.json): the names (capture
+"""Rule-by-rule trace of oep-spec interfaces/oep-if-capture.ja.md (docs/trace/capture.json): the names (capture
 §0), the data layouts (§1), modes and segments (§2), the operations, configure, notifications, describe and calibration
 (§3) and oep.fixture.capture-group (§4), checked on the virtual bench and the client where no other test pins a rule
 down."""
@@ -1979,7 +1979,7 @@ def test_review_the_same_plan_on_a_bound_track_is_a_no_op():
 
 # ---- second review: rules the first review passed but no named test checked -------
 
-def test_review2_start_in_state_1_clears_the_old_segments_and_goes_to_2_or_3():
+def test_start_in_state_1_clears_the_old_segments_and_goes_to_2_or_3():
     """capture §3.2's state table, row 1: start -> 3 (immediate) or 2 (a trigger), the generation + 1 and the
     segments gone - here from a stopped repeat (state 1) that still holds segments: none left, write_pos 0, a read of
     the old generation cause 6."""
@@ -2002,7 +2002,7 @@ def test_review2_start_in_state_1_clears_the_old_segments_and_goes_to_2_or_3():
     assert lc.status().state == ST["waiting"] and lc.status().generation == old.generation + 2
 
 
-def test_review2_release_of_an_unfinished_segment_and_in_streaming():
+def test_release_of_an_unfinished_segment_and_in_streaming():
     """capture §3.2 release: a serial not finished yet is not freed (only the finished ones at or before it are) - the
     segment being taken finishes and reads as usual; in streaming release is a success that does nothing."""
     ep, hst, clock = bench()
@@ -2022,7 +2022,7 @@ def test_review2_release_of_an_unfinished_segment_and_in_streaming():
     assert snap(ep, t.fn) == before
 
 
-def test_review2_an_analog_plan_leaves_the_pin_as_it_was_and_logic_keeps_a_pull():
+def test_an_analog_plan_leaves_the_pin_as_it_was_and_logic_keeps_a_pull():
     """capture §1.2: taking a plan changes nothing electrical - an analog plan and configure leave the pin as before the
     plan (it leaves idle only at start and comes back to that same state); a logic capture keeps a pull idle's pull."""
     ep, hst, clock = bench()
@@ -2047,7 +2047,7 @@ def test_review2_an_analog_plan_leaves_the_pin_as_it_was_and_logic_keeps_a_pull(
     assert ep.pin_state(30) == pulled
 
 
-def test_review2_a_trigger_without_pretrigger_keeps_none_before_it():
+def test_a_trigger_without_pretrigger_keeps_none_before_it():
     """capture §3.3 pretrigger: left out with a non-0 trigger it is 0 - the segment begins at the trigger's sample
     (trigger_index 0), whole (samples, not short)."""
     ep, hst, clock = bench()
@@ -2060,7 +2060,7 @@ def test_review2_a_trigger_without_pretrigger_keeps_none_before_it():
     assert (seg.trigger_index, seg.samples, seg.start_ns) == (0, 8, 2_000_000) and not seg.flags & SHORT
 
 
-def test_review2_group_start_checks_generations_and_subscriptions_first():
+def test_group_start_checks_generations_and_subscriptions_first():
     """capture §4.1 start: the group's and every track's generation left, and the subscriptions streaming needs, are
     all checked before anything changes - the group at 0xFFFFFFFF or a track at 0xFFFFFFFF is unavailable cause 2,
     a streaming track without its subscription cause 6; the generations, states and data stay."""
@@ -2084,7 +2084,7 @@ def test_review2_group_start_checks_generations_and_subscriptions_first():
     assert grp.status().state == ST["capturing"]
 
 
-def test_review2_group_status_counts_paused_as_3_and_needs_a_start_for_4():
+def test_group_status_counts_paused_as_3_and_needs_a_start_for_4():
     """capture §4.1 status: tracks all 4 before any group start is 1 (4 only once started); tracks paused (5) make the
     group 3; a bind changes no track's generation."""
     ep, hst, clock, lc, an, grp = grouped()
@@ -2105,7 +2105,7 @@ def test_review2_group_status_counts_paused_as_3_and_needs_a_start_for_4():
     assert lc.status().state == an.status().state == ST["paused"] and grp.status().state == ST["capturing"]
 
 
-def test_review2_bind_refuses_a_track_not_in_1_4_6():
+def test_bind_refuses_a_track_not_in_1_4_6():
     """capture §4.1 bind: the tracks are configured ones in state 1/4/6 - an unconfigured track (0) or one paused alone
     (5) is unavailable cause 6, nothing bound."""
     ep, hst, clock = bench()
@@ -2123,7 +2123,7 @@ def test_review2_bind_refuses_a_track_not_in_1_4_6():
     assert grp.status().state == 0 and ep.captures[an.fn].group is None and ep.captures[lc.fn].group is None
 
 
-def test_review2_a_group_error_keeps_a_finished_tracks_data_and_stops_the_others_as_stop_does():
+def test_a_group_error_keeps_a_finished_tracks_data_and_stops_the_others_as_stop_does():
     """capture §4.1: a track's error makes the group 6 and stops the others as stop does - a track still capturing
     sends stopped reason 1 on its own subscription and keeps a short segment, a finished track (4) keeps its data."""
     ep, hst, clock = bench()
@@ -2155,7 +2155,7 @@ def test_review2_a_group_error_keeps_a_finished_tracks_data_and_stops_the_others
     assert lc.status().state == ST["configured"] and lc.segments()[-1].flags & SHORT
 
 
-def test_review2_a_bind_is_the_sessions_and_ends_with_it():
+def test_a_bind_is_the_sessions_and_ends_with_it():
     """capture §4.1: the bind is the session's resource (core §9) - the session's end unbinds the group (status 0, no
     track bound), and the next session finds nothing bound."""
     ep, hst, clock, lc, an, grp = grouped()
@@ -2180,7 +2180,7 @@ def _with_wire_on_adc_pin():
                                     if o.name == "oep.wire.rvswd" else o for o in p.offered])
 
 
-def test_review3_an_analog_pin_and_a_wire_connection_refuse_each_other():
+def test_an_analog_pin_and_a_wire_connection_refuse_each_other():
     """capture §1.2 pin sharing: an analog channel and a line connection (debug attach) on one pin - the one that comes
     second is rejected unavailable (pin_in_use, the channel), whichever it is; nothing changes."""
     ep, hst, clock = bench(_with_wire_on_adc_pin)
@@ -2199,7 +2199,7 @@ def test_review3_an_analog_pin_and_a_wire_connection_refuse_each_other():
     assert copy.deepcopy((ep.plan, list(ep.conns))) == before
 
 
-def test_review3_an_error_end_still_sends_the_rest_before_write_pos():
+def test_an_error_end_still_sends_the_rest_before_write_pos():
     """capture §2.1 rule 2: after an error stop the bytes taken before write_pos and not sent yet go out like a stop's
     rest - without waiting for min_bytes / max_delay_ms - and nothing at or past write_pos is sent."""
     ep, hst, clock = bench()
@@ -2218,7 +2218,7 @@ def test_review3_an_error_end_still_sends_the_rest_before_write_pos():
     counter_ok(lc, b"".join(p[3] for p in data), 32)
 
 
-def test_review3_release_names_generation_0_before_the_first_start():
+def test_release_names_generation_0_before_the_first_start():
     """capture §3.2 generation: before the first start the generation is 0 - release (and read) naming 0 succeed (a
     release that frees nothing), naming another is unavailable cause 6."""
     ep, hst, clock = bench()
@@ -2232,7 +2232,7 @@ def test_review3_release_names_generation_0_before_the_first_start():
 
 
 @pytest.mark.parametrize("analog", [False, True])
-def test_review3_the_trigger_takes_state_2_to_3(analog):
+def test_the_trigger_takes_state_2_to_3(analog):
     """capture §3.2's state table, row 2's last column: the trigger takes a waiting track to 3 (capturing) and sends
     triggered; it is not done until the segment's samples are taken."""
     ep, hst, clock = bench()
@@ -2248,7 +2248,7 @@ def test_review3_the_trigger_takes_state_2_to_3(analog):
 
 
 @pytest.mark.parametrize("analog", [False, True])
-def test_review3_contract_in_mode_2_and_mode_3_and_type_0_sent_as_0(analog):
+def test_contract_in_mode_2_and_mode_3_and_type_0_sent_as_0(analog):
     """capture §3.3's contract: in mode 2 too a pretrigger at or past samples is unsupported (pretrigger) and one below
     it is taken; in mode 3 only max_pretrigger bounds it (the declared most is taken, past mode 2's 8 samples); a type 0
     trigger's role and value go as 0 from the host."""
@@ -2286,7 +2286,7 @@ def _analog_from(min_hz, exact=False):
 
 
 @pytest.mark.parametrize("exact", [False, True])
-def test_review3_no_rate_kept_in_range_for_the_configuration_is_unsupported(exact):
+def test_no_rate_kept_in_range_for_the_configuration_is_unsupported(exact):
     """capture §3.3 rate: when the configuration (here 4 roles sharing one ADC) keeps no value inside rate_range, the
     request is unsupported (rate's tag) even though the asked rate is in the range - never a rate outside it."""
     ep, hst, clock = bench(lambda: _analog_from(30_000, exact))
@@ -2299,7 +2299,7 @@ def test_review3_no_rate_kept_in_range_for_the_configuration_is_unsupported(exac
         assert unsupported_tag(r) == T["rate"] and snap(ep, an.fn) == before
 
 
-def test_review3_repeat_segments_take_the_samples_asked_and_end_padded():
+def test_repeat_segments_take_the_samples_asked_and_end_padded():
     """capture §3.3 / §1.1 rule 4 / §2.2: samples are rounded down for capacity only - with w 3 a repeat segment of 10
     samples is taken as asked (actual_samples 10), each segment ceil(10 x 3 / 8) = 4 bytes ending in its padding, the
     next one right after it, the samples running on across them."""
@@ -2324,7 +2324,7 @@ def _two_groups():
     return virtual_bench._again(p, list(p.offered) + [virtual_bench.Offered(16, 1, g.name, g.tlvs, g.revision, g.inner)])
 
 
-def test_review3_a_track_bound_in_another_group_is_cause_4():
+def test_a_track_bound_in_another_group_is_cause_4():
     """capture §4.1 bind: a track another group holds is unavailable cause 4 (with its fn) - nothing bound, the other
     group's bind kept; unbound there, it binds."""
     ep, hst, clock = bench(_two_groups)
@@ -2342,7 +2342,7 @@ def test_review3_a_track_bound_in_another_group_is_cause_4():
     assert ep.captures[lc.fn].group is ep.groups[16]
 
 
-def test_review3_a_failed_group_start_makes_the_group_6():
+def test_a_failed_group_start_makes_the_group_6():
     """capture §4.1: a start whose track fails to initialise puts that track in 6 and the group with it (status 6),
     the started tracks stopped (state 1)."""
     ep, hst, clock, lc, an, grp = grouped()
@@ -2354,7 +2354,7 @@ def test_review3_a_failed_group_start_makes_the_group_6():
     assert (lc.status().state, an.status().state) == (ST["error"], ST["configured"])
 
 
-def test_review3_a_group_stop_gives_the_analog_pad_back_as_its_own_stop_does():
+def test_a_group_stop_gives_the_analog_pad_back_as_its_own_stop_does():
     """capture §4.1 stop: every track stops by its own rules, the pad included - the analog's pad, on the analog
     function while the group captures, is idle again after the group's stop (the plan kept), with short segments."""
     ep, hst, clock, lc, an, grp = grouped(mode=c.REPEAT)

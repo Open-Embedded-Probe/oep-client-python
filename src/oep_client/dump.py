@@ -27,7 +27,7 @@ class Capabilities:
     max_frame: int
     offers: list[Offer] = field(default_factory=list)
     requests: dict[str, int] = field(default_factory=dict)
-    missing: list[str] = field(default_factory=list)   # what core §1.2 requires and the probe did not give (C-10)
+    missing: list[str] = field(default_factory=list)   # what core §1.2 requires and the probe did not give
 
 
 _REQUIRED_CORE_TAGS = {reg.CORE.tlv["describe"][k]: k for k in ("unit_id", "transport", "max_op_ms")}
@@ -44,7 +44,7 @@ CORE_REQUIRED_OPS = ("confirm", "list", "describe", "clock", "open", "end", "kee
 
 
 def required_missing(confirm_payload: bytes, core_describe: list[tuple[int, bytes]]) -> list[str]:
-    """What every probe must give, as far as a lock-free look on one transport shows it (core §1.2, C-10; oep-spec
+    """What every probe must give, as far as a lock-free look on one transport shows it (core §1.2; oep-spec
     docs/conformance.md section 1): confirm's answer carries TLV transport, naming an entry of fn 0's describe or 0xFF
     (§7.1); fn 0's describe carries unit_id, transport, max_op_ms (§1.2, §7.5) and ops in core §7.4's form with every
     required op set (core §11; a probe whose fn 0 ops break the form is not used). -> what is missing (empty: nothing seen missing). The bounds of confirm's values and of
@@ -95,7 +95,7 @@ def _describe_all(call, fn: int, caps: Capabilities) -> bytes:
 def collect(call, prefix: str = "", exact: bool = False, confirm: tuple[int, int] = (0, 1)) -> Capabilities:
     """confirm, then fn 0's describe (the core: no name, never listed, core §7.2) and every listed interface's (the
     ones under `prefix` on label boundaries, `exact`: that name only - list itself returns every one, core §7.2). `confirm`: the revision range the confirm asks for - a host that confirmed already passes the
-    revision in use (core §7.1, C-15: every later confirm on a transport asks for it alone). fn 0 is shown first, as
+    revision in use (core §7.1: every later confirm on a transport asks for it alone). fn 0 is shown first, as
     an Offer with fn 0 and no name."""
     p = call(CORE_FN, OP_CONFIRM, m.CONFIRM_REQUEST + bytes(confirm))   # v0 and v1 both answer (0..1)
     magic, revision = struct.unpack_from("<4sB", p)

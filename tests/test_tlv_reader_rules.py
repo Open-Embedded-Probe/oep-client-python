@@ -1,6 +1,6 @@
-"""Review 7, one class across the codebase: readers of answer / event / data TLVs and of host input (core §2.2, §2.3).
+"""Readers of answer / event / data TLVs and of host input (core §2.2, §2.3).
 
-core §2.3 (a09fa45): "応答、出来事、データの TLV で、値が定義の決める長さ（...）を持たないものは壊れている: host はそれを使わない。"
+core §2.3: "応答、出来事、データの TLV で、値が定義の決める長さ（...）を持たないものは壊れている: host はそれを使わない。"
 / "繰り返すと定義が言わない tag が 2 つ以上あれば、読む側は最初のものを使う。後続の同じtagも上の検証対象である。"
 / "知らない TLV（この probe が実装しない tag）: critical なら、probe は要求を rejected unsupported（payload に受け取ったままの tag）で断る。"
 """

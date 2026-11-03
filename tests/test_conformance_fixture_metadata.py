@@ -125,7 +125,7 @@ def test_spi_modes_any_nonempty_subset_passes(value):
 
 @pytest.mark.parametrize('row',[tlv(1,b'\2\0\0\1'),tlv(6,b'\0\2\1\0\0\2\1\0')])
 def test_uart_without_write_declares_no_tx_role(row):
-    """fixture §2 (a09fa45): a fn that does not offer write takes no TX role and declares none in role_channels /
+    """fixture §2: a fn that does not offer write takes no TX role and declares none in role_channels /
     channel_group; the RX role alone passes."""
     model,c=setup();model.extension.metadata[11].append(tlv(1,b'\1\0\0\1'))
     assert FixtureMetadataChecks(c,model.metadata_selection).run()['status']=='passed'

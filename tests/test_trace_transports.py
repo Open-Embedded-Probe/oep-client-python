@@ -1,4 +1,4 @@
-"""Rule-by-rule trace of oep-spec a09fa45 docs/oep-transports.ja.md (docs/trace/transports.json): the rules no other
+"""Rule-by-rule trace of oep-spec docs/oep-transports.ja.md (docs/trace/transports.json): the rules no other
 test pins down, checked on the virtual bench (its serial port, its USB model, its TCP serving) and on the client's link
 (COBS, length frames, HID reports, USB bulk, TCP)."""
 

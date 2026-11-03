@@ -1,15 +1,15 @@
-"""Review 7 (one class over the whole codebase): checkers and checker-side samples that compared a whole answer or
-refusal payload exactly, or took a fixed length as the whole payload, where a09fa45 lets a probe add TLVs.
+"""Checkers and checker-side samples take a probe's answers and refusals with TLVs added after the fixed part: they do
+not compare a whole payload exactly or take a fixed length as the whole payload.
 
-core §2.3 (a09fa45): 各 op の応答の固定部分（と、前に数か長さを置いた並び）の後ろは TLV の並び。後から足すものはすべてここに TLV で足す。
+core §2.3: 各 op の応答の固定部分（と、前に数か長さを置いた並び）の後ろは TLV の並び。後から足すものはすべてここに TLV で足す。
 host は知らない tag を読み飛ばす。
-core §4.3 (a09fa45): 表の `—` は固定部分のフィールドが無いことを表す。応答の固定部分の後ろへ TLV を足す §2.3 の規則は、
+core §4.3: 表の `—` は固定部分のフィールドが無いことを表す。応答の固定部分の後ろへ TLV を足す §2.3 の規則は、
 固定部分が空の成功応答と rejected にも掛かる。知らない応答 TLV は読み飛ばす。
 core §4.3 unsupported: `tag(u8)`、[TLV]。 / locked: 残り時間 ms（u32）、[TLV owner（§6.4）]
 
 Each test runs an existing passing checker run while the virtual probe adds an unknown, non-critical TLV (0x7e) after
-the fixed part of its refusals (`refusal_tails`) or of its interface answers (`answer_tails`); before the fixes the
-checker failed the probe for it.
+the fixed part of its refusals (`refusal_tails`) or of its interface answers (`answer_tails`); the checker must still
+pass the probe.
 """
 import importlib
 
@@ -51,11 +51,11 @@ def answer_tails(monkeypatch):
 
     def core_init(self, endpoint, extension=None):
         init(self, endpoint, extension)
-        if extension is not None and not getattr(extension, '_review7_tailed', False):
+        if extension is not None and not getattr(extension, '_tailed', False):
             for name in ('dispatch_request', 'dispatch'):
                 if hasattr(extension, name):
                     setattr(extension, name, wrap(getattr(extension, name), endpoint))
-            extension._review7_tailed = True
+            extension._tailed = True
     monkeypatch.setattr(virtual_core.Core, '__init__', core_init)
     return lambda predicate: which.__setitem__(0, predicate)
 

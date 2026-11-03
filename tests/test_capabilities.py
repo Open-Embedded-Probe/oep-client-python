@@ -28,7 +28,7 @@ def test_valid_names(name):
     ("oep.tools.uart", "layer"),                                    # the layer: probe, wire, target or fixture
     ("oep.probe", "layer"),
     ("oep.probe." + "a" * 39, "bytes"),                             # 49 bytes: over the 48 of core §7.2
-    ("oep.-fixture", "label"),                                      # a label never starts or ends with '-' (C-23)
+    ("oep.-fixture", "label"),                                      # a label never starts or ends with '-'
     ("oep.fixture-", "label"),
     ("oep..core", "label"),
 ])

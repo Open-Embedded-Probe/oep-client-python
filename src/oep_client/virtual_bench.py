@@ -196,7 +196,7 @@ _CAPD = reg.FIXTURE_LOGIC.tlv["describe"]
 _ANAD = reg.FIXTURE_ANALOG.tlv["describe"]
 _GRPD = reg.FIXTURE_CAPTURE_GROUP.tlv["describe"]
 CORE_CHIP = reg.CORE.tlv["describe"]["chip"]
-UNIT_ID = re.compile(r"[a-z0-9-]{1,32}")                    # an x- unit_id is not unique (core §7.5, C-24)
+UNIT_ID = re.compile(r"[a-z0-9-]{1,32}")                    # an x- unit_id is not unique (core §7.5)
 
 
 def _analog_decl(frontends: list[tuple[int, int, int]], max_samples: int, min_hz: int, max_hz: int) -> tuple[bytes, ...]:
@@ -269,7 +269,7 @@ def block_max_length(max_frame: int) -> int:
 
 
 def _transports(kinds: list[tuple[int, int]]) -> tuple[bytes, ...]:
-    """(kind, interface) per transport, index = position (core §7.5, C-41): a USB CDC names its communication
+    """(kind, interface) per transport, index = position (core §7.5): a USB CDC names its communication
     interface (the first of the function), built-in USB serial the number the hardware presents or 0xFF, vendor bulk
     and HID their interface; a UART bridge and TCP 0xFF."""
     for k, itf in kinds:
@@ -712,7 +712,7 @@ def minimal_ops(probe: VirtualProbe) -> VirtualProbe:
 
 def with_unit_id(probe: VirtualProbe, unit_id: str) -> VirtualProbe:
     """The profile with another unit_id in fn 0's describe - an `x-` one is a probe with neither a unique number nor
-    storage (core §7.5, C-24: hosts key nothing kept across sessions by it). VIRTUAL BENCH ONLY."""
+    storage (core §7.5: hosts key nothing kept across sessions by it). VIRTUAL BENCH ONLY."""
     return _again(probe, [_with(o, (catalog.text(CORE_UNIT_ID, unit_id) if t[0] == CORE_UNIT_ID else t for t in o.tlvs))
                           if o.fn == CORE_FN else o for o in probe.offered])
 

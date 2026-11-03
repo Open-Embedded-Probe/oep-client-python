@@ -1,4 +1,4 @@
-"""oep-spec 9ed53e7 / 3cc50c8 against the virtual bench: describe of an fn not offered is unknown_function (core §4.3), unset of
+"""The virtual bench: describe of an fn not offered is unknown_function (core §4.3), unset of
 an item the probe does not declare is unsupported with the value's place (core §13.5), and an idle change takes effect
 at once on a free channel and at the next release on a held one (core §13.8)."""
 

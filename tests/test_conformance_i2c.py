@@ -156,7 +156,7 @@ def test_optional_timestamp_can_be_absent():
 
 
 def test_features_may_be_absent():
-    """core §7.4 / fixture §3 (a09fa45): features holds optional bits; a probe without internal pull-ups need not
+    """core §7.4 / fixture §3: features holds optional bits; a probe without internal pull-ups need not
     declare it (absent = no bits) - the metadata and behaviour checkers pass without the tag."""
     from oep_client.conformance.fixture_metadata import FixtureMetadataChecks
     model,c=setup(pullups=False);original=model.extension.describe

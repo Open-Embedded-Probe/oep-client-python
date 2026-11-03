@@ -171,7 +171,7 @@ def build(a: argparse.Namespace) -> endpoint.Endpoint:
     if getattr(a, "minimal_ops", False):
         probe = virtual_bench.minimal_ops(probe)                          # console / fixture UART at their smallest
     start = time.monotonic_ns()
-    # the clock in ns since this start (core §2.6a), and a boot_id from the OS's random source (core §6.5, C-19)
+    # the clock in ns since this start (core §2.6a), and a boot_id from the OS's random source (core §6.5)
     ep = endpoint.Endpoint(probe, lambda: (time.monotonic_ns() - start) // 1_000_000, boot_id=secrets.randbits(32),
                            now_ns=lambda: time.monotonic_ns() - start)
     wire = min(ep.pairs) if ep.pairs else None
@@ -451,7 +451,7 @@ def serve_tcp(a, ep, console, commands: Commands) -> None:
     srv.listen(8)
     port = srv.getsockname()[1]
     if a.framing == "length":
-        # the listening socket is a TCP transport of its own (transports §1, C-05): listed in describe, named by confirm
+        # the listening socket is a TCP transport of its own (transports §1): listed in describe, named by confirm
         ep.tcp_index = ep.add_transport(virtual_bench.TRANSPORT["tcp"])
     if a.announce:
         commands.responder = announce(a, ep, port)

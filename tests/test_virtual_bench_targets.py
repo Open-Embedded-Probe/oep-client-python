@@ -152,7 +152,7 @@ def test_i2c_declarations():
 def test_i2c_writes_are_frames_cut_at_max_length_and_overflow(i2c):
     """fixture §3: a controller write with data is one frame; bytes past max_length are cut (the frame keeps
     max_length bytes) and errors + 1; with queue_depth frames queued the next one is dropped, errors + 1 (not in
-    rx_frames); a write both over max_length and dropped counts 1 (at most 1 a write, oep-spec 4a4631a); an
+    rx_frames); a write both over max_length and dropped counts 1 (at most 1 a write); an
     address-only write counts nothing; another address is not ACKed."""
     ep, t, clock = i2c
     t.configure(0x42)

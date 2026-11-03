@@ -1,4 +1,4 @@
-"""oep.probe.plan (oep-spec a09fa45 interfaces/oep-if-plan.ja.md): the rules tests/test_plan.py leaves to the trace -
+"""oep.probe.plan: the rules tests/test_plan.py leaves to the trace -
 a role whose pins a request's arguments choose is no plan role, and the session's end releases a plan that
 plan_release itself refuses (a track bound in a capture-group)."""
 

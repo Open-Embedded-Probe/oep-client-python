@@ -68,7 +68,7 @@
     "tests/test_trace_debug.py::test_every_wire_offers_attach_detach_connections_and_declares_scan_in_its_ops[esp32-v003]",
     "tests/test_trace_debug.py::test_max_connections_is_a_u8_and_one_when_not_declared",
     "tests/test_trace_debug.py::test_each_target_request_picks_its_connection_by_the_number_it_starts_with",
-    "tests/test_virtual_bench_rules_2026_10_06.py::test_c21_riscv_dm_ops_are_gated_on_the_ops_tag",
+    "tests/test_virtual_bench_rules_ops_lines.py::test_c21_riscv_dm_ops_are_gated_on_the_ops_tag",
     "tests/test_trace_debug.py::test_a_minimal_wire_needs_no_scan_no_second_connection_and_no_console"
    ],
    "mutants": [],
@@ -212,7 +212,7 @@
   "debug:1:7": {
    "text": "- **scan は任意の有限探索**: host は count ≥ 1 の候",
    "verify": [
-    "tests/test_virtual_bench_rules_2026_10_02.py::test_p2_1_scan_has_no_implicit_list_and_takes_an_input_idle_pair",
+    "tests/test_virtual_bench_rules_core.py::test_p2_1_scan_has_no_implicit_list_and_takes_an_input_idle_pair",
     "tests/test_trace_debug.py::test_debug_ops_vector_on_the_bench[rvswd_scan__count_0_is_malformed]",
     "tests/test_virtual_bench_spec.py::test_the_client_scan_walks_every_candidate_pair",
     "tests/test_conformance_scan.py::test_finite_scan_contracts_pass",
@@ -238,7 +238,7 @@
   "debug:1:9": {
    "text": "- **時間**: attach と scan の応答は、max_op_ms（c",
    "verify": [
-    "tests/test_host_rules_2026_10_02.py::test_c06_attach_scan_and_reset_wait_max_op_ms",
+    "tests/test_host_rules_waits_lines.py::test_c06_attach_scan_and_reset_wait_max_op_ms",
     "tests/test_console_queue_and_reset_settle.py::test_attach_with_the_reset_tlv_waits_too_and_makes_nothing_when_it_fails",
     "tests/test_trace_common.py::test_a_failed_attach_answers_status_alone_and_a_bad_form_is_malformed",
     "tests/test_conformance_wire_options.py::test_wire_options_contracts_pass",
@@ -330,9 +330,9 @@
    "text": "- **scan が書くもの**: 「速さを確かめる前の書き込み」の 1 と 2",
    "verify": [
     "tests/test_trace_debug.py::test_scan_leaves_the_target_as_it_was",
-    "tests/test_virtual_bench_rules_2026_10_02.py::test_p2_o1_found_is_version_2_or_more_and_not_15[2-True]",
-    "tests/test_virtual_bench_rules_2026_10_02.py::test_p2_o1_found_is_version_2_or_more_and_not_15[15-False]",
-    "tests/test_virtual_bench_rules_2026_10_02.py::test_p2_o1_found_is_version_2_or_more_and_not_15[1-False]",
+    "tests/test_virtual_bench_rules_core.py::test_p2_o1_found_is_version_2_or_more_and_not_15[2-True]",
+    "tests/test_virtual_bench_rules_core.py::test_p2_o1_found_is_version_2_or_more_and_not_15[15-False]",
+    "tests/test_virtual_bench_rules_core.py::test_p2_o1_found_is_version_2_or_more_and_not_15[1-False]",
     "tests/test_conformance_scan_options.py::test_scan_options_contracts_pass",
     "tests/test_conformance_scan.py::test_finite_scan_contracts_pass",
     "tests/test_gpio_drive_and_serve_options.py::test_a_host_attach_with_reset_wakes_a_silent_target_and_scan_does_not_see_it"
@@ -488,7 +488,7 @@
   "debug:2:9": {
    "text": "- **線が応えない間の線**（電気的な安全）: やり取りとは、wire の節が",
    "verify": [
-    "tests/test_virtual_bench_rules_2026_10_06.py::test_lines_rest_undriven_from_an_unanswered_exchange_until_one_succeeds",
+    "tests/test_virtual_bench_rules_ops_lines.py::test_lines_rest_undriven_from_an_unanswered_exchange_until_one_succeeds",
     "tests/test_conformance_retry.py::test_retry_contracts_pass",
     "tests/test_trace_debug.py::test_after_an_unanswered_exchange_the_line_is_released_until_one_succeeds[p4-bench-oep.wire.rvswd]",
     "tests/test_trace_debug.py::test_after_an_unanswered_exchange_the_line_is_released_until_one_succeeds[esp32-v003-oep.wire.swio]",
@@ -573,7 +573,7 @@
   "debug:2:17": {
    "text": "- connection が閉じたら、その組の channel は上の保持になる",
    "verify": [
-    "tests/test_virtual_bench_rules_2026_10_02.py::test_p2_1_the_pins_of_a_closed_connection_go_back_to_their_idle_state",
+    "tests/test_virtual_bench_rules_core.py::test_p2_1_the_pins_of_a_closed_connection_go_back_to_their_idle_state",
     "tests/test_conformance_wire_options.py::test_wire_options_contracts_pass",
     "tests/test_conformance_cut.py::test_cut_contracts_pass",
     "tests/test_trace_debug.py::test_detach_answers_nothing_and_releases_the_connection_and_its_streams",
@@ -773,7 +773,7 @@
   "debug:3:6": {
    "text": "- swio の組は swclk = 0xFFFF（1 本の線。swclk ≠ ",
    "verify": [
-    "tests/test_virtual_bench_rules_2026_10_02.py::test_swio_swclk_other_than_0xffff_is_an_undeclared_combination_in_scan_and_attach",
+    "tests/test_virtual_bench_rules_core.py::test_swio_swclk_other_than_0xffff_is_an_undeclared_combination_in_scan_and_attach",
     "tests/test_trace_debug.py::test_debug_ops_vector_on_the_bench[rvswd_scan__one_combination_listed_and_found]",
     "tests/test_trace_debug.py::test_swio_declares_its_fixed_speed_as_min_clock_hz_and_attach_runs_at_it",
     "tests/test_trace_debug.py::test_the_wires_ids_are_dmstatus_scan_kind_1_and_a_swio_connection_takes_the_console"
@@ -788,7 +788,7 @@
    "text": "- method 0は必須。method 1はdescribeのfeatures",
    "verify": [
     "tests/test_trace_debug.py::test_method_1_only_where_attach_halt_is_declared_and_method_0_leaves_the_hart_running",
-    "tests/test_virtual_bench_rules_2026_10_02.py::test_c02_attach_method_and_reset_mode_a_later_revision_may_define",
+    "tests/test_virtual_bench_rules_core.py::test_c02_attach_method_and_reset_mode_a_later_revision_may_define",
     "tests/test_conformance_attach.py::test_standard_attach_and_console_contracts_pass",
     "tests/test_trace_debug.py::test_method_1_selects_hart_0_drops_haltreq_and_succeeds_only_with_hart_0_halted",
     "tests/test_review8_debug.py::test_attach_model_offers_method_1_only_with_attach_halt",
@@ -865,7 +865,7 @@
    "text": "- **reset の線に既定は無い**: どの線を reset に使うかは h",
    "verify": [
     "tests/test_virtual_bench_spec.py::test_no_default_reset_line_only_the_declared_channels",
-    "tests/test_virtual_bench_rules_2026_10_06.py::test_attach_reset_tlv_on_an_output_idle_channel_is_unavailable_and_runs_nothing",
+    "tests/test_virtual_bench_rules_ops_lines.py::test_attach_reset_tlv_on_an_output_idle_channel_is_unavailable_and_runs_nothing",
     "tests/test_target_parts.py::test_attach_after_gpio_reset_pipelines_release_with_attach_and_retries",
     "tests/test_conformance_wire_options.py::test_wire_options_contracts_pass",
     "tests/test_review4_debug.py::test_the_attach_checker_requires_the_reset_line_to_be_declared_as_role_3"
@@ -1209,11 +1209,11 @@
   "debug:4:1": {
    "text": "- **必須のopはdmiだけ**。halt、resume、reset、read",
    "verify": [
-    "tests/test_virtual_bench_rules_2026_10_06.py::test_c21_riscv_dm_ops_are_gated_on_the_ops_tag",
+    "tests/test_virtual_bench_rules_ops_lines.py::test_c21_riscv_dm_ops_are_gated_on_the_ops_tag",
     "tests/test_conformance_registered_ops.py::test_every_minimal_mandatory_op_is_checked[oep.target.riscv-dm-16]",
     "tests/test_trace_debug.py::test_debug_ops_vector_on_the_bench[riscv-dm_halt_not_offered_by_raw-only_fn]",
     "tests/test_trace_debug.py::test_debug_ops_vector_on_the_bench[riscv-dm_run_not_offered]",
-    "tests/test_host_rules_2026_10_06.py::test_c21_riscv_dm_says_which_optional_ops_the_probe_offers",
+    "tests/test_host_rules_bounds_options.py::test_c21_riscv_dm_says_which_optional_ops_the_probe_offers",
     "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.target.riscv-dm-extra1-False]",
     "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.target.riscv-dm-extra2-False]",
     "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.target.riscv-dm-extra3-True]",
@@ -1253,7 +1253,7 @@
    "text": "| halt | haltreq | allhaltedを確かめてからhaltr",
    "verify": [
     "tests/test_conformance_debug.py::test_mandatory_debug_contracts_pass",
-    "tests/test_virtual_bench_rules_2026_10_02.py::test_p2_o4_a_halt_that_times_out_clears_haltreq_and_a_step_that_cannot_halt_again_says_step_left"
+    "tests/test_virtual_bench_rules_core.py::test_p2_o4_a_halt_that_times_out_clears_haltreq_and_a_step_that_cannot_halt_again_says_step_left"
    ],
    "mutants": [
     "tests/test_conformance_debug.py::test_debug_checker_detects_independent_faults[halt_failure_left-HALT-FAILURE]",
@@ -1402,7 +1402,7 @@
    "text": "| 0x13 | reset | mode(u8)、[TLV] | status",
    "verify": [
     "tests/test_interfaces.py::test_reset_answers_status_flags_pc_and_takes_no_method",
-    "tests/test_virtual_bench_rules_2026_10_06.py::test_o2_reset_is_ndmreset_and_moves_no_line",
+    "tests/test_virtual_bench_rules_ops_lines.py::test_o2_reset_is_ndmreset_and_moves_no_line",
     "tests/test_target_parts.py::test_reset_halt_and_step_decode",
     "tests/test_trace_debug.py::test_every_op_but_connections_needs_the_lock_and_two_connections_share_one_lock",
     "tests/test_trace_debug.py::test_each_optional_riscv_dm_op_is_unknown_operation_once_ops_leaves_it_out[reset]"
@@ -1620,7 +1620,7 @@
    "text": "- **halt**は、すでに止まっていればhaltreqを下ろしてok。待って",
    "verify": [
     "tests/test_conformance_debug.py::test_mandatory_debug_contracts_pass",
-    "tests/test_virtual_bench_rules_2026_10_02.py::test_p2_o4_a_halt_that_times_out_clears_haltreq_and_a_step_that_cannot_halt_again_says_step_left",
+    "tests/test_virtual_bench_rules_core.py::test_p2_o4_a_halt_that_times_out_clears_haltreq_and_a_step_that_cannot_halt_again_says_step_left",
     "tests/test_trace_debug.py::test_debug_ops_vector_on_the_bench[riscv-dm_halt__halted]"
    ],
    "mutants": [
@@ -1654,7 +1654,7 @@
    "text": "- **step** は dcsr.step を立てて resume を 1 回",
    "verify": [
     "tests/test_conformance_step.py::test_optional_step_contracts_pass",
-    "tests/test_virtual_bench_rules_2026_10_02.py::test_p2_o4_a_halt_that_times_out_clears_haltreq_and_a_step_that_cannot_halt_again_says_step_left"
+    "tests/test_virtual_bench_rules_core.py::test_p2_o4_a_halt_that_times_out_clears_haltreq_and_a_step_that_cannot_halt_again_says_step_left"
    ],
    "mutants": [
     "tests/test_conformance_step.py::test_step_checker_detects_independent_faults[wrong_moved-SELF-BRANCH]",
@@ -1737,7 +1737,7 @@
    "verify": [
     "tests/test_trace_debug.py::test_debug_refusal_vector_on_the_bench[riscv-dm_reset_mode_3]",
     "tests/test_trace_debug.py::test_debug_refusal_vector_on_the_bench[riscv-dm_reset_mode_past_the_defined_ones]",
-    "tests/test_virtual_bench_rules_2026_10_02.py::test_c02_attach_method_and_reset_mode_a_later_revision_may_define",
+    "tests/test_virtual_bench_rules_core.py::test_c02_attach_method_and_reset_mode_a_later_revision_may_define",
     "tests/test_conformance_reset.py::test_optional_reset_contracts_pass"
    ],
    "mutants": [

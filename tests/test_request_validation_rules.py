@@ -1,4 +1,4 @@
-"""Round 7, request validation."""
+"""Request validation in the virtual cores: the header, the session and the payload are checked before any change."""
 import struct
 
 from oep_client.registry import WIRE_RVSWD as _WIRE, REJECT_REASONS as _R

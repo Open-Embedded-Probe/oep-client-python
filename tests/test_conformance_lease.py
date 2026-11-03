@@ -29,7 +29,7 @@ import secrets
 
 @pytest.mark.parametrize('defect', ['send_time', 'partial', 'replay', 'no_rejected', 'freeze_wait', 'stale'])
 def test_lease_mutants_fail(defect):
-    """core §6.1 (a09fa45) mutants: the lease restarted at the write instead of the answer's generation (send_time),
+    """core §6.1 mutants: the lease restarted at the write instead of the answer's generation (send_time),
     renewed by a partial write or by the write's completion (stale), by a replay, not by a rejected answer, or
     an expiry frozen while an answer waits for the writer - each is caught by a CORE-LEASE check."""
     now, model, adapter, runner = build()
@@ -43,7 +43,7 @@ def test_lease_mutants_fail(defect):
             before = core.deadline
             response = handle(data, transport, admission_reason=admission_reason, defer_send=defer_send)
             if defect == 'send_time' and core.renewal is not None and defer_send:
-                core.deadline = before                     # the pre-a09fa45 rule: counted from the write instead
+                core.deadline = before                     # a wrong rule: counted from the write instead
             elif defect == 'replay' and cached:
                 core.deadline = model.ep.now() + core.lease
             elif defect == 'no_rejected' and response and response[3] == 0 and core.renewal is not None:
@@ -117,7 +117,7 @@ def test_long_execution_pauses_lease(deferred):
 
 
 def test_close_discards_renewal_and_expires():
-    """core §6.1 (a09fa45): the keepalive's answer restarts the lease when it is generated; the route closing and
+    """core §6.1: the keepalive's answer restarts the lease when it is generated; the route closing and
     dropping that answer changes nothing - the lease runs out lease_ms after the generation."""
     now, model, adapter, runner = build()
     sid = secrets.randbelow(0xffffffff) + 1
@@ -141,7 +141,7 @@ def test_close_discards_renewal_and_expires():
 
 
 def test_same_session_open_renews_at_generation_and_replay_does_not():
-    """core §6.1, §6.2 (a09fa45): the holder's open again restarts the lease at its answer's generation (lease_ms
+    """core §6.1, §6.2: the holder's open again restarts the lease at its answer's generation (lease_ms
     2000), not when the writer completes; its replay changes nothing."""
     now, model, adapter, runner = build()
     runner.c.confirm()

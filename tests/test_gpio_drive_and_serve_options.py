@@ -1,4 +1,4 @@
-"""The virtual bench against oep-spec a09fa45: gpio set without a strength and the 3-byte idle item (fixture §1,
+"""The virtual bench: gpio set without a strength and the 3-byte idle item (fixture §1,
 core §13.8); a target silent until a reset; virtual_bench_serve's options."""
 
 import struct

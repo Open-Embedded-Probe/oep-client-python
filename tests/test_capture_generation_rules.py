@@ -1,4 +1,4 @@
-"""oep-spec 0098b56 .. 2c6d18d (the external review's interface re-check, 2026-10-07), in the client and the virtual
+"""The client and the virtual
 bench: capture §3.3's configure contract, §3.4's generations (events carry them, a host drops another start's),
 §3.2's segments paged by common §1.3, §4's capture-group start answer, status and events with the group's generation."""
 
@@ -147,7 +147,7 @@ def test_a_pretrigger_of_0_without_a_trigger_is_left_out():
 # ---- capture §0 / §3.4: generations never re-used, events carry them ----------------------------------------------
 
 def test_the_last_generation_is_0xffffffff_and_the_next_start_is_refused():
-    """oep-spec a09fa45 capture §0: past 0xFFFFFFFF a start is unavailable cause 2 until a reboot (it was 1 before)."""
+    """capture §0: past 0xFFFFFFFF a start is unavailable cause 2 until a reboot."""
     ep, hst, lc, clock = bench()
     core.plan_apply(hst, [(lc.fn, 0, 20)])
     lc.configure(rate=1_000_000, samples=64)
@@ -297,7 +297,7 @@ def test_the_start_answer_fixed_part_on_the_wire():
     ep, hst, lc, an, grp, clock = group()
     grp.bind([lc, an])
     r = hst.request(grp.fn, grp.START, b"")
-    start_ns, generation, n = struct.unpack_from("<QIB", r.payload)    # no blocking_ms (a09fa45)
+    start_ns, generation, n = struct.unpack_from("<QIB", r.payload)    # no blocking_ms
     assert (start_ns, generation, n) == (7_000_000, 1, 2) and len(r.payload) == 13 + 6 * n
     assert [struct.unpack_from("<HI", r.payload, 13 + 6 * k) for k in range(n)] == [(lc.fn, 1), (an.fn, 1)]
     assert not m.split_tlvs(r.payload[13 + 6 * n:])                     # no TLV 0x01 generations any more
@@ -440,7 +440,7 @@ def test_the_virtual_bench_clears_the_bits_that_did_not_come(order):
     assert bits == 12 and data == fixture.pack_wire_bits([1] * 12, order)
 
 
-# ---- oep-spec 66c49e7, capture §1.1: w is any integer 1-128 -------------------------------------------------------------
+# ---- capture §1.1: w is any integer 1-128 -------------------------------------------------------------
 
 # logic_layout.json both ways: test_spec_vectors.py
 
@@ -460,7 +460,7 @@ def test_a_capture_with_any_w_reads_back(w):
         assert lc.channel(data, k, 101) == [(i >> k) & 1 for i in range(101)]
 
 
-# ---- oep-spec 0b9a058, capture §2.2: a segment not kept seamless is not handed out ----------------------------------------
+# ---- capture §2.2: a segment not kept seamless is not handed out ----------------------------------------
 
 def test_data_dropped_inside_a_segment_stops_the_track_in_error():
     ep, hst, lc, clock = bench()

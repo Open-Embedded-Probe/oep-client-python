@@ -1,4 +1,4 @@
-"""Rule-by-rule trace of oep-spec a09fa45 docs/oep-core.ja.md (core): a test for each unit no other test checks on its
+"""Rule-by-rule trace of oep-spec docs/oep-core.ja.md (core): a test for each unit no other test checks on its
 own, each naming its section ("core §x.y"). The virtual bench is checked directly - endpoint.Endpoint on a full profile
 and, where the rule is fn 0's, also the core-v1 profile (virtual_core.Core) - and so is the client (message, host,
 core, link). A *_mutant test breaks the bench or the client the way the rule forbids and shows the same check fails."""
@@ -3201,7 +3201,7 @@ def test_on_tcp_a_resend_given_up_closes_and_opens_the_connection_and_confirms_f
 # ---- third review: core §6-§13 ------------------------------------------------------
 
 def test_the_lease_restarts_at_the_answers_generation_not_its_write():
-    """core §6.1 (a09fa45): the holder's answer restarts lease_ms when it is generated - the write waiting, completing
+    """core §6.1: the holder's answer restarts lease_ms when it is generated - the write waiting, completing
     later, or the route closing and dropping the answer change nothing; a copy still waiting on the route (coalesced)
     neither pauses nor renews it; the lease then runs out lease_ms after the generation."""
     ep = build()
@@ -3230,7 +3230,7 @@ def test_the_lease_restarts_at_the_answers_generation_not_its_write():
 
 
 def test_lease_renewed_at_the_write_mutant(monkeypatch):
-    """core §6.1 mutant: a probe that restarts the lease when the answer's write completes (the rule before a09fa45) is
+    """core §6.1 mutant: a probe that restarts the lease when the answer's write completes is
     caught by the check above."""
     orig = endpoint.Endpoint.sent
 

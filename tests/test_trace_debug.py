@@ -1,4 +1,4 @@
-"""oep.wire.rvswd / swio / swd, oep.target.riscv-dm (oep-spec a09fa45 interfaces/oep-if-debug.ja.md) on the virtual
+"""oep.wire.rvswd / swio / swd, oep.target.riscv-dm on the virtual
 bench and through the client: the rules tests/test_debug_attach.py, tests/test_interfaces.py, tests/test_target_parts.py
 and the debug checkers leave to the trace - the wires' mandatory ops and the lock, max_connections, max_speed against
 min_clock_hz, the target_id values that mean none, detach and a probe restart, the connections list's order and pages,
@@ -1073,7 +1073,7 @@ def test_each_optional_riscv_dm_op_is_unknown_operation_once_ops_leaves_it_out(o
     """debug §4 (the op table's 要否 column, rule 1): dmi is the only mandatory op - a riscv-dm fn whose ops leave out
     `op` answers it unknown_operation (nothing runs, the hart as it was) while dmi still works; the same fn with the
     op declared answers it. read_block / write_block are left out together (a pair)."""
-    from test_virtual_bench_rules_2026_10_06 import ops_without, with_tlvs
+    from test_virtual_bench_rules_ops_lines import ops_without, with_tlvs
     left = ("read_block", "write_block") if op in ("read_block", "write_block") else (op,)
     probe = with_tlvs(virtual_bench.p4_bench(), "oep.target.riscv-dm", ops_without("oep.target.riscv-dm", *left))
     body = HIGH_LEVEL[op]

@@ -1,6 +1,6 @@
 """Length-prefixed frames on a reliable byte stream (USB vendor bulk, HID, TCP): u16 length, then the message (oep-spec
 oep-core §3). No CRC: a length that cannot be right, or a frame that stops half way, means the boundaries are lost -
-FramingLost, and the link resyncs. Not on TCP (transports §5, C-07): a pause inside a frame is normal there and the
+FramingLost, and the link resyncs. Not on TCP (transports §5): a pause inside a frame is normal there and the
 frame is read on; a stream that keeps its boundaries says so with `keeps_boundaries = True`."""
 
 from __future__ import annotations

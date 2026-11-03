@@ -173,6 +173,6 @@ def test_group_trigger_caps():
     assert caps is not None and (caps.max_stages, caps.max_terms, caps.max_conds) == (vbt.MAX_STAGES, vbt.MAX_TERMS, vbt.MAX_CONDS)
     assert caps.cross_track and caps.trigger_out_latency_ns is None
     assert set(caps.kinds()) == set(vbt.TYPES) and all(caps.takes(c.COND[k]) for k in vbt.TYPES)
-    p4 = c.TriggerCaps.unpack(struct.pack("<BBBBIBI", 1, 1, 1, 0, 0b11110, 0, 0xFFFFFFFF))   # the P4's (ed51b03)
+    p4 = c.TriggerCaps.unpack(struct.pack("<BBBBIBI", 1, 1, 1, 0, 0b11110, 0, 0xFFFFFFFF))   # the P4's
     assert p4.kinds() == ["level", "edge", "cross_up", "cross_down"] and not p4.takes(c.COND["above"])
     assert c.TriggerCaps.unpack(b"\x01\x01\x01") is None

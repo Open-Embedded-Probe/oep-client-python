@@ -4,7 +4,7 @@ The peer checks wire bytes against literal expectations and returns unsupported
 for a selected critical field. It does not model electrical effects or certify
 all optional arguments of every interface.
 
-The wire forms are oep-spec a09fa45's (attach: method swdio swclk max_speed, then TLVs).
+attach is method swdio swclk max_speed, then TLVs.
 """
 import struct
 

@@ -171,7 +171,7 @@ def test_future_empty_read_must_answer_write_pos():
 
 
 def test_omitted_repeat_segments_are_the_probe_choice():
-    """capture §3.3 (a09fa45): mode 2 without segments - "省略時はprobeが決め、actual_segmentsは常に1以上"; a probe that
+    """capture §3.3: mode 2 without segments - "省略時はprobeが決め、actual_segmentsは常に1以上"; a probe that
     picks 1 segment (not its capacity 2) passes SAMPLES."""
     model,c=setup();install=model.install
     def one_by_default():

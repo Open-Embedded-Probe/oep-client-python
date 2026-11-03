@@ -51,7 +51,7 @@ def test_clock_faults_are_detected(fault):
         if req[3:6]==b'\4\0\x10':
             elapsed=model.clock_ms-start
             if fault=='consume_idle':model.ports[0]['deadline']-=elapsed
-            if fault=='no_generation_renewal':model.ep.current_core.deadline=deadline+elapsed   # pre-a09fa45 (core §6.1)
+            if fault=='no_generation_renewal':model.ep.current_core.deadline=deadline+elapsed   # against core §6.1
             if fault=='consume_lease':model.ep.current_core.deadline=deadline
             if fault=='execution_changes_pin':model.extension.pins[1]=(3,0)
         return out

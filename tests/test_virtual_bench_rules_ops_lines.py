@@ -1,8 +1,7 @@
-"""The virtual bench against the probe-side rules added since the 2026-10-02 rule changes: oep-spec 2e70f40 (required and
-optional ops, C-21), 975d88c / 598bb26 / 8d91db0 (the lines while a wire does not answer, the rest states), 73a0c37
-(cs_setup_ns, search_retries, boot_reset), and docs/v1-rule-change-proposal-2026-10-06.md (b4b08f1, 40291a4). Each test
-names its item. Updated to oep-spec 0f455a0 (rule review 2026-10-07 §2: any one reason after the session check, no
-ignored TLV, no reset method / boot_reset, the new idle form)."""
+"""The virtual bench: required and optional ops, the clock and the boot_id, the values a probe declares, short messages
+and roles, list, the idle state of channels, the refusal order after the session check (core §4.3), the lines while a
+wire does not answer and their rest states (debug), the reset op, and the fixture targets' limits (i2c-target's
+reserved addresses, spi-target's cs_setup_ns)."""
 
 import struct
 
@@ -12,7 +11,7 @@ from oep_client.registry import WIRE_RVSWD as _RV_WIRE
 RESET_TLV, IDLE_TLV = _RV_WIRE.tlv['attach']['reset'], _RV_WIRE.tlv['attach']['idle_clock']   # by name (debug §3)
 from oep_client import catalog, endpoint, virtual_bench, message as m, registry as reg
 
-from test_virtual_bench_rules_2026_10_02 import ITEM, PLAN_APPLY, W, Clock, Host, att
+from test_virtual_bench_rules_core import ITEM, PLAN_APPLY, W, Clock, Host, att
 
 CORE = reg.CORE
 RV = reg.TARGET_RISCV_DM
@@ -59,9 +58,9 @@ def attached(ep, h, wire=1, pair=(2, 3)):
     return struct.unpack_from("<I", r.payload)[0]
 
 
-# ---- C-21 (2e70f40): required and optional ops; an undefined op is unknown_operation at order 1 ----------------
+# ---- required and optional ops; an undefined op is unknown_operation at order 1 ----------------
 
-def test_c21_an_op_fn_0_does_not_define_is_unknown_operation_not_session_required():
+def test_an_op_fn_0_does_not_define_is_unknown_operation_not_session_required():
     ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
     h = Host(ep)
     assert h.raw(0, 0x50, session=False).detail == m.UNKNOWN_OPERATION        # no session: still order 1's second
@@ -69,7 +68,7 @@ def test_c21_an_op_fn_0_does_not_define_is_unknown_operation_not_session_require
     assert h.raw(0, m.OP_KEEPALIVE, session=False).detail == m.SESSION_REQUIRED   # a defined op: its session check
 
 
-def test_c21_an_op_an_interface_does_not_define_is_unknown_operation():
+def test_an_op_an_interface_does_not_define_is_unknown_operation():
     ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
     h = Host(ep)
     for fn in (1, 2, 3, 4, 5):                                                # wire, dm, console, gpio, uart
@@ -78,7 +77,7 @@ def test_c21_an_op_an_interface_does_not_define_is_unknown_operation():
     assert h.raw(1, 0x04).detail == m.UNKNOWN_OPERATION                       # 0x04 is reserved on the wires
 
 
-def test_c21_riscv_dm_ops_are_gated_on_the_ops_tag():
+def test_riscv_dm_ops_are_gated_on_the_ops_tag():
     ep, h = bench(virtual_bench.esp32_v003())                                          # ops without step
     dm = fn_of(ep, "oep.target.riscv-dm")
     assert not ep.offers(dm, RV.op["step"]) and ep.offers(dm, RV.op["run"])
@@ -93,7 +92,7 @@ def test_c21_riscv_dm_ops_are_gated_on_the_ops_tag():
         assert h.raw(2, RV.op[op], body).detail == m.NO_RESOURCE, op      # required: the connection is looked up
 
 
-def test_c21_save_and_state_without_storage_are_unknown_operation():
+def test_save_and_state_without_storage_are_unknown_operation():
     """core §13.7: save and state only with storage (fn 0's ops say so); no erase at all."""
     base = [o for o in virtual_bench.p4_bench().offered if o.fn != 0] + [virtual_bench._core(
         "3.0.0", "esp32p4", "30eda0e3b009", 55, virtual_bench._transports([(virtual_bench.TRANSPORT["vendor_bulk"], 0)]))]
@@ -106,7 +105,7 @@ def test_c21_save_and_state_without_storage_are_unknown_operation():
     assert h.raw(0, SETTINGS["save"]).succeeded and "erase" not in SETTINGS
 
 
-def test_c21_capture_query_and_force_need_their_ops():
+def test_capture_query_and_force_need_their_ops():
     ep, h = bench(with_tlvs(virtual_bench.p4_x035(), "oep.fixture.logic", ops_without(LOGIC.name, "query", "force")))
     logic = fn_of(ep, "oep.fixture.logic")
     assert h.raw(logic, LOGIC.op["query"], session=False).detail == m.UNKNOWN_OPERATION
@@ -118,7 +117,7 @@ def test_c21_capture_query_and_force_need_their_ops():
     assert h.raw(group, GROUP.op["force"]).succeeded
 
 
-def test_c21_order_1_refusals_are_not_remembered_and_do_not_restart_the_lease():
+def test_order_1_refusals_are_not_remembered_and_do_not_restart_the_lease():
     ep, h = bench(virtual_bench.esp32_v003())
     dm = fn_of(ep, "oep.target.riscv-dm")
     ep.now.t = 2000
@@ -127,7 +126,7 @@ def test_c21_order_1_refusals_are_not_remembered_and_do_not_restart_the_lease():
     assert ep.expires_ms == 3000                                              # the open's lease, not restarted
 
 
-# ---- C-31 / C-19: the clock since boot, never back; the boot_id ---------------------------------------------------
+# ---- the clock since boot, never back; the boot_id ---------------------------------------------------
 
 def clock(h, session=False):
     """fn 0's clock (core §7.7) -> (boot_id, uptime_ns)."""
@@ -136,7 +135,7 @@ def clock(h, session=False):
     return struct.unpack("<IQ", r.payload)
 
 
-def test_c31_the_clock_has_the_resolution_it_is_given_and_never_goes_back():
+def test_the_clock_has_the_resolution_it_is_given_and_never_goes_back():
     ns = [5_123_456]
     ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock(), now_ns=lambda: ns[0])
     assert ep.now_ns() == 5_123_456                                           # not cut to ms
@@ -147,12 +146,12 @@ def test_c31_the_clock_has_the_resolution_it_is_given_and_never_goes_back():
     assert ep.now_ns() == 7_000_000                                           # ms clock: in ns
 
 
-def test_c31_a_reboot_starts_the_clock_again_and_clock_says_so():
+def test_a_reboot_starts_the_clock_again_and_clock_says_so():
     ep, h = bench()
     ep.now.t = 51_000
     assert clock(h) == (ep.boot_id, 51_000_000_000)                           # no session needed (core §7.7)
     old = ep.boot_id
-    ep.reboot()                                                               # a new boot_id, drawn (C-19)
+    ep.reboot()                                                               # a new boot_id, drawn
     assert ep.boot_id != old and ep.now_ns() == 0
     ep.now.t += 1000
     boot, up = clock(h)
@@ -187,7 +186,7 @@ def test_fn_0_has_the_eight_core_ops_the_settings_and_no_subscribe():
                                                                               # notifications from fn 0)
 
 
-def test_c19_after_a_reboot_with_a_repeated_boot_id_the_old_session_is_gone():
+def test_after_a_reboot_with_a_repeated_boot_id_the_old_session_is_gone():
     ep, h = bench()
     ep.reboot(ep.boot_id)                                                     # a probe whose only source repeated it
     assert h.raw(0, m.OP_KEEPALIVE).detail == m.NO_SESSION                    # nothing holds the lock (core §6.2)
@@ -195,24 +194,24 @@ def test_c19_after_a_reboot_with_a_repeated_boot_id_the_old_session_is_gone():
     assert r.succeeded and struct.unpack("<II", r.payload) == (3000, ep.boot_id)   # lease_ms boot_id, no resumed
 
 
-def test_c19_virtual_bench_serve_draws_its_boot_id_and_counts_in_ns():
+def test_virtual_bench_serve_draws_its_boot_id_and_counts_in_ns():
     from oep_client import virtual_bench_serve
     a, b = (virtual_bench_serve.build(virtual_bench_serve.parse([])) for _ in range(2))
     assert len({a.boot_id, b.boot_id, 0x1234ABCD}) == 3                       # drawn, not the fixed default
     assert a.now_ns() % 1_000_000 or a.now_ns() != a.now_ns()                 # ns, not ms in ns (almost always)
 
 
-# ---- C-20 / C-47 / C-41: the values a probe declares --------------------------------------------------------------
+# ---- the values a probe declares --------------------------------------------------------------
 
 @pytest.mark.parametrize("max_frame, window, inflight", [(63, 4096, 4), (1024, 1023, 4), (1024, 4096, 0)])
-def test_c20_confirms_bounds_are_the_virtual_bench_s_too(max_frame, window, inflight):
+def test_confirms_bounds_are_the_virtual_bench_s_too(max_frame, window, inflight):
     probe = virtual_bench.VirtualProbe("x", max_frame, virtual_bench.p4_bench().offered)
     with pytest.raises(ValueError):
         endpoint.Endpoint(probe, Clock(), window=window, max_inflight=inflight)
 
 
 @pytest.mark.parametrize("value", [0, reg.LIMITS["max_op_ms_max"] + 1])
-def test_c47_max_op_ms_outside_1_to_600000_is_not_a_probe(value):
+def test_max_op_ms_outside_1_to_600000_is_not_a_probe(value):
     probe = with_tlvs(virtual_bench.p4_bench(), virtual_bench.CORE_NAME,
                       lambda tlvs: [catalog.u32(virtual_bench.CORE_MAX_OP_MS, value) if t[0] == virtual_bench.CORE_MAX_OP_MS else t
                                     for t in tlvs])
@@ -221,7 +220,7 @@ def test_c47_max_op_ms_outside_1_to_600000_is_not_a_probe(value):
     assert reg.LIMITS["max_op_ms_max"] == 600_000
 
 
-def test_c41_a_uart_bridge_and_tcp_name_no_usb_interface():
+def test_a_uart_bridge_and_tcp_name_no_usb_interface():
     with pytest.raises(AssertionError):
         virtual_bench._transports([(virtual_bench.TRANSPORT["uart_bridge"], 0)])
     ep = endpoint.Endpoint(virtual_bench.rp2350_pins(), Clock())
@@ -230,7 +229,7 @@ def test_c41_a_uart_bridge_and_tcp_name_no_usb_interface():
     assert rows == {0: (virtual_bench.TRANSPORT["usb_cdc"], 0), index: (virtual_bench.TRANSPORT["tcp"], 0xFF)}
 
 
-# ---- C-36: short messages and roles in the wrong direction --------------------------------------------------------
+# ---- short messages and roles in the wrong direction --------------------------------------------------------
 
 @pytest.mark.parametrize("data", [
     m.Result(1, m.COMPLETED, m.SUCCESS).pack(),                               # an answer echoed back
@@ -240,22 +239,22 @@ def test_c41_a_uart_bridge_and_tcp_name_no_usb_interface():
     bytes([0x81, 1, 0, 0, 0, m.OP_KEEPALIVE, 0x51, 0, 0, 0]),                 # role 0x81: none any more (core §2.4)
     b"",
 ])
-def test_c36_the_probe_discards_what_is_not_a_whole_request(data):
+def test_the_probe_discards_what_is_not_a_whole_request(data):
     ep, h = bench()
     assert ep.handle(data, 0) is None and ep.discarded == 1
     assert h.raw(0, m.OP_KEEPALIVE).succeeded                                 # and goes on
 
 
-# ---- C-39: list is fixed for the boot; first beyond the matches -------------------------------------------------
+# ---- list is fixed for the boot; first beyond the matches -------------------------------------------------
 
-def test_c39_list_from_beyond_the_matches_gives_the_total_and_count_0():
+def test_list_from_beyond_the_matches_gives_the_total_and_count_0():
     ep, h = bench()
     r = h.raw(0, m.OP_LIST, catalog.pack_list_request(50), session=False)     # first(u16) alone (core §7.2)
     total, entries = catalog.unpack_list_result(r.payload)
     assert (total, entries) == (len(ep.names) - 1, [])                       # fn 0 is never listed (core §7.2)
 
 
-# ---- △12: every channel that is not the probe's own is in its idle state from boot------------------------------------
+# ---- every channel that is not the probe's own is in its idle state from boot------------------------------------
 
 def test_t12_every_channel_not_the_probes_own_is_parked_at_boot():
     ep = endpoint.Endpoint(virtual_bench.p4_x035(), Clock())
@@ -263,14 +262,14 @@ def test_t12_every_channel_not_the_probes_own_is_parked_at_boot():
     assert set(ep.parked.values()) == {0}                                     # Hi-Z without settings
 
 
-# ---- C-21 (rest), core §4.3: after the session check, any one reason that applies --------------------------------
+# ---- core §4.3: after the session check, any one reason that applies --------------------------------
 
 def assignment(fn, role, ch, critical=True):
     return m.tlv(reg.PROBE_PLAN.tlv["plan_apply"]["role_assignment"], struct.pack("<HBH", fn, role, ch), critical=critical)
 
 
 def test_plan_apply_any_one_reason_that_applies():
-    """core §4.3 (rule review 2026-10-07): after the session check the probe checks everything before any change and
+    """core §4.3: after the session check the probe checks everything before any change and
     answers with any one reason that applies - no order among malformed, unknown_function (an fn in the payload),
     unsupported and unavailable any more."""
     ep, h = bench(virtual_bench.p4_x035())
@@ -338,7 +337,7 @@ def test_settings_set_any_one_reason_and_nothing_changes():
     assert ep.config == before
 
 
-# ---- 975d88c / 598bb26 / 8d91db0: the lines while the wire does not answer, the rest state ------------------------
+# ---- the lines while the wire does not answer, the rest state ------------------------
 
 def test_lines_rest_undriven_from_an_unanswered_exchange_until_one_succeeds():
     ep, h = bench()
@@ -372,7 +371,7 @@ def test_every_target_op_fails_with_status_line_when_nothing_answers(op, body):
     assert endpoint.LINE in r.payload[:3]
 
 
-# ---- 975d88c: the reset TLV of attach on a channel whose idle is an output -------------------------------------------
+# ---- the reset TLV of attach on a channel whose idle is an output -------------------------------------------
 
 def test_attach_reset_tlv_on_an_output_idle_channel_is_unavailable_and_runs_nothing():
     ep, h = bench(virtual_bench.esp32_v003())
@@ -388,10 +387,10 @@ def test_attach_reset_tlv_on_an_output_idle_channel_is_unavailable_and_runs_noth
     assert tg.silent_until_reset                                              # the line was never pulled
 
 
-# ---- ○2: the reset op is ndmreset and drives no line --------------------------------------------------------------
+# ---- the reset op is ndmreset and drives no line --------------------------------------------------------------
 
 def test_o2_reset_is_ndmreset_and_moves_no_line():
-    """debug §4.3 (rule review 2026-10-07): reset is mode(u8) alone (no method TLV) and uses ndmreset; it never moves
+    """debug §4.3: reset is mode(u8) alone (no method TLV) and uses ndmreset; it never moves
     the reset line. Its answer is status(u8) flags(u8) pc(u32)."""
     ep, h = bench(virtual_bench.esp32_v003())
     cid = attached(ep, h, pair=ep.pairs[1][0])
@@ -409,7 +408,7 @@ def test_o2_reset_is_ndmreset_and_moves_no_line():
     assert "reset" not in RV.tlv
 
 
-# ---- △5 / △6: i2c-target's reserved addresses; uart write without TX; spi arm count > length -----------------------
+# ---- i2c-target's reserved addresses; uart write without TX; spi arm count > length -----------------------
 
 @pytest.mark.parametrize("address, detail", [(0x00, m.UNSUPPORTED), (0x07, m.UNSUPPORTED), (0x78, m.UNSUPPORTED),
                                              (0x7F, m.UNSUPPORTED), (0x80, m.MALFORMED), (0x08, None), (0x77, None)])
@@ -444,7 +443,7 @@ def test_t6_spi_arm_count_over_length_is_malformed():
     assert h.raw(9, spi.op["arm"], struct.pack("<HH", 4, 8) + bytes(8)).detail == m.MALFORMED
 
 
-# ---- 73a0c37: spi-target's cs_setup_ns ------------------------------------------------------------------------------
+# ---- spi-target's cs_setup_ns ------------------------------------------------------------------------------
 
 def test_cs_setup_ns_is_declared_by_a_probe_that_drives_miso_in_software():
     ep = endpoint.Endpoint(virtual_bench.esp32_v003(), Clock())
@@ -456,7 +455,7 @@ def test_cs_setup_ns_is_declared_by_a_probe_that_drives_miso_in_software():
 
 
 def test_group_bind_any_one_reason_and_a_bound_tracks_configure_is_cause_4():
-    """core §4.3 (rule review 2026-10-07): the form and the state are checked before any change, and any one reason
+    """core §4.3: the form and the state are checked before any change, and any one reason
     that applies answers; a bound track's own configure / start is unavailable cause 4 (capture §4)."""
     ep, h = bench(virtual_bench.p4_x035())
     group = fn_of(ep, "oep.fixture.capture-group")

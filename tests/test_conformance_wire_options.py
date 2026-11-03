@@ -130,7 +130,7 @@ def test_wire_pin_control_cannot_change_owned_channel():
 
 @pytest.mark.parametrize('variant',['omitted','unhalted'])
 def test_dpc_is_an_optional_diagnostic(variant):
-    """debug §3 (a09fa45): "dpc TLVは任意のRV32診断値で、bit3が立ち、読めた場合だけ付ける" - a method 1 attach without dpc
+    """debug §3: "dpc TLVは任意のRV32診断値で、bit3が立ち、読めた場合だけ付ける" - a method 1 attach without dpc
     passes; a dpc on an answer without flags bit3 (method 0) fails."""
     model,c,a=setup();install=model.install
     def variant_install():
@@ -154,7 +154,7 @@ from oep_client.conformance import tlvs
 
 
 def test_rvswd_target_id_may_be_attached():
-    """debug §1 (a09fa45): "attach の応答の後ろに、probe が読めた target の識別子を TLV 0x10 target_id で付けてよい" and the
+    """debug §1: "attach の応答の後ろに、probe が読めた target の識別子を TLV 0x10 target_id で付けてよい" and the
     connections entry carries it (§2.1) - an rvswd / swio probe that attaches one (scheme 1, DMI 0x7F) passes."""
     model,c,a=setup();install=model.install
     def tid_install():

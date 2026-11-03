@@ -528,7 +528,7 @@
     missing bits 0); read_rx's ns is when CS went inactive (I2C: the STOP or next START).
   - Virtual bench: the configure contract and answer rows, wrapping generations and serials, generations on every
     event and in the group's start answer / status, marks and segments paging, release by core §2.6, step's zeros,
-    spi-target masking and an optional ns (`Endpoint.spi_ns`). New tests/test_spec_2c6d18d.py; the new vectors and
+    spi-target masking and an optional ns (`Endpoint.spi_ns`). New tests/test_capture_generation_rules.py; the new vectors and
     ops.json `events` run both ways (arm-adi's probe side skipped: the virtual bench has no arm-adi).
 - (JA) **oep-spec 0098b56〜2c6d18d（0991759 の外部レビューのインターフェース再確認）に合わせた。** registry と vectors を同期し、
   README は 2c6d18d を名乗る。壊れる変更（wire と API）:
@@ -550,7 +550,7 @@
     read_rx の ns は CS が無効になった時刻（I2C は STOP か次の START）。
   - 仮想ベンチ: configure の契約と応答の行、一周する世代と serial、どの出来事にも世代、組の start の応答と status の世代、marks と
     segments のページング、core §2.6 での release、step の 0、spi-target のビットの消去と任意の ns（`Endpoint.spi_ns`）。
-    tests/test_spec_2c6d18d.py を足した。新しい vectors と ops.json の `events` を両側から通す（arm-adi の probe 側は飛ばす: 仮想ベンチに
+    tests/test_capture_generation_rules.py を足した。新しい vectors と ops.json の `events` を両側から通す（arm-adi の probe 側は飛ばす: 仮想ベンチに
     arm-adi は無い）。
 - (EN) **`oep find` and `discovery.find_unit` verify what they find (oep-spec 0991759, host guide §4.1).** The DNS-SD
   service name `oep` is not registered, so another service may advertise `_oep._tcp`. `discovery.verify(found)` checks
@@ -782,7 +782,7 @@
   - oep-if-link / host guide §17 (44aa045): the sink count is max_frame - 12, which this client already sends
     (`core.link_sink_size`); nothing changed.
   - The tests run with `OEP_SESSION_DIR` in a temporary directory (tests/conftest.py; tests/hw keeps the real one).
-    New tests/test_spec_283e5b5.py. README / tests/hw README (EN / JA).
+    New tests/test_transport_session_rules.py. README / tests/hw README (EN / JA).
 - (JA) **oep-spec 283e5b5〜f8bb2de**（2026-10-07 の外部レビューの再確認と、その後の直し）。README は `f8bb2de` を名乗る。registry と
   ベクタを写した（`tools/sync_registry.sh`）: `resend_max` は無くなった（送り直しは host が決める。この client の送り直し - 待ちの後に
   1 回、持っているシリアルの口で壊れたフレームが来たらすぐ 3 回まで - はそのまま）。`interface_name_max_bytes` は 64 -> 48
@@ -807,7 +807,7 @@
   - oep-if-link / host ガイド §17（44aa045）: sink の count は max_frame − 12 で、この client はもとからそれを送る（`core.link_sink_size`）。
     変更なし。
   - 試験は `OEP_SESSION_DIR` を一時の場所にして走る（tests/conftest.py。tests/hw は本当の場所のまま）。新しい
-    tests/test_spec_283e5b5.py。README と tests/hw の README（EN / JA）。
+    tests/test_transport_session_rules.py。README と tests/hw の README（EN / JA）。
 - (EN) **Breaking (API, CLI): the fake probe is the virtual bench**, with no aliases (pre-freeze). The virtual bench is a
   probe, the targets behind it and the fixture wiring, modelled after the real jigs: the environment host software is
   tested in. "Bench" alone still means the real HIL jigs. Renamed: module `oep_client.fake` -> `oep_client.virtual_bench`,

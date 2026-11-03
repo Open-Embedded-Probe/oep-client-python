@@ -65,7 +65,7 @@ def test_semantic_faults(defect,case):
     raised=lambda state,deadline:dict(model.boot(),state=state,baud=230400,asked=230400,deadline=deadline,owner=model.ep.current_core.holder)
     ok=lambda reply,value:reply[:3]+b'\1\0'+value;stale=[]
     def bad_cancel(route):
-        # the rule before oep-spec cf69012: a request frame on the port cancelled a pending return (an idle one, or -
+        # a wrong rule: a request frame on the port cancelled a pending return (an idle one, or -
         # wrongly even then - a verify one)
         p=model.ports.get(route)
         if not p or p['state']!=3:return

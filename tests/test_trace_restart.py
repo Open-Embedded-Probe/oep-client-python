@@ -1,4 +1,4 @@
-"""oep.probe.restart (oep-spec a09fa45 interfaces/oep-if-restart.ja.md): the rules tests/test_restart.py and the
+"""oep.probe.restart: the rules tests/test_restart.py and the
 restart checker leave to the trace - at most one oep.probe.restart listed, no notification once the answer is out,
 the target left as it was, and the serial port back at its boot speed after the restart."""
 

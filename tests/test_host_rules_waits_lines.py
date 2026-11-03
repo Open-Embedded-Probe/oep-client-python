@@ -1,8 +1,6 @@
-"""The host side of oep-spec docs/v1-rule-change-proposal-2026-10-02.md (applied 09622ef..536fc99): the wait's floor
-(C-06), the serial line (C-09), the revision in use (C-15), confirm's transport (C-05), x- unit_ids (C-24), TCP and the
-resync wait (C-07, transports §5), the line search (PC-1), text shown and sent (C-22), no ignored marker (C-04, gone in
-the rule review 2026-10-07), what a probe must give (C-10), and the new answer TLVs in the API. Updated to oep-spec
-0f455a0."""
+"""The host: the wait's floor (core §4.4), the serial line (transports §4), the revision in use and confirm's transport
+(core §7.1), x- unit_ids (core §7.5), TCP and the resync wait (transports §5), the line search, text shown and sent,
+the Tail, what a probe must give (core §1.2), and the answer TLVs in the API."""
 
 import os
 import struct
@@ -14,7 +12,7 @@ import pytest
 from oep_client import (capture, settings, registry, core, dump, endpoint, virtual_bench, fixture, frames, host as h, link, message as m,
                         registry as reg, riscv, speed_record)
 
-from test_virtual_bench_rules_2026_10_02 import Clock
+from test_virtual_bench_rules_core import Clock
 from test_link_host import CONFIRM_V1, Stream, frame, make_link, result
 
 
@@ -24,7 +22,7 @@ def in_process(profile=virtual_bench.p4_bench, transport=0, **kw):
     return ep, hst
 
 
-# ---- C-06: the wait's floor -------------------------------------------------------------------------------------
+# ---- the wait's floor -------------------------------------------------------------------------------------
 
 class Serial:
     """A COBS port stand-in with a line speed; nothing ever answers."""
@@ -46,7 +44,7 @@ class Serial:
         pass
 
 
-def test_c06_the_floor_is_argument_time_plus_1000_ms_plus_the_transfer_time():
+def test_the_floor_is_argument_time_plus_1000_ms_plus_the_transfer_time():
     lk = link.SerialLink.on_stream(Serial(), "cobs", 0.2)
     lk.max_frame = 1024
     lk._write([m.Request(1, 0, m.OP_KEEPALIVE).pack()])
@@ -59,13 +57,13 @@ def test_c06_the_floor_is_argument_time_plus_1000_ms_plus_the_transfer_time():
     assert lk._wait() == 0.2
 
 
-def test_c06_no_transfer_time_on_length_frames():
+def test_no_transfer_time_on_length_frames():
     lk = make_link(Stream())
     assert lk.transfer_s() == 0 and lk._wait() == pytest.approx(1.0)
 
 
-def test_c06_attach_scan_and_reset_wait_max_op_ms():
-    """debug §1 / §4.3 (rule review 2026-10-07): attach, scan and riscv-dm's reset answer within max_op_ms, and the host
+def test_attach_scan_and_reset_wait_max_op_ms():
+    """debug §1 / §4.3: attach, scan and riscv-dm's reset answer within max_op_ms, and the host
     counts max_op_ms as their argument time (core §4.4) - no hold_ms or reset_settle_ms on top any more."""
     ep, hst = in_process()
     seen = []
@@ -86,10 +84,10 @@ def test_c06_attach_scan_and_reset_wait_max_op_ms():
     assert seen == [(riscv.RiscvDm.RESET, virtual_bench.MAX_OP_MS)]
 
 
-# ---- C-09: the serial line ----------------------------------------------------------------------------------------
+# ---- the serial line ----------------------------------------------------------------------------------------
 
 @pytest.mark.skipif(sys.platform != "linux", reason="a pty")
-def test_c09_a_serial_port_opens_8n1_without_flow_control_and_dtr_rts_asserted():
+def test_a_serial_port_opens_8n1_without_flow_control_and_dtr_rts_asserted():
     master, slave = os.openpty()
     try:
         stream = link.open_serial(os.ttyname(slave))
@@ -103,9 +101,9 @@ def test_c09_a_serial_port_opens_8n1_without_flow_control_and_dtr_rts_asserted()
         os.close(slave)
 
 
-# ---- C-15 / C-05: confirm -----------------------------------------------------------------------------------------
+# ---- confirm -----------------------------------------------------------------------------------------
 
-def test_c15_every_later_confirm_asks_for_the_revision_in_use():
+def test_every_later_confirm_asks_for_the_revision_in_use():
     ep, hst = in_process()
     assert hst.confirm_range() == (1, 1) and hst.confirm()["revision"] == 1
     hst.revision = 3                                                   # as if a later probe had chosen revision 3
@@ -115,7 +113,7 @@ def test_c15_every_later_confirm_asks_for_the_revision_in_use():
     assert e.value.supported == (1, 1) and ep.requests[-1].payload[4:6] == b"\x03\x03"
 
 
-def test_c15_the_links_own_confirms_use_the_revision_in_use():
+def test_the_links_own_confirms_use_the_revision_in_use():
     stream = Stream(lambda req: [result(m.Request.unpack(req).corr, CONFIRM_V1)])
     lk = make_link(stream)
     hst = h.Host(lk.send)
@@ -126,7 +124,7 @@ def test_c15_the_links_own_confirms_use_the_revision_in_use():
     assert sent.op == m.OP_CONFIRM and sent.payload == m.CONFIRM_REQUEST + b"\x02\x02"
 
 
-def test_c05_the_confirm_names_the_transport_and_port_speed_takes_it():
+def test_the_confirm_names_the_transport_and_port_speed_takes_it():
     probe = virtual_bench.esp32_v003()
     core_fn = probe.offered[0]
     two = virtual_bench.Offered(0, 0, virtual_bench.CORE_NAME, tuple(t for t in core_fn.tlvs if t[0] != virtual_bench.CORE_TRANSPORT)
@@ -141,7 +139,7 @@ def test_c05_the_confirm_names_the_transport_and_port_speed_takes_it():
     assert link._speed_port(hst2)[1] is None
 
 
-def test_c05_a_relaying_brokers_0xff_and_a_confirm_without_the_tlv():
+def test_a_relaying_brokers_0xff_and_a_confirm_without_the_tlv():
     hst = h.Host(lambda b: b)
     hst.limits = {"transport": 0xFF}
     hst._fns["oep.probe.link"] = 10                                    # oep.probe.link offering port_speed (its ops)
@@ -151,9 +149,9 @@ def test_c05_a_relaying_brokers_0xff_and_a_confirm_without_the_tlv():
     assert "names no transport" in link._speed_port(hst)[2]
 
 
-# ---- C-24: an x- unit_id names no unit ------------------------------------------------------------------------------
+# ---- an x- unit_id names no unit ------------------------------------------------------------------------------
 
-def test_c24_the_speed_record_keeps_nothing_under_an_x_unit_id(tmp_path):
+def test_the_speed_record_keeps_nothing_under_an_x_unit_id(tmp_path):
     rec = speed_record.SpeedRecord(tmp_path / "r.json")
     rec.note("/dev/ttyUSB0", "x-esp32", 921600, True, "verify")
     assert rec.lookup("/dev/ttyUSB0", "x-esp32") == ([], []) and not rec.data
@@ -161,7 +159,7 @@ def test_c24_the_speed_record_keeps_nothing_under_an_x_unit_id(tmp_path):
     assert rec.lookup("/dev/ttyUSB0", "fafe00000003") == ([921600], [])
 
 
-def test_c24_raise_speed_records_nothing_for_an_x_unit_id(tmp_path):
+def test_raise_speed_records_nothing_for_an_x_unit_id(tmp_path):
     from oep_client import virtual_bench_serial
     start = time.monotonic()
     ep = endpoint.Endpoint(virtual_bench.with_unit_id(virtual_bench.esp32_v003(), "x-esp32"),
@@ -176,12 +174,12 @@ def test_c24_raise_speed_records_nothing_for_an_x_unit_id(tmp_path):
     assert report.chosen == 500000 and "names no unit" in report.why and not path.exists()
 
 
-def test_c24_usb_by_an_x_unit_id_is_refused():
+def test_usb_by_an_x_unit_id_is_refused():
     with pytest.raises(ValueError, match="x-"):
         link.open_host("oep://x-esp32?via=usb")
 
 
-# ---- C-07 / transports §5: TCP and the resync wait ------------------------------------------------------------------------
+# ---- transports §5: TCP and the resync wait ------------------------------------------------------------------------
 
 class Paused(Stream):
     """A TCP-like stream whose frame arrives in two parts 300 ms apart."""
@@ -199,7 +197,7 @@ class Paused(Stream):
         return super().read(n)
 
 
-def test_c07_on_tcp_a_pause_inside_a_frame_is_read_on():
+def test_on_tcp_a_pause_inside_a_frame_is_read_on():
     msg = result(7, b"abc")
     f = frames.LengthFrames(Paused(frame(msg)))
     assert f.stall_s is None and f.recv(1.0) == msg
@@ -210,7 +208,7 @@ def test_c07_on_tcp_a_pause_inside_a_frame_is_read_on():
     assert link.TcpStream.keeps_boundaries
 
 
-def test_c07_a_resync_waits_250_ms_after_the_hosts_last_write():
+def test_a_resync_waits_250_ms_after_the_hosts_last_write():
     stream = Stream(lambda req: [result(m.Request.unpack(req).corr, CONFIRM_V1)])
     lk = make_link(stream)
     lk._write([m.Request(1, 0, m.OP_KEEPALIVE).pack()])
@@ -219,9 +217,9 @@ def test_c07_a_resync_waits_250_ms_after_the_hosts_last_write():
     assert time.monotonic() - t0 >= 0.25
 
 
-# ---- PC-1: the line search's step (c) ------------------------------------------------------------------------------
+# ---- the line search's step (c) ------------------------------------------------------------------------------
 
-def test_pc1_find_line_reads_every_label():
+def test_find_line_reads_every_label():
     """host guide §5.3: port S's line N is the label `S.N` (ignoring ASCII case); a bare name names no port's line;
     without a port the one port named (a tool's shortcut). The firmware's initial labels are values like the others."""
     assert settings.find_line([(23, "dut.NRST")], "nrst", "DUT") == 23
@@ -229,18 +227,18 @@ def test_pc1_find_line_reads_every_label():
     assert settings.find_line([(23, "a.nrst"), (24, "b.nrst")], "nrst") is None   # two ports: say which
     ep, hst = in_process(virtual_bench.esp32_v003)
     assert settings.find_line(hst, "nrst", "v003") == 23                # a Host: its labels are read
-    assert settings.LINE_NAMES == tuple(registry.CORE.line_names)      # from the registry (PC-2)
+    assert settings.LINE_NAMES == tuple(registry.CORE.line_names)      # from the registry
 
 
-# ---- C-22: text ---------------------------------------------------------------------------------------------------
+# ---- text ---------------------------------------------------------------------------------------------------
 
-def test_c22_text_from_an_answer_is_shown_without_control_characters():
+def test_text_from_an_answer_is_shown_without_control_characters():
     assert m.shown(b"ok\x1b[31mred\x7f\xff") == "ok�[31mred��"
     r = m.Result(1, m.REJECTED, m.LOCKED, struct.pack("<I", 5) + m.tlv(0x01, b"evil\x1b]0;x\x07"))
     assert "\x1b" not in h.Locked(r).owner and "\x07" not in str(h.Locked(r))
 
 
-def test_c22_the_owner_goes_as_valid_text_of_at_most_32_bytes():
+def test_the_owner_goes_as_valid_text_of_at_most_32_bytes():
     assert h.owner_text("a\nb") == b"a?b"
     raw = h.owner_text("日" * 20)                                      # 3 bytes each: cut on a character
     assert len(raw) == 30 and raw.decode() == "日" * 10
@@ -249,7 +247,7 @@ def test_c22_the_owner_goes_as_valid_text_of_at_most_32_bytes():
     assert ep.owner == raw
 
 
-# ---- C-04 / C-10 ------------------------------------------------------------------------------------------------------
+# ---- the Tail and what a probe must give ------------------------------------------
 
 def test_no_ignored_marker_any_more():
     """core §2.2/§2.3: the Tail has no ignored list; 0x7F is an ordinary tag number and only number 0 is never a TLV."""
@@ -261,7 +259,7 @@ def test_no_ignored_marker_any_more():
         m.tlv(0x00, b"")
 
 
-def test_c10_dump_says_what_a_probe_must_give_and_did_not():
+def test_dump_says_what_a_probe_must_give_and_did_not():
     caps = dump.collect(virtual_bench.esp32_v003().call)
     assert caps.missing == []
     bare = virtual_bench.VirtualProbe("bare", 256, [virtual_bench.Offered(0, 0, virtual_bench.CORE_NAME)])
@@ -278,9 +276,9 @@ def _confirm_tail(probe: virtual_bench.VirtualProbe, tail: bytes):
     return call
 
 
-def test_c10_confirm_transport_tlv_is_required():
+def test_confirm_transport_tlv_is_required():
     """A probe without confirm's transport TLV (core §7.1) is named as missing it, by dump and by the hardware test's
-    check (dump.required_of). describe has no discoverable any more (core §7.5, rule review 2026-10-07)."""
+    check (dump.required_of). describe has no discoverable any more (core §7.5)."""
     assert "discoverable" not in reg.CORE.tlv["describe"]
     call = _confirm_tail(virtual_bench.esp32_v003(), b"")
     want = ["confirm's transport TLV"]
@@ -295,7 +293,7 @@ def test_c10_confirm_transport_tlv_is_required():
 
 
 @pytest.mark.parametrize("profile", sorted(virtual_bench.PROFILES))
-def test_c10_every_virtual_profile_gives_what_is_required_on_every_transport(profile):
+def test_every_virtual_profile_gives_what_is_required_on_every_transport(profile):
     """The virtual bench served on each of its transports (an Endpoint, as virtual_bench_serve and tests/hw's virtual board use it)."""
     for transport in endpoint.Endpoint(virtual_bench.PROFILES[profile](), Clock()).transports:
         ep, hst = in_process(virtual_bench.PROFILES[profile], transport)
@@ -338,7 +336,7 @@ def test_p2_o8_capture_configure_sends_the_table_tlvs_without_the_critical_bit()
     assert c.samples == 65536                                          # rounded down: the answer holds
 
 
-def test_c18_the_session_id_is_random_and_never_0():
+def test_the_session_id_is_random_and_never_0():
     ep, hst = in_process()
     ids = set()
     for _ in range(20):
@@ -350,7 +348,7 @@ def test_c18_the_session_id_is_random_and_never_0():
 
 
 @pytest.mark.parametrize('control',list(range(32))+[127])
-def test_c22_every_c0_and_del_is_replaced_without_losing_adjacent_text(control):
+def test_every_c0_and_del_is_replaced_without_losing_adjacent_text(control):
     prefix='端子'.encode('utf-8');suffix='é'.encode('utf-8')
     shown=m.shown(prefix+bytes((control,))+suffix)
     assert shown=='端子�é'
@@ -358,7 +356,7 @@ def test_c22_every_c0_and_del_is_replaced_without_losing_adjacent_text(control):
 
 
 @pytest.mark.parametrize('invalid',[b'\x80',b'\xc0\xaf',b'\xe2\x82',b'\xed\xa0\x80',b'\xf4\x90\x80\x80',b'\xff'])
-def test_c22_invalid_utf8_is_replaced_while_valid_text_is_preserved(invalid):
+def test_invalid_utf8_is_replaced_while_valid_text_is_preserved(invalid):
     shown=m.shown(b'left'+invalid+'右'.encode('utf-8'))
     assert shown.startswith('left') and shown.endswith('右') and '�' in shown
     assert not any(ord(c)<32 or ord(c)==127 for c in shown)

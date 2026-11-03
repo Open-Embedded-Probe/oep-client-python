@@ -1,4 +1,4 @@
-"""core §4.4 (oep-spec a09fa45): the wait for an answer starts from the whole request's processing bound - max_op_ms,
+"""core §4.4: the wait for an answer starts from the whole request's processing bound - max_op_ms,
 fn 0's quick ops min(max_op_ms, core_quick_op_max_ms), core_quick_op_max_ms while max_op_ms is unknown - never from an
 argument's wait alone; a host reads max_op_ms before a request that changes state."""
 

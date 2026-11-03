@@ -15,7 +15,7 @@ def checker(reader=decode,factory=None):
 
 
 def test_removed_confirm_flags_are_not_reviewed_shape(monkeypatch):
-    # a09fa45 removed confirm flags(u8): a 17-byte confirm inventory no longer matches the reviewed core.
+    # confirm has no flags(u8): a 17-byte confirm inventory no longer matches the reviewed core.
     from oep_client.conformance import core_fixed_fields as ff
     old=tuple(('confirm',1,req,reply[:2]+(('flags',1),)+reply[2:]) if name=='confirm' else (name,op,req,reply) for name,op,req,reply in CORE_SHAPES)
     monkeypatch.setattr(ff,'CORE_SHAPES',old)

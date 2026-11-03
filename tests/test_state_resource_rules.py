@@ -1,4 +1,4 @@
-"""Review 7, state machines and resource lifetimes (oep-spec a09fa45): each test fails on the code before its fix."""
+"""State machines and resource lifetimes in the host, the virtual bench and the checkers."""
 
 import struct
 

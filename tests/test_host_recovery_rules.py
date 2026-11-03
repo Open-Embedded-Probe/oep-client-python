@@ -1,4 +1,4 @@
-"""Review 7, class host-recovery (oep-spec a09fa45): the host's waits, resends and recovery.
+"""The host's waits, resends and recovery.
 
 core §4.4: "この下限はすべての要求に当てはまる" - the link's own requests (keepalive, port_speed's revert, a measurement's
 source / sink, a resync's or a recovery's confirm) wait core §4.4's floor too; confirms repeated with new corrs may go
@@ -13,9 +13,9 @@ import pytest
 
 from oep_client import endpoint, host as h, link, message as m, registry as reg, virtual_bench
 
-from test_host_rules_2026_10_02 import Serial
+from test_host_rules_waits_lines import Serial
 from test_link_host import CONFIRM_V1, Stream, make_link, result
-from test_virtual_bench_rules_2026_10_02 import Clock
+from test_virtual_bench_rules_core import Clock
 
 MAX_OP = reg.CORE.tlv["describe"]["max_op_ms"]
 

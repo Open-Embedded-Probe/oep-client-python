@@ -1,4 +1,4 @@
-"""core §5.1 (a09fa45): "要求・応答の再送用の記録は任意で、件数と byte 数に上限を置いてよく、0 件でもよい" - a probe that keeps
+"""core §5.1: "要求・応答の再送用の記録は任意で、件数と byte 数に上限を置いてよく、0 件でもよい" - a probe that keeps
 no byte records answers every replay rejected result_lost (from the order state it must keep), and each checker that
 replays a request to see it is not run again accepts that as well as the recorded answer."""
 import importlib

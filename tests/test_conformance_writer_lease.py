@@ -54,7 +54,7 @@ def test_writer_lease_checker_detects_independent_faults(fault,case):
     model.install=faulty_install
     def broken_accept(req):
         core=model.ep.current_core;before=core.deadline;old=model.execution_ms;result=accept(req)
-        # the pre-a09fa45 rule (renewed at the write) or no renewal at all: core §6.1 restarts it at the generation
+        # a wrong rule (renewed at the write) or no renewal at all: core §6.1 restarts it at the generation
         if fault in ('send_renew','no_generation_renew') and core.holder is not None:core.deadline=before+old
         if fault=='no_execution_pause':core.deadline-=old
         return result

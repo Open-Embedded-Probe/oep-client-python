@@ -1,4 +1,4 @@
-"""oep.target.console (oep-spec a09fa45 interfaces/oep-if-console.ja.md) on the virtual bench: the rules
+"""oep.target.console on the virtual bench: the rules
 tests/test_interfaces.py, tests/test_console_queue_and_reset_settle.py and the console checkers leave to the trace -
 the mechanisms declaration and the refusals of open, the resource numbers, streams' order, what releases a stream,
 a fn without marks, the reset mark; and the dmseq checker's first synchronisation (no restart mark)."""

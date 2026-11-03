@@ -899,7 +899,7 @@ class RiscvDm(Interface, BlockLength):
 
     def step(self) -> tuple[bool, int, int]:
         """One instruction (dcsr.step, one resume, privilege kept). -> (moved, dpc before, dpc after). A hart that did
-        not come back, and any status but ok, raises StepError (oep-if-debug §4.2, P2-○4) without moved or the dpcs
+        not come back, and any status but ok, raises StepError (oep-if-debug §4.2) without moved or the dpcs
         (0 unless status ok, not read): `step_left` False - the probe halted it with haltreq and restored it (read its
         dpc with dmi); True (answer TLV step_left) - it could not halt it again: the hart runs and dcsr.step may still
         be set, so the host halts it and clears dcsr.step. DATA0 is written back first (`restore_data`)."""

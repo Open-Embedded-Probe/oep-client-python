@@ -20,7 +20,7 @@ def test_existing_host_save_budget_path():
 
 @pytest.mark.parametrize('fault',['no_bound','argument_floor','unknown_max_op_zero'])
 def test_quick_confirm_bound_faults_are_detected(monkeypatch,fault):
-    # core §4.4 at a09fa45: fn 0 confirm waits min(max_op_ms, 1000) + 1000 + transfer (1000 while max_op_ms is unknown).
+    # core §4.4: fn 0 confirm waits min(max_op_ms, 1000) + 1000 + transfer (1000 while max_op_ms is unknown).
     from oep_client import host
     a=SampleHostWaitAdapter();limits=a.limits
     if fault=='no_bound':monkeypatch.setattr(host.Host,'op_bound_ms',lambda self,fn,op:0)          # a Host without it

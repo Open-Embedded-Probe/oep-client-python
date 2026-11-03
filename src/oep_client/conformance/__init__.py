@@ -144,7 +144,7 @@ def checker_sources_sha256():
             for name in CHECKER_SOURCES}
 
 
-REVIEWED_CORE_SHA256 = '699f7eb6333b6eb6678ddcf27074c03544f0f0a6ee0ef6ccdf02edd3757f962e'   # oep-spec 364827b docs/oep-core.ja.md
+REVIEWED_CORE_SHA256 = '699f7eb6333b6eb6678ddcf27074c03544f0f0a6ee0ef6ccdf02edd3757f962e'   # oep-spec docs/oep-core.ja.md
 
 
 def require_reviewed_contract(registry, spec=None):

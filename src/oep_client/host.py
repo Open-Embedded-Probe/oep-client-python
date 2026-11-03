@@ -86,7 +86,7 @@ RESTART_WAIT_S = 10.0                          # restart_probe: the wait for a p
 
 
 def check_confirm(max_frame: int, window: int, max_inflight: int) -> str:
-    """core §7.1 (C-20): max_frame >= min_max_frame (64), window >= max_frame, max_inflight >= 1. -> "" or why not."""
+    """core §7.1: max_frame >= min_max_frame (64), window >= max_frame, max_inflight >= 1. -> "" or why not."""
     if max_frame < reg.MIN_MAX_FRAME or window < max_frame or max_inflight < 1:
         return (f"confirm answered max_frame {max_frame}, window {window}, max_inflight {max_inflight}: outside core "
                 f"§7.1 (max_frame >= {reg.MIN_MAX_FRAME}, window >= max_frame, max_inflight >= 1); the transport is not used")
@@ -163,7 +163,7 @@ class Unsupported(Rejected):
 
     @property
     def supported(self) -> tuple[int, int] | None:
-        """confirm's refusal (core §7.1, C-15): (min, max) of the protocol revisions the probe handles (TLV 0x01
+        """confirm's refusal (core §7.1): (min, max) of the protocol revisions the probe handles (TLV 0x01
         supported after tag 0x00); None for any other refusal."""
         if self.tag is not None:
             return None
@@ -294,7 +294,7 @@ class Host:
     before_request: Callable[[], None] | None = None
     # Called with confirm's limits after every confirm answer (the link's max_frame for the transfer time, core §4.4)
     on_limits: Callable[[dict], None] | None = None
-    unusable: str = ""                     # why this probe is not used (C-20, C-47): set, nothing more is sent
+    unusable: str = ""                     # why this probe is not used: set, nothing more is sent
     restart_reopened: bool = False         # the last restart_probe came back only on its reopen_s (the user's reopen)
     # The session id kept per probe for the next run (kept_session.KeptSession; link.open_host sets one): None = not kept
     kept: object | None = None
@@ -438,7 +438,7 @@ class Host:
         self._boot_id = boot_id
 
     def not_usable(self, why: str) -> None:
-        """Stop using this probe (C-20, C-47): every later request raises NotUsable with `why`."""
+        """Stop using this probe: every later request raises NotUsable with `why`."""
         self.unusable = why
         raise NotUsable(why)
 
@@ -484,7 +484,7 @@ class Host:
 
     # ---- confirm (§5, §2) -----------------------------------------------------------------------
     def confirm_range(self) -> tuple[int, int]:
-        """The revisions a confirm asks for (core §7.1, C-15): the range this client handles before the first confirm,
+        """The revisions a confirm asks for (core §7.1): the range this client handles before the first confirm,
         then min_rev = max_rev = the revision in use, in every later confirm (a resync, probing again) - so a later
         probe never switches the revision in the middle of a session."""
         if self.revision:
@@ -499,7 +499,7 @@ class Host:
         """Ask for a revision in [min_rev, max_rev] (default `confirm_range()`). -> {"revision", "max_frame",
         "window", "max_inflight", "boot_id", "transport", "tail"}. The boot_id is the probe's for this boot (core §6.5,
         §7.1): a host without the lock learns of a restart from it. transport: the index (fn 0's describe) of the
-        transport this confirm came on (core §7.1, C-05; 0xFF from a relaying broker; None when the probe sent none).
+        transport this confirm came on (core §7.1; 0xFF from a relaying broker; None when the probe sent none).
         The answer's fixed part is the same in every revision (core §7.1): a revision outside the range asked is a
         ProtocolError and nothing of the answer is used. A probe that refuses the ranged confirm as malformed is not v1
         (revision 0 is recorded and the rejection raised). No revision in the range: rejected unsupported (Unsupported:
@@ -527,7 +527,7 @@ class Host:
         tail = rd.tail()
         why = check_confirm(max_frame, window, inflight)
         if why:
-            self.not_usable(why)                            # sends nothing more and reports the values (C-20)
+            self.not_usable(why)                            # sends nothing more and reports the values
         self.boot_id_seen(boot_id)
         self.revision = revision
         where = tail.get(CONFIRM_TRANSPORT)

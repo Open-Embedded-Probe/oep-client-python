@@ -1,4 +1,4 @@
-"""Rule-by-rule trace of oep-spec a09fa45 interfaces/oep-if-fixture.ja.md (docs/trace/fixture.json): the names and plan
+"""Rule-by-rule trace of oep-spec interfaces/oep-if-fixture.ja.md (docs/trace/fixture.json): the names and plan
 roles (fixture §0), oep.fixture.gpio (§1), oep.fixture.uart (§2), oep.fixture.i2c-target (§3) and
 oep.fixture.spi-target (§4), checked on the virtual bench and the client where no other test pins a rule down."""
 
@@ -11,7 +11,7 @@ from oep_client import catalog, core, endpoint, fixture, host, message as m, reg
 from oep_client.conformance.uart import UartChecks
 from oep_client.conformance.uart_sample import SampleUartAdapter
 from test_conformance_uart import setup as uart_setup
-from test_virtual_bench_rules_2026_10_02 import IDLE, PLAN_APPLY, PLAN_RELEASE, SET, Clock, Host, cset, idle_item, una
+from test_virtual_bench_rules_core import IDLE, PLAN_APPLY, PLAN_RELEASE, SET, Clock, Host, cset, idle_item, una
 
 GPIO, UART, I2C, SPI = 4, 5, 8, 9                                  # p4_x035
 V003_I2C, V003_SPI = 7, 8                                         # esp32_v003

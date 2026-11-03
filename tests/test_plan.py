@@ -1,4 +1,4 @@
-"""oep.probe.plan (oep-spec a09fa45 interfaces/oep-if-plan.ja.md) rule by rule on the virtual bench (esp32-v003: gpio
+"""oep.probe.plan rule by rule on the virtual bench (esp32-v003: gpio
 fn 4, uart fn 5, logic fn 6, spi-target fn 8, plan fn 11, plan_roles 32), through the client's core.plan_apply /
 plan_release and raw requests where the client never sends the form."""
 

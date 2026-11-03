@@ -49,7 +49,7 @@ def test_large_single_route_length_is_supported():
 
 @pytest.mark.parametrize('frame,length,routes',[(64,48,()),(128,108,(tlv(73,b'\x01\x06\xff'),)),(64,4096,())])
 def test_a_max_length_past_a_route_frame_is_not_a_defect(frame,length,routes):
-    """debug §4.5 (a09fa45): max_length is the function's limit; the host takes min(max_length, max_frame - 8 / - 20)
+    """debug §4.5: max_length is the function's limit; the host takes min(max_length, max_frame - 8 / - 20)
     per route, and "大きい経路を小さい経路の転送量へ一律に制限しない" - a max_length past this or another route's frame passes
     (the old rule that it fit every route's frame is gone)."""
     model,c=setup();model.ep.probe.max_frame=frame;model.ep.static[0]+=routes

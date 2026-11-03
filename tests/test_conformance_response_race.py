@@ -33,7 +33,7 @@ def test_response_race_observation_faults(fault,kind):
         if fault=='stale_cache':r['state']['cache']['3']='old'
         if fault=='refusal_token':next(e for e in events if e['action']=='prepare' and e['route']==1)['token']=[7,1]
         if fault=='refusal_result':next(e for e in events if e['action']=='prepare' and e['route']==1)['reply_hex']='0201000007'
-        if fault=='send_renew':late['after']['deadline']=700+1000          # renewed at the write: pre-a09fa45 §6.1
+        if fault=='send_renew':late['after']['deadline']=700+1000          # renewed at the write: against §6.1
         if fault=='replay_renews':next(e for e in events if e['action']=='replay')['after']['deadline']+=1
         if fault=='force_resources':next(e for e in events if e['action']=='prepare' and e['route']==1)['after']['live']={'1':[1,1]}
         if fault=='reset_id':r['state']['next_id']=1

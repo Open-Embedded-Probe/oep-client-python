@@ -8,7 +8,7 @@ import struct
 from . import ops, require, tlvs
 from .. import conformance as _helpers
 
-REVIEWED_CORE_SHA256 = '699f7eb6333b6eb6678ddcf27074c03544f0f0a6ee0ef6ccdf02edd3757f962e'  # oep-spec 364827b docs/oep-core.ja.md
+REVIEWED_CORE_SHA256 = '699f7eb6333b6eb6678ddcf27074c03544f0f0a6ee0ef6ccdf02edd3757f962e'  # oep-spec docs/oep-core.ja.md
 
 
 class CoreSmokeChecks:

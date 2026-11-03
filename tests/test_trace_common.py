@@ -1,4 +1,4 @@
-"""Rule-by-rule trace of oep-spec a09fa45 interfaces/oep-if-common.ja.md (docs/trace/common.json): positional streams
+"""Rule-by-rule trace of oep-spec interfaces/oep-if-common.ja.md (docs/trace/common.json): positional streams
 (§1), the debug connection (§2) and the status of wire and target operations (§3), checked on the virtual bench and the
 client where no other test pins a rule down."""
 

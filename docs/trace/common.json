@@ -105,7 +105,7 @@
    "verify": [
     "tests/test_trace_common.py::test_read_from_a_position_the_oldest_now_and_the_last_mark",
     "tests/test_trace_common.py::test_read_from_a_mark_without_marks_is_unsupported",
-    "tests/test_virtual_bench_rules_2026_10_02.py::test_c02_read_from_4_unsupported_and_from_3_with_a_wide_arg_reads_from_now",
+    "tests/test_virtual_bench_rules_core.py::test_c02_read_from_4_unsupported_and_from_3_with_a_wide_arg_reads_from_now",
     "tests/test_conformance_stream.py::test_stream_contracts_pass"
    ],
    "mutants": [],

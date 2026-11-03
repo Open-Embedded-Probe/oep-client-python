@@ -629,7 +629,7 @@ class Endpoint(FixtureDrive):
         """`now_ms`: the clock the timers run on (leases, retries, port_speed), since this boot. `now_ns`: the same clock
         in ns when it has that resolution (virtual_bench_serve: time.monotonic_ns); without it the probe's clock (core §2.6a)
         is `now_ms` in ns. confirm's limits are checked against core §7.1 (max_frame 64 or more, window max_frame or
-        more, max_inflight 1 or more, C-20) and the declared max_op_ms against core §7.5 (1 to max_op_ms_max, C-47):
+        more, max_inflight 1 or more) and the declared max_op_ms against core §7.5 (1 to max_op_ms_max):
         a probe outside them is not built."""
         if probe.max_frame < reg.MIN_MAX_FRAME or window < probe.max_frame or max_inflight < 1:
             raise ValueError(f"confirm's limits out of core §7.1's bounds: max_frame {probe.max_frame}, window {window}, "
@@ -639,7 +639,7 @@ class Endpoint(FixtureDrive):
         self.now = now_ms
         self._clock_ns = now_ns
         self._origin_ns = 0                               # the probe clock's 0: this boot's start (core §2.6a)
-        self._last_ns = 0                                 # the clock never goes back while the boot_id stays (C-31)
+        self._last_ns = 0                                 # the clock never goes back while the boot_id stays
         self.current_core = None
         self.boot_id = boot_id
         self.lease_default_ms = lease_default_ms
@@ -1260,7 +1260,7 @@ class Endpoint(FixtureDrive):
 
     def now_ns(self) -> int:
         """The probe's one clock (core §2.6a): ns since boot, at the resolution of `now_ns` when the endpoint has one
-        (else ms). It never decreases while the boot_id is the same (C-31), and starts again at a reboot."""
+        (else ms). It never decreases while the boot_id is the same, and starts again at a reboot."""
         self._last_ns = max(self._last_ns, self._raw_ns() - self._origin_ns)
         return self._last_ns
 
@@ -1306,7 +1306,7 @@ class Endpoint(FixtureDrive):
                 self.current_core = Core(self)
             return self.current_core.handle(data, transport)
         if not data or data[0] != m.ROLE_REQUEST or len(data) < REQUEST_HEADER:
-            self.discarded += 1                                   # not a request, or shorter than its header (C-36)
+            self.discarded += 1                                   # not a request, or shorter than its header
             return None
         if self.restarting:
             self.unanswered += 1                                  # the restart's answer is out: nothing more (oep-if-restart §2)
@@ -1602,7 +1602,7 @@ class Endpoint(FixtureDrive):
         """The probe restarts: lock, last id, the resend table, connections, streams, captures, subscriptions, the
         revision in use, the port speed, the unsaved config and the plan are gone; the saved config comes back, and the
         clock starts again from 0 (ns since boot, core §2.6a). `boot_id` None
-        draws a new one, as from a hardware random source (core §6.5, C-19); passing the current one plays a probe
+        draws a new one, as from a hardware random source (core §6.5); passing the current one plays a probe
         whose only source repeated it - its hosts learn only that their session is gone (no_session, core §6.2)."""
         if boot_id is None:
             boot_id = self.boot_id
@@ -3134,7 +3134,7 @@ class Endpoint(FixtureDrive):
             if address > 0x7F:
                 raise Reject(m.MALFORMED)                          # a 7-bit address (excluded for every revision)
             if address <= 0x07 or address >= 0x78:
-                raise unsupported_fixed()                          # reserved by I2C: general call, 10-bit, ... (△5)
+                raise unsupported_fixed()                          # reserved by I2C: general call, 10-bit, ...
             if not planned:
                 raise unavailable("wrong_state")                   # before the plan (cause 6)
             if fn in self.target_fail_configure:                   # taken, not brought up: state 0, the queue, slots

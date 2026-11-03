@@ -51,7 +51,7 @@ def test_faults_are_detected(defect, case):
         if defect == 'skip_unknown_length' and raw.endswith(b'\x02\x02\x00x'):
             return decode(raw[:-4])
         if defect == 'reject_large' and len(raw) > 256: raise ValueError('too large')
-        # core §2.3 at a09fa45: later same-tag TLVs are validated too; these readers use a broken duplicate.
+        # core §2.3: later same-tag TLVs are validated too; these readers use a broken duplicate.
         if defect == 'unvalidated_later_first' and raw.endswith(b'\x01\x01\x00\x07\x01\x02\x00\x09\x08'):
             return {'fixed': 0x1234, 'blob': b'abc', 'first': 9, 'repeated': []}
         if defect == 'unvalidated_later_repeat' and raw.endswith(b'\x03\x01\x00\x07\x03\x02\x00\x09\x08'):

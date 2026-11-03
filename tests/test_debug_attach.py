@@ -1,7 +1,7 @@
-"""oep-if-debug §1-§3 (oep-spec a09fa45): attach names its pins and max_speed in the fixed part and always makes a new
+"""oep-if-debug §1-§3: attach names its pins and max_speed in the fixed part and always makes a new
 connection - pins a live connection holds are refused (unavailable cause 1 with the channel) and the connection is left
 as it was, whatever the request carries; a scan never touches a live connection's pins; a new connection without
-idle_clock rests high. (Before a09fa45 an attach joined the live connection: 59dd028's rules, gone.)"""
+idle_clock rests high."""
 
 import struct
 

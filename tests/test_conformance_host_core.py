@@ -48,7 +48,7 @@ def test_each_broken_known_context_is_detected(index):
 
 @pytest.mark.parametrize('index',[i for i,row in enumerate(cc.known_vectors()) if row[3]])
 def test_each_broken_later_duplicate_is_not_used(index):
-    # core §2.3 at a09fa45: the later same-tag TLV is validated too; a reader using it unvalidated fails.
+    # core §2.3: the later same-tag TLV is validated too; a reader using it unvalidated fails.
     ctx,tag,value,bad,_=cc.known_vectors()[index];target=cc.HostCoreShapeChecks.append(ctx,cc.field(tag,value)+cc.field(tag,bad[0]))
     def broken(frame,op,**kw):
         if (frame,op,kw['described_fn'])==target:
@@ -60,7 +60,7 @@ def test_each_broken_later_duplicate_is_not_used(index):
 
 
 def test_unsupported_index_is_not_a_core_tag(tmp_path,monkeypatch):
-    # a09fa45 moved unsupported/unavailable index to each interface's 0x40-0x7F space.
+    # unsupported/unavailable index is to each interface's 0x40-0x7F space.
     core=tmp_path/'docs/oep-core.ja.md';core.parent.mkdir();core.write_bytes(b'reviewed unit core')
     monkeypatch.setattr(cc,'REVIEWED_CORE_SHA256',hashlib.sha256(core.read_bytes()).hexdigest())
     registry=registry_fixture();registry['core']['tlv']['unsupported_payload']['index']=64
