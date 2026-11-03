@@ -216,15 +216,16 @@ def transports(hst: h.Host) -> list[tuple[int, int, int]]:
 
 
 def take(hst: h.Host, lease_ms: int = 3000, *, owner: str | None = None, wait_s: float = 5.0,
-         force: bool = False) -> h.Opened:
+         force: bool = False, extensions=()) -> h.Opened:
     """Take the lock as host guide §6 says: when the probe's only transport is a serial port and this host opened it
     exclusively, the previous holder cannot be there any more - force at once; otherwise wait out the holder's lease
-    (up to wait_s), and name it (InUse) if it keeps it going. force: the user asked for it."""
+    (up to wait_s), and name it (InUse) if it keeps it going. force: the user asked for it. extensions: named
+    extensions for the open, sent critical (Host.open; a broker's sharing, host guide §7)."""
     link = getattr(hst, "link", None)
     ways = transports(hst)
     only = len(ways) == 1 and ways[0][1] in SERIAL_KINDS and getattr(link, "framing", None) == "cobs" \
         and getattr(link, "transport", None) == "serial"
-    return hst.take(lease_ms, owner=owner, only_way_in=only, wait_s=wait_s, force=force)
+    return hst.take(lease_ms, owner=owner, only_way_in=only, wait_s=wait_s, force=force, extensions=extensions)
 
 
 def plan_fn(hst: h.Host) -> int:

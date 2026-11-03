@@ -1,6 +1,13 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Added: `Host.open`, `Host.take` and `core.take` take `extensions` - named extensions (a name, or (name, data))
+  carried on the open after the owner, sent critical, so a probe that does not know one refuses it (`Unsupported`, its
+  `.tag` the named extension's with bit 7) instead of ignoring it. A broker's sharing is asked this way (oep-spec host
+  guide §7; ch32rv's `io.github.ch32-riscv-ug.share`).
+- (JA) 追加: `Host.open`、`Host.take`、`core.take` に `extensions`。名前つき拡張（名前か (名前, data)）を owner の後ろに critical で
+  付ける。知らない probe は無視せずに断る（`Unsupported`、`.tag` は bit 7 付きの名前つき拡張の tag）。broker の相乗りはこれで
+  頼む（oep-spec host ガイド §7。ch32rv の `io.github.ch32-riscv-ug.share`）。
 - (EN) Fixed: `oep-conformance` stopped before any check against oep-spec 364827b ("checker migration required"): the
   checkers' reviewed-document pins were still oep-spec 02c08c9's. They are raised to 364827b (core §2.3 is checked by
   the core owner case; the debug document's change is the settings' names, which the pinned checkers do not use).

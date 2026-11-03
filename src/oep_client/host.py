@@ -556,13 +556,15 @@ class Host:
             raise NotV1(f"the probe speaks OEP revision {self.revision}; session requests need revision 1 or more")
 
     # ---- session --------------------------------------------------------------------------------
-    def open(self, lease_ms: int = 0, *, force: bool = False, owner: str | None = None) -> Opened:
+    def open(self, lease_ms: int = 0, *, force: bool = False, owner: str | None = None, extensions=()) -> Opened:
         """Open a new session under a new random id (core §6.4; the id goes in the header, never 0). lease_ms 0 = the
         probe's default; 1000..60000 are taken as asked. owner: who holds the lock (1-32 bytes), shown to other hosts.
         force: take the lock from another session (its resources are released first). A session this host had open
         is left behind: it ended, or the probe refuses this open locked while it holds the lock - end it first. The
         answer's boot_id is watched (core §6.5: a reboot drops the fn mapping). fn 0's describe (its max_op_ms) is read
-        first when this host has not read it yet (core §4.4)."""
+        first when this host has not read it yet (core §4.4). extensions: named extensions (core §2.2, §12) to carry, each
+        a name or (name, data), sent critical - a probe that does not know one refuses the open (Unsupported, tag the
+        named extension's with bit 7) rather than ignore it; a broker's sharing is asked this way (host guide §7)."""
         self.require_v1()
         if self.kept is not None and self.session is None:
             self.kept.before_open(self, owner)              # once: the previous run's session ended (host guide §5)
@@ -571,6 +573,12 @@ class Host:
             core.describe(self, m.CORE_FN)                  # max_op_ms before a request that changes state (core §4.4)
         sid = self.rng.randrange(1, 1 << 32)                # random, never 0 (core §6.1)
         tail = m.tlv(OWNER, owner_text(owner)) if owner else b""
+        for item in extensions:
+            name, data = (item, b"") if isinstance(item, str) else item
+            raw = name.encode("ascii")
+            if not 1 <= len(raw) <= 255:
+                raise ValueError(f"named extension {name!r}: 1 to 255 bytes (core §2.2)")
+            tail += m.tlv(m.TAG_NAMED_EXTENSION, bytes([len(raw)]) + raw + bytes(data), critical=True)
         r = self.request(m.CORE_FN, m.OP_OPEN, struct.pack("<IB", lease_ms, int(force)) + tail, session=sid)
         rd = m.Reader(r.payload)
         lease, boot_id = rd.take("II")
@@ -646,17 +654,17 @@ class Host:
         return bool(locked), remaining, owner_of(p[5:])
 
     def take(self, lease_ms: int = 3000, *, owner: str | None = None, only_way_in: bool = False,
-             wait_s: float = 5.0, force: bool = False) -> Opened:
+             wait_s: float = 5.0, force: bool = False, extensions=()) -> Opened:
         """open() the way host guide §6 takes the lock. only_way_in: this link is the probe's only transport and a
         serial port opened exclusively - whoever held the lock cannot be there any more, so it is taken by force at
         once. Otherwise the holder's lease is waited out (up to wait_s); a holder that keeps it going raises InUse,
-        naming it. force: take it anyway (the user said so)."""
+        naming it. force: take it anyway (the user said so). extensions: as open's."""
         if force or only_way_in:
-            return self.open(lease_ms, force=True, owner=owner)
+            return self.open(lease_ms, force=True, owner=owner, extensions=extensions)
         deadline = time.monotonic() + wait_s
         while True:
             try:
-                return self.open(lease_ms, owner=owner)
+                return self.open(lease_ms, owner=owner, extensions=extensions)
             except Locked as e:
                 left = deadline - time.monotonic()
                 if left <= 0 or e.remaining_ms / 1000 > left:
