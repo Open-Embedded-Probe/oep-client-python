@@ -1,6 +1,12 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Changed: `targets` names the CH32V20x family `ch32v20x` (was `ch32v203`) and knows the CH32V208 by its target_id
+  (top 12 bits 0x208; a CH32V208WBU6 measured), so `oep pins` identifies it and maps its pads; the CH32V203's id is not
+  recorded yet. The module and `oep pins` no longer point to documents oep-spec no longer has.
+- (JA) 変更: `targets` は CH32V20x の系列を `ch32v20x` と呼び（前は `ch32v203`）、CH32V208 を target_id（上位 12 ビット 0x208。
+  CH32V208WBU6 で測定）で知る。`oep pins` が識別してパッドを map できる。CH32V203 の id はまだ記録していない。モジュールと `oep pins`
+  は、oep-spec に今は無い文書を指さなくなった。
 - (EN) Docs: the conformance, testing and hardware documents describe the current state only (no interim wording, no
   pinned commits; how checkers pin the reviewed spec is in docs/conformance-spec-compatibility.ja.md). The README no longer
   calls the client experimental. `tests/test_conformance_reviewed_pins.py` also checks the capture-serial checker's pins.

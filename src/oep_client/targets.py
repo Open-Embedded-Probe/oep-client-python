@@ -1,7 +1,7 @@
 """What the host knows about target families, in one table: which wire, the reset vector, how to read whether the reset
 line (NRST) exists, the line settings to attach with. The probe knows none of it (oep-if-debug: the host knows the
-target). `oep pins` and anything else that meets a target by its target_id read it from here, and oep-spec
-docs/target-scan-notes.ja.md records where each fact comes from.
+target). `oep pins` and anything else that meets a target by its target_id read it from here; each family's notes
+say what was measured.
 
 A family is matched by the target_id an attach reports (scheme 1 = dmi_7f: the u32 at DMI address 0x7F, which on these
 parts equals the chip's ESIG ID):
@@ -99,7 +99,7 @@ def gpio_clock_bit(port: str) -> int:
     return 1 << (2 + ord(port) - ord("A"))
 
 
-# The families met on the OEP benches (oep-spec docs/target-scan-notes.ja.md §2). ids: the top 12 bits of the ESIG ID
+# The families met on the OEP benches. ids: the top 12 bits of the ESIG ID
 # name the series (CH32V003 0x003..., CH32X035 0x035...).
 FAMILIES: tuple[Family, ...] = (
     Family("ch32v00x", "swio", ids=tuple((0xFFF00000, s << 20) for s in (0x002, 0x003, 0x004, 0x005, 0x006, 0x007)),
@@ -114,8 +114,9 @@ FAMILIES: tuple[Family, ...] = (
     Family("ch32l103", "rvswd", max_speed=1_000_000, idle_clock="low", gpio_ports="ABCD", gpio_pads=16,
            debug_pads=("PA13", "PA14"),
            notes="SWCLK resting high resets the debug link; over 1 MHz fails right after a reset; target_id not recorded"),
-    Family("ch32v203", "rvswd", idle_clock="low", gpio_ports="ABCD", gpio_pads=16, debug_pads=("PA13", "PA14"),
-           notes="no OEP bench yet; target_id not recorded"),
+    Family("ch32v20x", "rvswd", ids=((0xFFF00000, 0x20800000),), idle_clock="low", gpio_ports="ABCD", gpio_pads=16,
+           debug_pads=("PA13", "PA14"),
+           notes="the CH32V208 recorded (target_id 0x2080051c, CH32V208WBU6); the CH32V203's not yet"),
 )
 
 
