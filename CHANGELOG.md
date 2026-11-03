@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 0.0.43
 - (EN) Added: `Host.open`, `Host.take` and `core.take` take `extensions` - named extensions (a name, or (name, data))
   carried on the open after the owner, sent critical, so a probe that does not know one refuses it (`Unsupported`, its
   `.tag` the named extension's with bit 7) instead of ignoring it. A broker's sharing is asked this way (oep-spec host
