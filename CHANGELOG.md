@@ -1,6 +1,12 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Docs: the conformance, testing and hardware documents describe the current state only (no interim wording, no
+  pinned commits; how checkers pin the reviewed spec is in docs/conformance-spec-compatibility.ja.md). The README no longer
+  calls the client experimental. `tests/test_conformance_reviewed_pins.py` also checks the capture-serial checker's pins.
+- (JA) 文書: 適合検査、テスト方針、実機設定の文書を今の状態だけにした（途中の状態の言葉と、固定した commit の番号を外した。
+  検査器がレビュー済みの仕様に固定する仕方は docs/conformance-spec-compatibility.ja.md）。README の「実験段階」を外した。
+  `tests/test_conformance_reviewed_pins.py` は capture-serial の検査器の固定も確かめる。
 
 ## 0.0.43
 - (EN) Added: `Host.open`, `Host.take` and `core.take` take `extensions` - named extensions (a name, or (name, data))

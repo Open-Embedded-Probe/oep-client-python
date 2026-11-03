@@ -77,9 +77,9 @@ port_stateの古いphase/baud・非bridge受理・critical無視、起動速度�
 初期故障注入では、bufferを置換せず返り値だけ変えていたため通常送出へ効かなかった。実際の送信bufferも置換する。
 検査の失敗時にも準備した書き込みを完了してからcleanupし、未完了writeのエラーで元の違反を隠さない。
 
-無効frameでidleを更新する仮想モデルの違反を1FAILで再現し、応答を出さないdiscardでは更新しないよう修正した。
+応答を出さないdiscardではidleを更新しない（無効frameでidleを更新するモデルはFAILになる）。
 成功件数だけで完成としない（full_conformance=false）。
-長いwrite待ち/同時要求/誤応答復旧、同時に続く送受信frame、他資源と経路条件、Hostのswitch/wait、物理UART/productionは残る。
+長いwrite待ち/同時要求/誤応答復旧、同時に続く送受信frame、他資源と経路条件、Hostのswitch/wait、物理UART/productionは検査しない。
 
 ## セッション解放と古いwrite完了
 
@@ -128,4 +128,4 @@ OTHER-ROUTEは確定後、別bridge2でSID0のsource3500msを実行し、port0�
 停止故障はverify消費、応答でのverify更新、他経路実行でのidle消費・更新、verifyの早期復帰。
 旧モデルで全8ケースのidle消費違反を再現し、実行時間だけidle期限を延ばした。
 3500msはidle3000msより長く、短lease1000msも越えるので、偶然期限内で通る刺激ではない。
-複数経路の同時実行、source/sink以外の実行・拒否経路、物理時間・Host switch/waitは残る。
+複数経路の同時実行、source/sink以外の実行・拒否経路、物理時間・Host switch/waitは検査しない。

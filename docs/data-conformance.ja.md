@@ -16,12 +16,12 @@ SPEC core §11.2/11.3の、data/event共通seq、データの形、min_bytes/max
 
 ## adapterと実行
 
-`DataChecks`は既存の購読の検査に、data adapterの前提検証とデータ契約を加える。従来のコアと資源の検査も同じモデルへ別途適用する。通常CLIへ自動追加せず、補助レポートは常に`full_conformance=false`。
+`DataChecks`は購読の検査に、data adapterの前提検証とデータ契約を加える。コアと資源の検査も同じモデルへ別に適用する。通常CLIへ自動追加せず、補助レポートは常に`full_conformance=false`。
 
 adapterは[購読adapter](subscription-conformance.ja.md)のfunctions / stimulate / receive / decode_eventに、次を提供する。
 
 - `feed(fn, data)`：指定したbytesを外部から供給し、外部で分かる先頭のpositionを返す。probeの応答や内部cursorを期待値の根拠にしない。
-- `loss_free=True`：今回の刺激量と観測条件でdropが起きない設備を、明示的に宣言する。データ分割はmax_frame×2＋17 byteの刺激を含むため、実機adapterは刺激中もtransportを継続受信するなど、送信queueを圧迫しない手段が必要。
+- `loss_free=True`：その刺激量と観測条件でdropが起きない設備を、明示的に宣言する。データ分割はmax_frame×2＋17 byteの刺激を含むため、実機adapterは刺激中もtransportを継続受信するなど、送信queueを圧迫しない手段が必要。
 - `observation_ms`：このデータ検査では1〜50ms。既知の400ms delayを、到着前後で分けて観測するための設備条件。
 
 SPECではqueueに入らない通知のdropが認められる。この検査はその挙動を禁止する新しい規範ではなく、dropが無い刺激条件で内容・seq・まとめ送りを確認するもの。条件を満たせない設備にそのまま適用しない。宣言した条件でdropやbytes欠落があればその実行をFAILとし、規範で認められたdrop自体の検査とは区別する。

@@ -52,7 +52,7 @@ rate/samples/mode/triggerの拒否、query成功時の非適用を確認する�
 区画満杯のstate 5はconfigureをunavailable・cause 6で拒否し、積んだ区画とdataを消さない。
 logic/analog双方を確認する。planありのstate 5でもqueryを許可する規則はSPEC §3.3と
 `test_virtual_bench_capture_query.py`で確認する。
-既存仮想endpointのinterface回帰であり、そのlegacy coreを現在の独立core適合fixtureと同一視しない。
+仮想ベンチの`Endpoint`のinterface回帰であり、独立core適合fixture（`core-v1`）の検査とは別。
 
 ```sh
 uv run pytest -q tests/test_virtual_bench_capture_requests.py
@@ -98,8 +98,7 @@ logic/analogのone-shot完了、short stop、error、repeat満杯/解放、到�
 新start後までqueueに残る旧通知は元の世代を保ち、Hostが現在の世代以外を捨てることも確認する。
 世代/時刻/停止理由の改変、通知欠落と不要なtriggerを故障注入して検出する。
 stoppedのerrorはreason 3のときだけ照合し、それ以外で0を要求しない。
-これは既存fixtureの通知動作の追加回帰。到達しないtrigger、全通知/streaming/並行性と
-現在のcoreへ移行した全analog操作の適合は継続して整備する。
+これはfixtureの通知動作の回帰。到達しないtrigger、全通知/streaming/並行性と全analog操作の適合は検査しない。
 
 ```sh
 uv run pytest -q tests/test_virtual_bench_capture_notifications.py
@@ -114,7 +113,7 @@ forceでは現在のsampleを使い、まだ足りないpretrigger分だけ区�
 capture-groupは即時のtrackだけを束ねるので、groupの待機やforceはここで扱わない。
 
 既存one-shot fixtureと同じく、成立後の将来sampleは即時に合成する。
-これは物理的な待ち時間の証明ではない。自然な早期trigger、全modeのtriggerは別途整備する。
+これは物理的な待ち時間の証明ではない。自然な早期trigger、全modeのtriggerは検査しない。
 
 ```sh
 uv run pytest -q tests/test_virtual_bench_capture_waiting.py
@@ -140,7 +139,7 @@ logicのedge/level、analogのcross_up/down（疎なroleも含む）、pretrigge
 rawデータ・時刻・世代付き通知を照合する。
 開始前のsampleをedge/crossingの比較に使わない。
 one-shotは最後のsample時刻を待って区画を公開する。取得途中は区画を返さない。
-[取得時間の検査](capture-metadata-conformance.ja.md#仮想captureの時間検査)を併用する。物理latency、全mode契約は別途整備する。
+[取得時間の検査](capture-metadata-conformance.ja.md#仮想captureの時間検査)を併用する。物理latency、全mode契約は検査しない。
 
 ```sh
 uv run pytest -q tests/test_virtual_bench_capture_pretrigger.py
@@ -154,7 +153,7 @@ uv run pytest -q tests/test_virtual_bench_capture_pretrigger.py
 queryの候補rate/samples/modeは適用されないことも確認する。plan無しはcause 6、
 取得中の不正rate 0はmalformedで、現在の取得を変えない。
 configureの取得中/結合中拒否は継続し、queryと同じ扱いにはしない。
-既存endpointのlegacy coreの検査であり、独立core適合fixtureとの同一視や全query契約の証明はしない。
+仮想ベンチの`Endpoint`の検査であり、独立core適合fixtureの検査や全query契約の証明ではない。
 
 ```sh
 uv run pytest -q tests/test_virtual_bench_capture_query.py
@@ -169,7 +168,7 @@ forceと既知波形の初回triggerで履歴を残し、repeatの最初の区�
 streamingの通し番号とerror時write_posは、捨てた開始前履歴を数えず実際の完了区画から計算する。
 
 既知波形も経過済みsampleだけで条件成立を検出する。待機後の信号変化は下記の別試験で確認する。
-物理latency、offset/skewを含む全modeの時間因果性、storage gap・全stream区画契約は別途整備する。
+物理latency、offset/skewを含む全modeの時間因果性、storage gap・全stream区画契約は検査しない。
 
 ```sh
 uv run pytest -q tests/test_virtual_bench_capture_trigger_modes.py

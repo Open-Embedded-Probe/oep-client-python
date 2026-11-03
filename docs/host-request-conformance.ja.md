@@ -3,7 +3,7 @@
 core §2.3は、無視されると要求の意味を失う、または害のあるTLVにHostがcriticalを付けることを要求する。
 Probeが未知criticalを拒否する検査だけでは、Hostの付け忘れを証明できない。
 HostRequestChecksは、明示したencoderが実際に返すpayloadを独立した期待byte列と比較する。
-production Hostを変更せず、検査と明示encoder例を提供する。
+検査と明示encoder例を提供する。
 
 encoder契約は`encode(interface, operation, fixed: bytes, fields: list[tuple[int, bytes]]) -> bytes`。
 fieldsのtagはcriticalを含まない番号1〜127。固定部分は呼び出し側が組み立てる。
@@ -37,7 +37,7 @@ critical が要らないが、この方針は値によらず付ける（表の T
 core §2.3は「scanのmax_speed」「attachのreset」をcriticalにする例として挙げる。
 
 rvswd scanのidle_clockに、本文はcriticalの指定を書かない（attachのidle_clockだけ「critical」と書く）。
-scanの休ませ方が無視されると指定した線の状態で探索する意味を失うため、旧版と同じくHost方針でcriticalとする。
+scanの休ませ方が無視されると指定した線の状態で探索する意味を失うため、Host方針でcriticalとする。
 swd scanのtargetselは、coreの「無視されると要求の意味が無い」条件に当たる。
 scanの指定したmultidrop targetを試す意味を保つためcriticalとする。
 attachのtargetselとscanのtargetselは番号が異なる。文脈間で番号だけの方針cacheを共有しない。
@@ -68,7 +68,7 @@ assert report["status"] == "passed"
 
 単体は`uv run pytest -q tests/test_conformance_host_requests.py`。
 内容は正常、各文脈の各tagのbit反転、意味的故障、本文変更、registry/schema変更、op guard、
-旧方針（旧attach形、logicの一律critical）の検出、削除した文脈の不採用。
+誤った方針（attachの固定部分の誤り、logicの一律critical）の検出、定義の無い文脈の不採用。
 意味的故障は一律critical、一律非critical、並べ替え、重複除去、固定部分消失、値書換え、
 長さのendian/幅、省略、入力制限の破り、tagだけのcacheを含む。
 
@@ -91,8 +91,5 @@ UART format、wire attachの固定部分とreset、rvswd idle_clock、swd target
 Hostが受信したcritical tagを保持して例外にし、項目を外して再送しないことを確認する。
 各tagのcritical bitを落とす6故障も検出し、合計12件PASS。
 
-公開interfaceクライアントには旧op番号が残っているため、この検査は現SPECのop番号の適合を判定しない。
-初回に現SPECの16/17を要求した検査は、実際の1/2で失敗した。その差異は実装追従として残し、
-coreのcritical方針の検査ではrole/corr/fn/sessionとpayloadを照合する。
-現SPEC番号を使う独立encoderの14文脈検査と、この公開APIの部分検査を混同しない。
+公開APIのop番号はregistryから引く。この検査はheaderのrole/corr/fn/sessionとpayloadを照合し、op番号は照合しない。
 scan/capture/config/planを含む公開API全体、物理副作用、未知項目を無視する実Probeとの連携は引き続き未確認。

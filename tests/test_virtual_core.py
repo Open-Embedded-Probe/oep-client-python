@@ -123,5 +123,5 @@ def test_current_virtual_serial_passes_faults_and_reconnect():
 
 
 def test_current_core_profile_cannot_silently_add_old_interfaces():
-    with pytest.raises(ValueError, match='legacy interfaces'):
+    with pytest.raises(ValueError, match='fn 0 only'):
         virtual_bench.with_stand_in(virtual_bench.core_v1())

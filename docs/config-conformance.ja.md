@@ -16,7 +16,7 @@ getの応答は`more generation count 項目 [TLV]`、stateは`storage_state sav
 - IDLE：使用中のchannelへのidleは解放時に効き、空きのchannelへのidleはただちに効く。
   disableしたchannelは駆動せず、planはunavailable cause 5で断る。disableのunsetでただちに空き状態へ戻り、使えるようになる。
 - ATOMIC：重複キー（bit7違いを含む）、idle/disable/labelの長さ違い、項目番号0、countと項目の不一致はmalformed。
-  宣言しない項目（旧planの0x01、0xFF）は受け取ったtagで、範囲外channel・未知のidle modeは項目tagで、未知criticalの要求TLVはそのtagでunsupported。
+  宣言しない項目（0x01、0xFFなど）は受け取ったtagで、範囲外channel・未知のidle modeは項目tagで、未知criticalの要求TLVはそのtagでunsupported。
   unsetの重複キー/項目番号0/切れた行はmalformed、宣言しない項目はunsupported。
   idleとdisableの併存はcause 5、使用中channelのdisableはcause 1。
   channel TLVはcore §4.3で「分かる範囲で付ける」任意のため、付けた場合にぶつかったchannelを指すことだけを照合する。拒否は設定・generation・pinを変えない。
@@ -39,4 +39,4 @@ generationの折返し、無いキーのunsetでの加算、容量超過のcause
 旧config consumer/Endpointの自動attach・bind形は、この現仕様の適合根拠には使わない。
 get paging/数値キー順は[別の部分検査](config-paging-conformance.ja.md)で確認する。
 同内容saveの書き込み抑止と保存容量境界は[別の部分検査](config-storage-conformance.ja.md)で確認する。
-channelごとのpull/出力の非対応、firmware自身のchannel、物理保存とproduction追従は残る。full_conformance=false。
+channelごとのpull/出力の非対応、firmware自身のchannel、物理保存とproductionのHostは検査しない。full_conformance=false。

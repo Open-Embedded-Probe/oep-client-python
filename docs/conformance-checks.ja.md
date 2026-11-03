@@ -1,6 +1,6 @@
 # SPEC からの適合検査
 
-仕様を先に定め、適合テストを作り、コアを固めてから実装を追従させる。検査器は指定した SPEC checkout を読み、実装側の旧 registry から期待値を作らない。Python の Host/virtual probe/Arduino firmware は、この検査器を追加しただけでは新仕様に追従しない。
+検査器は指定した SPEC checkout を読み、実装側の registry から期待値を作らない。検査器はレビューした本文に固定する（[適合検査とSPECの版](conformance-spec-compatibility.ja.md)）。
 
 検査結果は次の3段階に分ける。
 
@@ -10,11 +10,11 @@
 | interface | 独自拡張を含む全インターフェース | 名前/revision/instance、describe/ops、TLV、共通の資源・購読・ページング規則。各機能で適用されるものを検査 |
 | oep-interface | 実装する標準 OEP インターフェース | 各 op の動作・副作用・競合・異常系。独自拡張向けテストの雛形として再利用 |
 
-`oep-conformance` は最初の2段階の一部を実行する。PASS は実行した項目だけの成功で、全体適合ではない。JSON の `full_conformance` は false、`levels` と `unchecked` に範囲を残す。OEP固有の動作検査はまだ実行しない。
+`oep-conformance` は最初の2段階の一部を実行する。PASS は実行した項目だけの成功で、全体適合ではない。JSON の `full_conformance` は false、`levels` と `unchecked` に範囲を残す。OEP固有の動作検査は実行しない。
 
 ## 実行
 
-`tests/equipment/.env.example` をコピーし、明示的に読み込む。設定は安定した port/名指しした USB/TCP、期待する unit ID、SPEC checkout、既存の共有 lock、新規 JSON 出力先。SPEC は隣接 checkout を自動探索しない。私的設備台帳への依存はない。配線・target の指定はこのコア検査には不要。`OEP_CONFORMANCE_FRAMING=serial` では独立した COBS/CRC 検査器を使い、メッセージ検査に wire 検査と再接続検査を加える。`tcp` は明示した `tcp://HOST:PORT` に独立したlength検査器を使い、メッセージ検査に TCP 検査を加える。DNS-SDや隣接設定を自動探索しない。`client` は従来backendを使い、USB/TCPでもメッセージ検査を実行できる。
+`tests/equipment/.env.example` をコピーし、明示的に読み込む。設定は安定した port/名指しした USB/TCP、期待する unit ID、SPEC checkout、既存の共有 lock、新規 JSON 出力先。SPEC は隣接 checkout を自動探索しない。私的設備台帳への依存はない。配線・target の指定はこのコア検査には不要。`OEP_CONFORMANCE_FRAMING=serial` では独立した COBS/CRC 検査器を使い、メッセージ検査に wire 検査と再接続検査を加える。`tcp` は明示した `tcp://HOST:PORT` に独立したlength検査器を使い、メッセージ検査に TCP 検査を加える。DNS-SDや隣接設定を自動探索しない。`client` は通常の client backend を使い、USB/TCPでもメッセージ検査を実行できる。
 
 ```sh
 uv run --group dev --env-file tests/equipment/.env pytest tests/equipment/test_core_contract.py
@@ -22,7 +22,7 @@ uv run --group dev --env-file tests/equipment/.env pytest tests/equipment/test_c
 uv run --env-file tests/equipment/.env oep-conformance
 ```
 
-出力先の親ディレクトリを先に用意する。既存の結果を上書きしない。共有 lock を接続から close まで保持し、自分の session を終了する。forceは同じ検査器が取得したsession間の移譲だけを検査する。最初のopenが拒否されたらforceを送らない。別利用者のsessionは奪わない。pin 操作、設定変更、flash は行わない。現行仕様へ未追従の実装も FAIL として記録する。
+出力先の親ディレクトリを先に用意する。既存の結果を上書きしない。共有 lock を接続から close まで保持し、自分の session を終了する。forceは同じ検査器が取得したsession間の移譲だけを検査する。最初のopenが拒否されたらforceを送らない。別利用者のsessionは奪わない。pin 操作、設定変更、flash は行わない。仕様に合わない実装は FAIL として記録する。
 
 ## 新コアのバーチャルベンチ
 
@@ -46,7 +46,7 @@ close後はsession 0のpeerからlockを観測し、primaryを開き直して再
 
 ## raw USBとソフトウェアモデル
 
-bulk/HIDには独立したraw adapter APIと最小USBモデルを追加した。[USB検査ガイド](usb-conformance.ja.md)を参照。USB device/gadgetやOSのUSB stackではなく、実機raw adapterとdescriptor検査は未実装。通常CLIのUSB `framing=client` は従来どおりメッセージ検査のみで、モデルの成功を実機へ適用しない。
+bulk/HIDには独立したraw adapter APIと最小USBモデルがある（[USB検査ガイド](usb-conformance.ja.md)）。USB device/gadgetやOSのUSB stackではなく、実機raw adapterとdescriptor検査は持たない。通常CLIのUSB `framing=client` はメッセージ検査だけで、モデルの成功を実機へ適用しない。
 
 ## 現在の粒度と限界
 
@@ -64,7 +64,7 @@ bulk/HIDには独立したraw adapter APIと最小USBモデルを追加した。
 | reconnect（serial） | OS portを閉じて同じportを開き、confirm/個体/bootを再照合。sessionとlock、再送履歴、終了したsessionの履歴、close中のlease失効を検査。再起動や個体の不一致はFAILとして後続を止め、異なる端点へendを送らない |
 | interface 共通 | 各 fn を独立に describe/ops/不変性/instance 検査。独自インターフェースにも同じ検査 |
 
-各項目に条項、PASS/FAIL/BLOCKED、要求と応答 hex、経過時間を保存する。wireの復号・読み出し自体が失敗しても、今回のraw送受信とerrorを保存する。過去のwire記録を今回の失敗へ転記しない。timeout/transport切断やcleanup失敗の後は回復を隠さず BLOCKED にし、実行全体は FAIL。設定が全くない任意の pytest 実機入口だけ SKIP。TCPのmax_frameが65535なら、u16でそれ以上のlengthを送れないため過大lengthの項目だけnot_applicableとし、その理由をpytestのskipに残す。設備不備のskipとは区別する。不完全な設定、アクセス権不足、個体違い、仕様違反は FAIL。
+各項目に条項、PASS/FAIL/BLOCKED、要求と応答 hex、経過時間を保存する。wireの復号・読み出し自体が失敗しても、その実行のraw送受信とerrorを保存する。過去のwire記録をその失敗へ転記しない。timeout/transport切断やcleanup失敗の後は回復を隠さず BLOCKED にし、実行全体は FAIL。設定が全くない任意の pytest 実機入口だけ SKIP。TCPのmax_frameが65535なら、u16でそれ以上のlengthを送れないため過大lengthの項目だけnot_applicableとし、その理由をpytestのskipに残す。設備不備のskipとは区別する。不完全な設定、アクセス権不足、個体違い、仕様違反は FAIL。
 
 `result_lost` は仕様が許す保持サイズ上限を考慮して受ける。履歴の古い clock を送り直したとき、新しい時計値で completed を返せば再実行として失敗する。cacheの容量を実装固有の固定値と決めつけない。
 
@@ -74,9 +74,9 @@ bulk/HIDには独立したraw adapter APIと最小USBモデルを追加した。
 
 既存の registry/vector は `tests/vectors/SPEC_COMMIT` と `SPEC_SHA256` で固定し、通常試験はその snapshot を検査する。明示した `OEP_SPEC_DIR` があれば、同じ commit の upstream 内容も比較する。SPEC の HEAD が先行しても旧回帰は自動同期しない。更新は `OEP_SPEC_DIR=/explicit/path OEP_SPEC_REF=<commit> tools/sync_registry.sh` で行う。
 
-資源寿命には[明示adapterによる補助検査](resource-conformance.ja.md)を追加した。最小サンプルは14資源契約＋2宣言検査を実行する。通常CLIへ自動追加せず、購読・route切断・依存順・電気的idleを未検査として残す。
+資源寿命には[明示adapterによる補助検査](resource-conformance.ja.md)がある。最小サンプルは14資源契約＋2宣言検査を実行する。通常CLIへ自動追加せず、購読・route切断・依存順・電気的idleを未検査として残す。
 
-購読・出来事の寿命には[外部刺激adapterの補助検査](subscription-conformance.ja.md)を追加した。raw通知と観測窓を保存する。data、応答優先、route、queue上限は未検査で、通常CLIには自動追加しない。
+購読・出来事の寿命には[外部刺激adapterの補助検査](subscription-conformance.ja.md)がある。raw通知と観測窓を保存する。data、応答優先、route、queue上限は未検査で、通常CLIには自動追加しない。
 
 [data/eventとまとめ送りの補助検査](data-conformance.ja.md)。外部byte位置とloss-freeな刺激条件を明示し、閾値・first-byte delay・共通seq・分割・再送/同session openでの未送信データ保持を検査する。seq一周は単体で65,538個を実際に生成して検証し、実時計・実機の結果と分ける。
 
@@ -98,7 +98,7 @@ bulk/HIDには独立したraw adapter APIと最小USBモデルを追加した。
 
 [回復中のforceと経路単位の結果不明化](recovery-races-conformance.ja.md)。読み出し前/途中/最後のsession差し替えを検出し、全応答喪失・先頭だけ受信・全件未実行の3条件で、その経路の未解決要求だけをunknownにする。
 
-corr枯渇前のsession切替検査は、corrが循環する現行core（§4.1、§5.1）では不要になったため削除した。corrの循環・半周・記録の破棄は[corr検査](corr-conformance.ja.md)のWRAP/HALF-GAPS/WRAP-ENDで確認する。
+corrは循環する（core §4.1、§5.1）。corrの循環・半周・記録の破棄は[corr検査](corr-conformance.ja.md)のWRAP/HALF-GAPS/WRAP-ENDで確認する。
 
 [end/openの結果喪失からの回復](session-loss-conformance.ja.md)。同一要求を再送し、現在のsession状態も確認する。保存されたopenの成功を取得しても、期限切れなら利用を再開しない。result_lostから成功やlease値を推測しない。
 
@@ -175,7 +175,7 @@ drive/read、再送とidle復元を第三段階で確認する。物理pin/他fi
 configure、受信/送信、TX idle、再送、plan再作成とend/expiry/forceを確認する。
 [UARTへの共通stream適用](uart-stream-conformance.ja.md)は、既存assertをplan所有の寿命に合わせて使う。
 
-console §2に従うresync/TO/CRCのmarkと無効flagの誤通知を追加した。繰り返し観測のmark数は固定しない。
+console §2に従うresync/TO/CRCのmarkと無効flagの誤通知も検出する。繰り返し観測のmark数は固定しない。
 
 [I2C targetの固有検査](i2c-conformance.ja.md)。
 RX/TX FIFO、ACK、overflow、stretch/configure、再送の非重複、plan寿命を4構成で確認する。
@@ -188,4 +188,4 @@ query/configure、one-shot/repeat、世代、read/区画/release、short/error�
 
 [analog成功payloadの検査](analog-payload-conformance.ja.md)。
 layout/actual値/scale/skew/frontend/reference、calibrationと既知raw sampleを独立に確認する。
-実行・拒否・世代・資源寿命・通知と全analog操作の適合は別に整備する。
+実行・拒否・世代・資源寿命・通知と全analog操作の適合は検査しない。

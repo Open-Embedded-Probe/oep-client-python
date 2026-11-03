@@ -13,7 +13,7 @@ fn 1 plan、fn 2/3 GPIO、8 channel、4割当とidle/driveはGPIO fixtureの契�
   新しい旧IDのsetはno_session。
 - end後の同じIDはforce有無によらず新規openできない。
 - 同じIDの新しいopenはleaseを更新し、GPIO plan/driveと再送履歴を保つ。
-- forceなしの別IDはlocked。forceでは旧planを解放して新しい所有者へ渡す。
+- forceなしの別IDはlocked。forceでは前の所有者のplanを解放して新しい所有者へ渡す。
   旧要求は新所有者へ触れずlockedとなり、新所有者がendした後も旧成功履歴を復元しない。
 - keepaliveとsession内の拒否応答はGPIO状態を保ってleaseを更新する。
 - SID 0 readと保存応答の再送はleaseを延ばさず、setを再実行しない。

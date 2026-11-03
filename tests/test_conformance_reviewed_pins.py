@@ -4,7 +4,7 @@ import hashlib
 from pathlib import Path
 
 from oep_client import conformance
-from oep_client.conformance import core_smoke, host_core, host_deadline, host_requests, host_wait, oep_smoke
+from oep_client.conformance import capture_serial, core_smoke, host_core, host_deadline, host_requests, host_wait, oep_smoke
 
 SPEC = Path(__file__).parent / "spec"
 DOCS = dict(reversed(line.split("  ", 1)) for line in (SPEC / "DOCS_SHA256").read_text().split("\n") if line)
@@ -16,7 +16,7 @@ def test_the_reviewed_core_is_the_synced_one():
 
 
 def test_the_reviewed_documents_are_the_synced_ones():
-    for table in (host_wait.REVIEWED, host_deadline.REVIEWED, host_requests.REVIEWED):
+    for table in (host_wait.REVIEWED, host_deadline.REVIEWED, host_requests.REVIEWED, capture_serial.REVIEWED):
         for name, digest in table.items():
             assert digest == DOCS[name], name
     for name, digest in oep_smoke.REVIEWED_INTERFACES.items():

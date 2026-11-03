@@ -1,6 +1,6 @@
 # 購読・出来事の寿命検査
 
-SPEC core §6/9/10から、購読と出来事の契約を共通検査にする。購読opの符号化と合否は共通検査が担当する。具体的な出来事を発生させ、そのpayloadを検証する方法は明示adapterが担当する。標準OEP interfaceの移行、データのまとめ送り、物理USB/TCPの検証とは分ける。
+SPEC core §6/9/10から、購読と出来事の契約を共通検査にする。購読opの符号化と合否は共通検査が担当する。具体的な出来事を発生させ、そのpayloadを検証する方法は明示adapterが担当する。標準OEP interface固有の出来事、データのまとめ送り、物理USB/TCPの検証とは分ける。
 
 最初の適用条件は、2つ以上の通知fnに対して、識別できる出来事を外部から1回ずつ発生させられること。adapterはfnの一覧、刺激、出来事payloadの検証、指定した観測時間内の通知受信を提供する。要求/応答の経路を変更しない。自動探索、私的ベンチ依存、実機adapterの自動選択は行わない。
 
@@ -21,12 +21,12 @@ SPEC core §6/9/10から、購読と出来事の契約を共通検査にする�
 adapterの能力は以下のとおり。
 
 - `functions`：明示した通知fnを2〜8個。これはboundedな検査設備の条件で、OEP規範のfn数制限ではない。
-- `observation_ms`：1〜100ms。この検査セットで出来事が届く設備の観測窓。設備がこの条件を満たせない場合は別の窓/刺激計画を作り、今回の検査を適合証拠にしない。
+- `observation_ms`：1〜100ms。この検査セットで出来事が届く設備の観測窓。設備がこの条件を満たせない場合は別の窓/刺激計画を作り、この検査を適合証拠にしない。
 - `stimulate(fn, marker)`：指定fnの出来事を1回発生させる。markerは検査側が採番したu32。これはOEP要求ではなく、外部刺激であり、sessionの経路や再送履歴を変更しない。
 - `receive(timeout_ms)`：指定した時間の観測を行い、その窓に受信した全通知フレームをbytesのlist/tupleで返す。未知/破損/重複通知をhost実装で捨ててはいけない。
-- `decode_event(frame)`：interface固有kind/固定部/後続TLVを検証してmarkerを返す。共通ヘッダのrole/fn/seq/長さと比較の合否は共通検査が担当する。今回のadapterは出来事のみを刺激するためdataの受信も期待値違反となる。
+- `decode_event(frame)`：interface固有kind/固定部/後続TLVを検証してmarkerを返す。共通ヘッダのrole/fn/seq/長さと比較の合否は共通検査が担当する。このadapterは出来事のみを刺激するためdataの受信も期待値違反となる。
 
-`conformance_subscription_sample.SampleSubscriptionAdapter`は上のサンプル契約を独立に復号する。probe実装をimportしない。`virtual_notification_model.NotificationModel`は出来事と資源を持つin-processモデル。`.emit()`と`.drain()`は外部刺激/観測の入口であり、物理transportの応答優先や送信bufferを模擬しない。既存core-v1、資源だけのサンプル、旧target profileと分けて使う。
+`conformance_subscription_sample.SampleSubscriptionAdapter`は上のサンプル契約を独立に復号する。probe実装をimportしない。`virtual_notification_model.NotificationModel`は出来事と資源を持つin-processモデル。`.emit()`と`.drain()`は外部刺激/観測の入口であり、物理transportの応答優先や送信bufferを模擬しない。core-v1、資源だけのサンプル、target付きprofileと分けて使う。
 
 ```python
 import os

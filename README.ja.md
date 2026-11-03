@@ -2,11 +2,10 @@
 
 [English](README.md)
 
-Open Embedded Probe の host 側。v1（oep-spec の本体 `docs/oep-core.ja.md`、`docs/oep-transports.ja.md` とインターフェース `interfaces/*.ja.md`）を話す。凍結の前の v1 で、凍結までは仕様が壊れることがある。番号は oep-spec の
-`generated/oep-v1/oep_v1_registry.py` をそのまま写した `oep_client.registry` から取る。破壊的変更を前提とする
-実験段階で、互換 API は約束しない。
+Open Embedded Probe の host 側。v1（oep-spec の本体 `docs/oep-core.ja.md`、`docs/oep-transports.ja.md` とインターフェース `interfaces/*.ja.md`）を話す。番号は oep-spec の
+`generated/oep-v1/oep_v1_registry.py` をそのまま写した `oep_client.registry` から取る。
 
-**実装する仕様: `tests/vectors/SPEC_COMMIT` にある oep-spec の commit**（`v0.x` のタグはまだ無い。oep-spec versioning §2 / §6: 凍結の前は revision 1 だけでは
+**実装する仕様: `tests/vectors/SPEC_COMMIT` にある oep-spec の commit**（oep-spec versioning §2 / §6: 凍結の前は revision 1 だけでは
 形が決まらないので、実装は自分が実装する仕様の commit を名乗る）。番号の表と `tests/vectors/` の共有ベクタはその commit から写したもの。
 変更の履歴は [CHANGELOG.md](CHANGELOG.md) にある。
 
@@ -33,7 +32,7 @@ HEAD 以外の commit を選べる。commit とファイルの hash は `tests/v
 pyproject.toml、uv.lock、`oep_client.__version__` を書き換え、CHANGELOG.md の Unreleased をその版にし、試験と build の後に commit と tag、
 GitHub Release、PyPI（Trusted Publishing）へ出す。変更は CHANGELOG.md の Unreleased に (EN) / (JA) で書き足しておく。
 
-最小構成の確認は [動作確認手順](docs/hardware-quickstart.ja.md)。共通の [テスト方針](docs/testing-policy.ja.md) と [OEP を使うプロジェクトのガイド](docs/testing-consumers.ja.md) も見る。[構成設計](docs/hardware-configuration.ja.md)と[設定形式・雛形](docs/hardware-schema.ja.md)は予定の形式を書く（offline の検査・計画は実装あり、実機の runner との連携は未実装）。
+最小構成の確認は [動作確認手順](docs/hardware-quickstart.ja.md)。共通の [テスト方針](docs/testing-policy.ja.md) と [OEP を使うプロジェクトのガイド](docs/testing-consumers.ja.md) も見る。設備の設定は[構成設計](docs/hardware-configuration.ja.md)と[設定形式・雛形](docs/hardware-schema.ja.md)にある。
 
 ## モジュール（`oep_client`）
 
@@ -414,4 +413,3 @@ multicast の経路が無い host では `--announce-on 127.0.0.1` にし、問�
 tests/test_virtual_bench_announce.py がこれを `oep find`、`discovery.find_unit`、`oep://UNIT_ID?via=net`（両方の engine）で試す（同じ process の responder が、OEP でない TCP の
 サービスと違う TXT の unit_id を並べて広告し、確かめでそれが外れることも見る）。multicast が
 戻らない所では skip する。
-

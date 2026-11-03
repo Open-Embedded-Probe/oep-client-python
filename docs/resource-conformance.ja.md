@@ -19,7 +19,7 @@ adapter未提供をPASSにしない。この入口は任意の補助APIで、通
 
 ## 最小サンプル拡張
 
-`virtual_resource_model.ResourceModel`はin-processで動くサンプル。実機やUSB stackではない。既存`core-v1`と旧target profileを変更せず、現コア実装に明示的な拡張hookを渡す。サンプル名は`io.github.open-embedded-probe.resource`、revision 1、fn 1と2、instance 0と1。OEP標準interfaceではなく、規範registryにも登録しない。
+`virtual_resource_model.ResourceModel`はin-processで動くサンプル。実機やUSB stackではない。`core-v1`のコアに明示的な拡張hookを渡す。サンプル名は`io.github.open-embedded-probe.resource`、revision 1、fn 1と2、instance 0と1。OEP標準interfaceではなく、規範registryにも登録しない。
 
 | op | 要求固定部 | 成功応答 | session |
 |---|---|---|---|

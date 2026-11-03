@@ -22,8 +22,7 @@ Probeのsession、資源、lease deadline、再送cacheを接続の寿命と分�
 100/400msの一致は処理時間ゼロのfixtureの条件で、実CPUやネットワークへ正確な時刻を要求しない。
 
 単体46件：正常1、観測故障34、実frames/Core/stream/Endpoint故障9、制御不足2。
-最初のfixtureではconfirm要求を応答magicで作ってしまい、SIDを含む全headerの期待値とdecoder例外名にも誤りがあった。
-現SPECのOEP?とmin/max revision、全header、実ShortPayloadへ修正した。production/Coreの変更はない。
+confirm要求はOEP?とmin/max revisionで作り、SIDを含む全headerとdecoderの例外（ShortPayload）を照合する。
 listの実応答byteと状態照会・再発見の順序も照合する。期限切れ後の履歴の成功と、現在有効な資源を区別する。
-任意のboot後カタログ/設定、leaseとの他の競合順、実OS TCP socket、production Hostの再接続手順、通知/同時接続は残る。
+任意のboot後カタログ/設定、leaseとの他の競合順、実OS TCP socket、production Hostの再接続手順、通知/同時接続は検査しない。
 full_conformance=false。

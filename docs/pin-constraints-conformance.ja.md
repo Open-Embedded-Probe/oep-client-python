@@ -12,12 +12,11 @@ SPIのgroup固定2roleと候補指定2roleを、plan_applyとconfig setの両経
 
 38設定caseと制約検査を迂回する6故障で44件。期待する許可/拒否はSPECから定めた表で、実装の判定関数から生成しない。
 追加時には、group外のroleを候補から選ぶI2C構成を拒否する実装の不具合を再現した。
-全role集合とgroupを比べる処理を、そのgroupが列挙するroleだけの比較へ修正した。
-全roleを固定する既存groupの制約は同じで、role_channelsの候補検査も保持する。
+groupは、そのgroupが列挙するroleだけを比べる。全roleを固定するgroupの制約も同じで、role_channelsの候補も検査する。
 
-このEndpointは旧op番号のvirtual profileも扱う。今回の検査は選択制約と拒否時不変を対象とし、
-現SPECの全interface schema適合を証明しない。全interface/全宣言形/全pin選択方法、
-同時実行・物理配線・電気条件は引き続き別途確認する。`full_conformance=false`。
+この検査は選択制約と拒否時不変を対象とし、
+全interface schema適合を証明しない。全interface/全宣言形/全pin選択方法、
+同時実行・物理配線・電気条件は検査しない。`full_conformance=false`。
 
 選んだgroupにないroleは、そのroleのrole_channels候補が必要である。
 別groupが別role向けに挙げたpinを、宣言のないroleへ使うことは許可しない。plan/configの両経路でこの拒否も確認する。

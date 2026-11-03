@@ -20,8 +20,7 @@ active frameは途中で別frameへ差し替えず、経路を閉じて破棄す
 規範が指定するのは保持範囲と非interleaveで、別の適合Probeの具体的なbuffer管理を固定しない。
 `out`は送信済みのHost受領mailboxとして扱い、Probeの未送信保持領域はpushとactiveである。
 
-初期検査で4条件とも保持範囲違反を検出した。既存RouteModelはbyte量だけを制限し、古いseqを無期限に残していた。
-未送信frameの期限判定と、activeが境界へ達した場合の論理closeを追加した。Core/productionの変更はない。
-単体21件：正常1、観測故障14、実model故障4、制御不足2。関連通知/経路を含む50件が通過する。
+RouteModelはbyte量に加えて未送信frameの期限で保持を制限し、activeが境界へ達したら経路を論理closeする。
+単体は正常、観測故障、実model故障、制御不足の各caseを持つ。
 capture/dmseq等の他の周回空間、Hostの保持値、同時producer、OS/実writer bufferは別途検査する。
 full_conformance=false。

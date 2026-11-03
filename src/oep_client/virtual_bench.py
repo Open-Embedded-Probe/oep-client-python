@@ -82,7 +82,7 @@ class VirtualProbe:
             # an interface with plan roles: the probe lists oep.probe.plan too (oep-if-plan), at the next free fn
             offered.append(_plan(max(o.fn for o in offered) + 1))
         if core_contract and any(o.fn != 0 for o in offered):
-            raise ValueError('core-v1 profile cannot expose legacy interfaces')
+            raise ValueError('core-v1 profile exposes fn 0 only')
         self.offered = sorted((o if not fill_ops else self._filled(o) for o in offered), key=lambda o: o.fn)
         self.requests = 0
         for o in self.offered:

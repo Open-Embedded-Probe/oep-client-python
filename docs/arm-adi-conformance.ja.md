@@ -96,7 +96,7 @@ TAR/data/bufferの段階へ失敗を注入し、読出しでは返せた値のpr
 RDBUFF回収失敗では、まだ返せない語をtarget busから読んでいてもdoneに加えない。
 writeのdoneは送れた語数であり、fixtureでtargetへの配送を落としても送信数を返す。
 WAIT時のstore一回実行、block replay、失敗語/後続への不正アクセスも確認する。
-最適化したpipeline方式、全ての遅延FAULTの方針はまだ確認しない。
+最適化したpipeline方式、全ての遅延FAULTの方針は検査しない。
 AP bank/SELECTの完全なdecode、sticky状態とABORT、ADIv6、SWD attachのTARGETSEL/tid、
 packetのparity/turnaround/idle、電気的な再試行と時間、CPUの実行状態は別途必要。
 全経路のframe容量、u32番地を越えるblockの扱い、production Hostとの統合も未完成である。

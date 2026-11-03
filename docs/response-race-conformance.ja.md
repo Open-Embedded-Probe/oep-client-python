@@ -22,7 +22,6 @@ token/generationは現Coreの内部実現方法の観測で、新しいwireフ�
 
 単体27件：正常1、観測故障20、実Core/資源故障4、制御不足2。
 corr/結果/token、早い更新、資源・cache混入、force拒否、新lease期限、同IDの所有期間混同を検出する。
-初期のcorr故障は検査のlookupでStopIterationになったため、順序から旧待ち要求を選んで独立にbyte照合するよう直した。
-現在のCore/資源モデル/productionは変更していない。既存writer/lease28件も含め55件が通過する。
+corr故障は、順序から前の待ち要求を選んで独立にbyte照合する。
 論理順序を定めた競合で、実CPU同時実行・物理transport完了・全拡張資源の依存解放・production Host統合は別の検査。
 full_conformance=false。

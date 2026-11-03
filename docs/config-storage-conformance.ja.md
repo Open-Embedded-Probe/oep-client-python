@@ -25,5 +25,5 @@ max_bytesが数えるのは項目の見出し込みのbyteだけなので、63/6
 毎回書込み/書込み欠落/変更の取りこぼし、generationや挿入順だけの比較、set時の自動保存、
 erase漏れ/現在設定消去/state残留、容量境界/cause/拒否時の書込み、pin変更、不正保存、boot時の書換え/消失を検出する。
 回数のassertは明示backendの観測条件であり、保存の内部形式や物理保存方式をoracleとして用いない。
-実flashの摩耗、保存中排他/電源断、起動時の項目ごとの検証、production Host統合は残る。
+実flashの摩耗、保存中排他/電源断、起動時の項目ごとの検証、production Hostとの統合は検査しない。
 full_conformance=false。

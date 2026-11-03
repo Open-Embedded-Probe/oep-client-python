@@ -16,7 +16,7 @@ queue残量・購読・再送履歴の保持はinstrumentationで観測する。
 
 `queue`は待機中通知と、部分送信通知の未送信suffixをbytesで返し、共通検査が合計する。`state`はholder、資源、購読seq/route、保持した要求/応答を観測する。これらはinstrumentationが必要で、通常の実機公開opから推定した値を代用しない。`feed`は外部入力のpositionを返す。`create_resource`は明示したinterfaceの資源opを符号化・検証する。
 
-`virtual_route_model.RouteModel`はstreamモデルの生成処理を使い、通知queueと単一writerを追加する。論理primary/peerは同じTCP listenerの別接続として扱う（socket/framingは未実装）。`conformance_route_sample.SampleRouteAdapter`はモデルをimportせず、明示して渡された観測対象を呼ぶ。
+`virtual_route_model.RouteModel`はstreamモデルの生成処理を使い、通知queueと単一writerを追加する。論理primary/peerは同じTCP listenerの別接続として扱う（socket/framingは持たない）。`conformance_route_sample.SampleRouteAdapter`はモデルをimportせず、明示して渡された観測対象を呼ぶ。
 
 実行例は公開Python環境またはArduinoのuv環境から、SPEC/既存共有lockを明示して使う。
 

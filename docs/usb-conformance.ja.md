@@ -31,6 +31,6 @@ factoryは、利用者が明示した端点を開くraw backendを返す。backe
 
 HIDのshapeには両方向のreport長と共通ID（0はIDなし）、bulkにはOUTのwMaxPacketSizeを渡す。検査器自身がHIDのcount/IDを符号化・検査し、bulkのOUT書込みがpacketサイズの倍数ならZLPを続ける。受信側は任意のpaddingを無視する義務があり、probeは送信paddingを0にする義務がある。入力刺激では非zero paddingの受信を試し、probe出力では非zero paddingや未宣言ID/過大countを違反として報告する。hostが未知IDを読み飛ばす規則と、probeが未宣言のreportを送ってよいかは別の検査である。
 
-実機を名指して開くraw adapter、USB/HID descriptorの独立検査、USB serialとunitの一致、interrupt OUT/SET_REPORTの実機経路、実際のIN packetの終端、抜き差し・再列挙・給電は今後整備する。通常CLIの `--framing client` でUSBを使う結果はメッセージ検査のみで、この独立wire検査の証拠にはしない。
+実機を名指して開くraw adapter、USB/HID descriptorの独立検査、USB serialとunitの一致、interrupt OUT/SET_REPORTの実機経路、実際のIN packetの終端、抜き差し・再列挙・給電は検査しない。通常CLIの `--framing client` でUSBを使う結果はメッセージ検査のみで、この独立wire検査の証拠にはしない。
 
 必須の `tests/test_conformance_usb.py` はliteral bytes、異常応答、欠落・重複、任意の転送境界、countの上位byte、IDなし/あり、小/大report、破損したprobeモデルで検査器を検証する。モデルの成功を実機USBの成功や全コア準拠と扱わない。

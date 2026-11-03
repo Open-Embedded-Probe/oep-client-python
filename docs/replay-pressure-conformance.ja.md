@@ -2,7 +2,7 @@
 
 core §4.3/5.2/6.1を、[経路別受付モデル](pipeline-conformance.ja.md)の上で検査する。受付枠は接続ごと、最後に成功した新規sessionの再送履歴はprobeに一つ。拒否の順は見出し、再送、session、そのほかの状態判定で、window_exceededは最後の段階に属する。新しいsession要求が再送判定を通った場合、rejectedも記録する。単に受付が混雑しているためにこの順序を飛ばさない。
 
-超過要求を落として応答しない選択もSPEC上許される。今回の検査は`reject-overflow`を選ぶ明示sample用であり、一般probeに超過拒否を必須化しない。範囲外刺激もfixtureの拒否方針を検査するために意図して送る。通常hostが上限を超えてよいという変更ではない。
+超過要求を落として応答しない選択もSPEC上許される。この検査は`reject-overflow`を選ぶ明示sample用であり、一般probeに超過拒否を必須化しない。範囲外刺激もfixtureの拒否方針を検査するために意図して送る。通常hostが上限を超えてよいという変更ではない。
 
 fn 1のsample create(kind u8)で実際に資源を作り、返された非zero u16 ID、raw応答、観測した資源一覧を比較する。
 
@@ -36,4 +36,4 @@ assert report['status'] == 'passed', report
 
 既存`.env.example`のSPEC/共有lockを明示する。公開テストから私的ベンチを探索しない。raw交換・全制御・時刻・宣言・SPEC/検査器/モデルhashを新規artifactへ保存する。常に`full_conformance=false`。
 
-実TCP/USB、silent lossからの回復、並行実行、再起動、host scheduler、大きな要求/応答の保持上限は未検査。[論理writerのlease検査](lease-conformance.ja.md)で応答全体の完了を基準にする処理を追加した。物理的な送信完了から数え始める検査は引き続き別途必要。
+実TCP/USB、silent lossからの回復、並行実行、再起動、host scheduler、大きな要求/応答の保持上限は未検査。応答全体の完了を基準にする処理は[論理writerのlease検査](lease-conformance.ja.md)にある。物理的な送信完了から数え始める検査は無い。

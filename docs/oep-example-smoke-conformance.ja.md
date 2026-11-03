@@ -25,10 +25,10 @@ pinsと各callbackは呼び出すプロジェクトが明示する。私的bench
 これは実行すると指定GPIOを設定し、UARTのplanを作り、SWD attachを行う検査である。明示した設備だけを選び、排他とframingは呼び出す側で用意する。
 未選択のtargetを探したり、他のセッションをforceで奪ったりはしない。
 
-SPECのcoreと、fixture/plan/debug/commonの本文SHAを確認してから送信する（レビュー済みはoep-spec 02c08c9）。
+SPECのcoreと、fixture/plan/debug/commonの本文のレビュー済みSHAを確認してから送信する。
 選択したOEPの必須操作はopsにあることを確認する。不在なら準備不成立を失敗として記録し、任意機能と混同しない。
 
-GPIOはplan/set/readを行い、後ろに未対応modeを持つbatchを実行前に拒否して旧状態を保つことを確認する。
+GPIOはplan/set/readを行い、後ろに未対応modeを持つbatchを実行前に拒否して元の状態を保つことを確認する。
 出力low/highが宣言されていればその変化を使い、mode0だけの最小GPIOでも同じ構造で確認できる。
 同値設定の再適用などを確かめるには、levelだけでなく設定作用の回数などを独立に観測する必要がある。
 
@@ -41,7 +41,7 @@ marks/writeが無ければ、それぞれfrom3のunsupportedと不在writeのunk
 ARMはSWD attachで得たconnectionを別target fnのtransferへ渡し、DP identityとACK/進捗を確認する。
 attachは固定部分`method(0)、swdio、swclk、max_speed`で送り、connectionはu32として読み、transferの先頭へu32で置く。
 固定応答がmax_frameへ入らないread batchはtargetへ触らず拒否する。
-session終了後に新SIDで旧connectionを使い、no_resourceと作用不変を確認する。
+session終了後に新SIDで前のsessionのconnectionを使い、no_resourceと作用不変を確認する。
 read_block/write_blockを必須にせず、新しい世代番号やlarge result bufferを要求しない。
 
 observe_resourcesは、選択したplan/pin設定/buffer/connection/target作用などのJSON互換snapshotを返す。

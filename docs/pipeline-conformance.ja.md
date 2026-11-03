@@ -1,8 +1,8 @@
 # 経路ごとの要求受付と回復の補助検査
 
-SPEC core §4.4/7.1から、経路ごとのmax_frame、window、max_inflightと要求/応答の順序を検査する。windowは見出しを含む未解決要求のOEP message bytesの合計で、COBS/CRC/lengthの包みを含めない。受けたTCP接続はそれぞれ独立した枠を持つ（transports §3）。再送cacheはprobe全体に一つで、今回の受付枠とは別。
+SPEC core §4.4/7.1から、経路ごとのmax_frame、window、max_inflightと要求/応答の順序を検査する。windowは見出しを含む未解決要求のOEP message bytesの合計で、COBS/CRC/lengthの包みを含めない。受けたTCP接続はそれぞれ独立した枠を持つ（transports §3）。再送cacheはprobe全体に一つで、その経路の受付枠とは別。
 
-hostは宣言した上限を守る。**超過要求へのwindow_exceeded応答は任意**で、容量を超えた要求には応答がない場合も許される。従って超過拒否の検査をすべてのprobeに課さない。今回の補助検査は`reject-overflow`を明示した論理モデル専用。実機wireの上限検査、silent lossを選ぶprobe、実際のhost schedulerは別に扱う。
+hostは宣言した上限を守る。**超過要求へのwindow_exceeded応答は任意**で、容量を超えた要求には応答がない場合も許される。従って超過拒否の検査をすべてのprobeに課さない。この補助検査は`reject-overflow`を明示した論理モデル専用。実機wireの上限検査、silent lossを選ぶprobe、実際のhost schedulerは別に扱う。
 
 サンプルは既存routes interfaceを使い、primaryはmax_frame=64 / window=80 / max_inflight=3、peerは64 / 96 / 2をconfirmで宣言する。primaryへ10 byte要求3つを送るとcountだけが上限、64 byteと16 byte要求を送るとwindowだけが上限に達する。clockに非critical TLVを付けてサイズを調整し、要求に副作用を加えない。各経路にsession 0のみを使い、sessionを別経路へ移さない。
 
@@ -37,6 +37,6 @@ with equipment_lock(os.environ['OEP_HW_LOCK']):
 assert report['status'] == 'passed', report
 ```
 
-SPEC/共有lockは既存`.env.example`の項目から渡す。私的ベンチを探索せず、設備のADDRESS/FRAMING/TCP_PEERをモデルへ流用しない。今回の固定寸法は境界を分離する検査fixtureの条件で、恒久設備や実機の宣言値の制約ではない。
+SPEC/共有lockは既存`.env.example`の項目から渡す。私的ベンチを探索せず、設備のADDRESS/FRAMING/TCP_PEERをモデルへ流用しない。この固定寸法は境界を分離する検査fixtureの条件で、恒久設備や実機の宣言値の制約ではない。
 
 常に`full_conformance=false`。実際のhostの送信抑制、silent overflow loss、session要求のpressure下での再送/拒否cache、並行処理、実際のTCP/USB、再起動は未検査。

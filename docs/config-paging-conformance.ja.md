@@ -3,7 +3,7 @@
 ConfigPagingModelとChecksへSPEC registryを明示し、InterfaceChecksの後に
 `ConfigPagingChecks(checks, SampleConfigPagingAdapter(model)).run()`を実行する。
 privateベンチや隣接SPECを自動探索しない。max_frame 64/128/256の3つの明示profileを使う。
-fn 0のchannelsは512、GPIOの駆動候補は従来の0〜7。大きい番号の項目を確認するための論理fixtureであり、512本の物理pinを模擬する意味ではない。
+fn 0のchannelsは512、GPIOの駆動候補は0〜7。大きい番号の項目を確認するための論理fixtureであり、512本の物理pinを模擬する意味ではない。
 
 getの応答は`more(u8) generation(u32) count(u8) count×項目 [TLV]`。項目はcountで数えて読み、残りは応答の末尾TLVとして別に読む。
 
@@ -24,8 +24,8 @@ generation変更時は古い項目を捨ててfirst 0へ戻す。more 1なのに
 byte辞書順/byte offset、項目抜け/重複、誤ったmore/generation、途中で切った項目、bit7残留、frame超過、
 countと項目数の不一致、変更ごとに進まないgeneration、読取りの設定/pin/lease/cache変更と、
 Hostが再読込みせず異なる版を混ぜる故障を検出する。応答の未知の非critical末尾TLVは項目と混ぜずに受け入れる。
-初期モデルの256 byte固定ページ上限は64/128で応答長違反となり、通知したmax_frameから応答headerを差し引く形へ修正した。
+ページの上限は、通知したmax_frameから応答headerを差し引いた長さ。
 
-任意channelカタログ、真の並行要求/継続変更、production Host連携は残る。
+任意channelカタログ、真の並行要求/継続変更、production Hostとの連携は検査しない。
 saveの書込み抑止は[別の部分検査](config-storage-conformance.ja.md)で確認する。
-saveの排他/電源断、物理設備は残る。full_conformance=false。
+saveの排他/電源断、物理設備は検査しない。full_conformance=false。

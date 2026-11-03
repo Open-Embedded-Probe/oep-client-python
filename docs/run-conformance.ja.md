@@ -36,7 +36,7 @@ runはloader呼出しであり、デバッガのcontinueへ流用しない。
 `prepare-line` / `prepare-fault`を選ぶ。
 `run_program(connection, memory, gprs)`は実行後の論理program効果を明示する。
 memoryはaligned-u32 address → u32 value、gprsはindex 0〜31 → u32 value。
-今回の論理runは抽象GPR番号0x1000〜0x101Fだけを扱う。この範囲を標準仕様の上限にしない。
+この論理runは抽象GPR番号0x1000〜0x101Fだけを扱う。この範囲を標準仕様の上限にしない。
 CPU命令、CSR/抽象コマンド、実clock、実targetへの転送を実行しない。
 各caseを新bootとし、raw交換、resume/finish時刻、PC/dcsr/GPR、復元とconsole調停を記録する。
 

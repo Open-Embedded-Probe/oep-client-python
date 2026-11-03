@@ -2,7 +2,7 @@
 
 core §5.2は直近max_inflight個以上の記録とcorrの最大値を保持し、要求/応答bytesの保持にサイズ上限を認める。保存済み要求は全bytesで比較し、変更ならmalformed。同じ要求でも応答を保持できなければresult_lost。要求そのものを保持できない場合や、記録が追い出されて最大corr以下の場合もresult_lost。どの場合も再実行・lease更新・資源変更をしない。
 
-一般probeに具体的な保持サイズを要求しない。今回のfixtureはmax_frame=64に対し保持上限16 byte、履歴8件を明示した`virtual-retention-1` / `io.github.open-embedded-probe.retention` revision 1。通常のcore/pipelineの保持上限72 byteを変更しない。経路の宣言値はpipeline sampleと同じ64/80/3、peerは64/96/2。履歴8件は両経路のmax_inflight以上。
+一般probeに具体的な保持サイズを要求しない。このfixtureはmax_frame=64に対し保持上限16 byte、履歴8件を明示した`virtual-retention-1` / `io.github.open-embedded-probe.retention` revision 1。通常のcore/pipelineの保持上限72 byteを変更しない。経路の宣言値はpipeline sampleと同じ64/80/3、peerは64/96/2。履歴8件は両経路のmax_inflight以上。
 
 sample fn 1/2のown create(op 16)はkind u8、reply_size u8、[TLV]を受け、resource_id u16、[TLV]を返す。kindは1/2、reply_sizeは応答message全体の長さ7/16/17。16/17では非critical tag 0x40のpaddingを足す。要求も非critical TLVで16/17 byteに調整する。いずれもmax_frame内で実行可能な要求で、保持上限は受付上限とは別。
 

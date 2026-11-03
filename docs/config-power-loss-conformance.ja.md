@@ -31,9 +31,9 @@ JSON/CRCをcheckerのoracleに使わず、wireで設定したold/newの全項目
 Core内部観測とbyte画像は仮想fixture用の補助制御であり、Probeへ新たな読取りAPIを要求しない。
 
 単体33件：正常1、共通宣言1、wire故障4、状態/保存故障19、制御不足8。
-active領域上書き/消去、誤った旧世代選択、commit/CRC破損後の成功、項目の混在、idle/disableの復帰漏れ、live planの残留、
-起動時generation、同じbootの再使用、早い応答、復帰の書換え、旧保持者/履歴/cache、途中再開、volatileな未来設定への誤った復帰を検出する。
-初期モデルがactive領域を上書きして以前の保存を失うことを再現し、他方の領域へ書く形へ修正した。
+active領域上書き/消去、誤った古い世代の選択、commit/CRC破損後の成功、項目の混在、idle/disableの復帰漏れ、live planの残留、
+起動時generation、同じbootの再使用、早い応答、復帰の書換え、前の保持者/履歴/cache、途中再開、volatileな未来設定への誤った復帰を検出する。
+モデルはactiveでない側の領域へ書き、active領域の保存を失わない。
 
 保存中の応答抑止/実行時間/lease、erase中の電源断（storage_state 2）、実flashのerase/program tear・摩耗・物理永続性、
-任意破損/内部counter wrap、production実装追従は残る。full_conformance=false。
+任意破損/内部counter wrap、production実装は検査しない。full_conformance=false。

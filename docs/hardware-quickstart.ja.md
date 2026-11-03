@@ -12,7 +12,7 @@ uv run --locked oep-hardware smoke --config tests/fixtures/hardware.virtual.toml
 uv run --locked pytest tests/test_hardware.py -q
 ```
 
-USB の plan は、同一 probe の2 target に `dut` / `peer` を割り当て、2 connection を要求する計画を表示します。これは現行 probe の同時能力や対象の USB API を認定するものではありません。未接続 pair を全 target の直積から作りません。
+USB の plan は、同一 probe の2 target に `dut` / `peer` を割り当て、2 connection を要求する計画を表示します。これは probe の同時能力や対象の USB API を認定するものではありません。未接続 pair を全 target の直積から作りません。
 
 仮想 smoke は confirm、list/describe、unit ID、必須宣言、session open/end を確認し、申告 firmware と宣言を JSON に残します。通信はプロセス内の COBS/CRC フレーム経由です。結果の `scope` は限定した smoke 範囲を示し、実機適合や USB 通信の保証と区別します。
 

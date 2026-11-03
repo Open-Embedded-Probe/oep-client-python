@@ -1,12 +1,12 @@
 # OEP 全体のテスト方針
 
-状態: 方針と改修計画。OEP、利用プロジェクト、計測・pytest 統合の保証対象と責任を定義する。現在のテストや CI をこの方針へ合わせて改修する。ここに挙げた契約がすべて実装済みという意味ではない。
+OEP、利用プロジェクト、計測・pytest 統合の保証対象と責任を定義する。ここに挙げる契約は保証の単位であり、各実装が満たしていることを示すのは、その実装の試験の結果である。
 
 この文書は OEP プロジェクト共通のテスト方針であり、このリポジトリにある Python テストだけの説明ではない。文書の保守窓口は oep-client-python とし、保証対象の変更は関係する実装の所有者がレビューする。通信の規範・番号・共有ベクタの正本は oep-spec に置き、テスト基盤の設定形式を protocol の適合条件に追加しない。
 
 実際の個体・配線・接続・給電・設備の運用記録は、各設備管理者が公開コードとは別に管理する。公開テストは自分のリポジトリと明示された設定で成立し、他の設備台帳や生成器を必要としない。設備固有の ID、path、合否基準を共有文書へ埋め込まない。
 
-利用側の入口は [OEP を使うプロジェクトのテストガイド](testing-consumers.ja.md)。基盤の設計は [構成と配線の確定](hardware-configuration.ja.md)と[実機設定形式](hardware-schema.ja.md)。現行の Python 実機ハーネスの手順は [tests/hw](../tests/hw/README.ja.md)に分ける。
+利用側の入口は [OEP を使うプロジェクトのテストガイド](testing-consumers.ja.md)。基盤の設計は [構成と配線の確定](hardware-configuration.ja.md)と[実機設定形式](hardware-schema.ja.md)。Python 実機ハーネスの手順は [tests/hw](../tests/hw/README.ja.md)に分ける。
 
 適合検査は「core」「interface共通」「OEPインターフェース固有」の3段階に分ける。最初の2段階は独自拡張にも使い、3段階目は各規範の検査と独自拡張向けの雛形を持つ。定義は [SPEC の適合ガイド](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/conformance.ja.md)、検査器の実行範囲は [適合検査入口](conformance-checks.ja.md)を参照する。仕様 → テスト → コアの確定 → 共通インターフェース → OEP固有 → 実装追従の順で進める。
 
@@ -180,48 +180,12 @@ log、readback、waveform、capture layout/rate、時刻不確かさ、双方の
 
 操作の失敗と後始末の失敗は両方保存し、後始末の例外で元の原因を消さない。設定を元に戻せなかった、DUT に診断 image が残った、peer の USB が有効なままといった終了状態を明示する。
 
-## 9. 調査から分かった改修対象
-
-| 所有側 | 現在確認できた構造 | あるべき姿への改修 |
-|---|---|---|
-| Python 配線探索 | pins.py は debug/reset 探索を持つ。複数候補・探索上限超過では停止するよう修正済み | 候補の全列挙・個体照合・曖昧性の明示・確定結果の保存。GPIO/UART の機能配線探索は別工程として追加 |
-| Arduino probe | DebugPort は単一 connection。Config の place は wire と console を一つ持つ | platform の必要能力に応じて複数 connection/console/slot を実装し、資源上限と分離を検証 |
-| Python 実機試験 | boards.py の個体表と GPIO/UART の既定値、環境変数の個別上書き | 個体と確定構成を外部入力へ移し、契約から対象を選ぶ。model/profile と設備個体を分離 |
-| ch32rv | 仮想 OEP、flash/monitor、複数 slot の拒否試験あり。broker が probe を所有 | 同じ probe の複数 target の control/log を分離し、pair 起動と target 間の混線防止を検証 |
-| ch32rv の仮想依存 | uv.rs は指定 checkout または兄弟ディレクトリの特定 commit を使用し、不足時に Rust test が return する | 必須の仮想検査が未実行だったことを確認可能にし、隔離した取得・固定・CI 依存を所有側で整える |
-| ArduinoCore | 現行 loader は target ごとに port/topology/cases を束ね、port の重複を拒否する | probe/target/接続/役割を分離し、1 probe の複数 target と同じ target の別経路を許す |
-| ArduinoCore の USB | TinyUSB source はあるが Arduino device/host API の結線と peer 実行は未実装 | 採用 API/controller/class と contract を先に定義し、実装と role 別の peer 試験を一緒に作る |
-| 実機リリース文書 | 移行前は同時リリース判定と設備固有の参照が混在 | 文書は責任を分離済み。変更対象別の必須契約を所有側が実行する gate は今後整備する |
-| 設備管理 | 各利用環境で管理 | 汎用形式へ export し、探索候補と確定接続、変更後の再確認を分ける |
-
-既存テストは契約の保証に寄与するかで再利用を決める。単なる実装の写し、固定配線への依存、自己申告だけの無条件 PASS は作り直す。既存の有効なベクタ・fault injection・後始末試験は、役割を整理して残す。
-
-## 10. 実装を進める順序
-
-1. 全体契約と対象範囲をレビューする。公開側で保守する契約、role/requirement、判定と証拠の定義を決める。
-2. 個体・接続・候補・確定結果・役割のモデルを決める。1 probe/複数 target、複数 probe、USB pair を合成した仮想設備で、解決・曖昧性・資源競合・変更検出を試験する。
-3. 隔離した test workspace、雛形、明示設定入力、plan 表示、排他と結果保存を実装する。通常試験に実機操作を入れない。
-4. debug 個体探索と GPIO 等の配線確定を実装する。既知の診断 image と制御経路を用い、配線変更・同型複数個体・probe 交換の回帰を追加する。
-5. probe の複数接続、console/config、Python/client/ch32rv の経路選択・broker を改修する。単体・仮想で分離と失敗回復を確認してから実機へ進める。
-6. probe 単体 → target flash/debug → Arduino runtime/外部 GPIO/UART → fixture/capture と、依存の少ない契約から実機で通す。
-7. USB role 別の API と peer を実装し、両側 READY/start/stop と独立 control を確立する。同 stack の回帰と独立 stack の相互運用を別々に追加する。
-8. 採用範囲の API/route/controller の差分、異常系、更新・復旧、リリース gate と CI を埋める。所有側の旧テストと文書を置換する。
-
-各段階で schema、interface、改修対象、検証結果をレビューする。offline 検証・plan・仮想 smoke、共通ロック付き probe preflight、明示 pytest 入口、uv/pytest による probe 転送まで実装した。target の新形式 adapter、配線診断の確定 export、複数 connection/broker、USB peer の整備は継続する。
-
-## 11. 調査した正本と実装
+## 9. 関連する正本と実装
 
 - [OEP 適合](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/conformance.ja.md)、[debug wire と connection](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/interfaces/oep-if-debug.ja.md)、[設定（core §13）](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/oep-core.ja.md#13-設定任意)。規範の正本は oep-spec に置き、この方針では新しい通信規則を定義しない。
 - [Python の pins 探索](https://github.com/Open-Embedded-Probe/oep-client-python/blob/main/src/oep_client/pins.py)、[実機試験](https://github.com/Open-Embedded-Probe/oep-client-python/blob/main/tests/hw/README.ja.md)、[個体表](https://github.com/Open-Embedded-Probe/oep-client-python/blob/main/tests/hw/boards.py)。
 - [probe DebugPort](https://github.com/Open-Embedded-Probe/oep-probe-arduino/blob/main/src/OepTarget.h)、[Settings](https://github.com/Open-Embedded-Probe/oep-probe-arduino/blob/main/src/OepSettings.h)、[実装制約](https://github.com/Open-Embedded-Probe/oep-probe-arduino/blob/main/docs/implementation-limits.ja.md)、[C++ 単体試験](https://github.com/Open-Embedded-Probe/oep-probe-arduino/blob/main/tests/host/run.sh)、[CI](https://github.com/Open-Embedded-Probe/oep-probe-arduino/blob/main/.github/workflows/tests.yml)。
 - [ch32rv の OEP と broker](https://github.com/ch32-riscv-ug/ch32rv/blob/main/docs/oep-host.ja.md)、[仮想 OEP](https://github.com/ch32-riscv-ug/ch32rv/blob/main/crates/oep/tests/virtual_bench.rs)、[仮想環境取得](https://github.com/ch32-riscv-ug/ch32rv/blob/main/crates/oep/tests/virtual_bench/uv.rs)、[flash E2E](https://github.com/ch32-riscv-ug/ch32rv/blob/main/cli/tests/oep_flash.rs)、[monitor E2E](https://github.com/ch32-riscv-ug/ch32rv/blob/main/cli/tests/oep_monitor.rs)。
-- [ArduinoCore の計画](https://github.com/ch32-riscv-ug/ArduinoCore-CH32RV/blob/main/tests/TEST_PLAN.ja.md)、[実装との照合](https://github.com/ch32-riscv-ug/ArduinoCore-CH32RV/blob/main/docs/test-coverage.ja.md)、[現在の構成 loader](https://github.com/ch32-riscv-ug/ArduinoCore-CH32RV/blob/main/tests/harness/bench.py)、[TinyUSB の現状](https://github.com/ch32-riscv-ug/ArduinoCore-CH32RV/blob/main/libraries/TinyUSB/README.ja.md)。
+- [ArduinoCore の計画](https://github.com/ch32-riscv-ug/ArduinoCore-CH32RV/blob/main/tests/TEST_PLAN.ja.md)、[実装との照合](https://github.com/ch32-riscv-ug/ArduinoCore-CH32RV/blob/main/docs/test-coverage.ja.md)、[構成 loader](https://github.com/ch32-riscv-ug/ArduinoCore-CH32RV/blob/main/tests/harness/bench.py)。
 - [pytest Arduino 基礎](https://github.com/tanakamasayuki/pytest-embedded-arduino-cli/blob/main/TESTING_BASICS.ja.md)、[詳細と peer の原則](https://github.com/tanakamasayuki/pytest-embedded-arduino-cli/blob/main/TESTING_ADVANCED.ja.md)、[peer lifecycle の例](https://github.com/tanakamasayuki/pytest-embedded-arduino-cli/blob/main/examples/12_peer_host_core/README.ja.md)。
 - [WireSkein の取得試験](https://github.com/Open-Embedded-Probe/wireskein/blob/main/tests/test_oep_virtual_bench.py)、[capture の照合](https://github.com/Open-Embedded-Probe/wireskein/blob/main/docs/capture-test-guide.ja.md)、[pytest 記録統合](https://github.com/Open-Embedded-Probe/pytest-embedded-wireskein/blob/main/tests/test_plugin.py)、[JS client のリリース確認](https://github.com/Open-Embedded-Probe/oep-client-js/blob/main/docs/release.ja.md)、[web viewer のリリース確認](https://github.com/Open-Embedded-Probe/wireskein-web/blob/main/docs/release.ja.md)。
-
-
-## 仕様と検査を固める区切り
-
-各段階で、仕様 → 独立検査 → バーチャルでの実装追従 → 実機実装の追従・検証を一巡する。検査器の誤りや規範の曖昧さは見つけ次第修正する。旧実装の仕様不一致は証拠として保持し、期待値を旧実装へ合わせない。全3段階の検査完成まで実装修正を待つ必要はないが、まだ固めているコアに合わせて全interfaceやfirmwareを同時に変更しない。
-
-コアではまず最小バーチャル端点 `core-v1` を同じ公開検査器で通し、正常系の基準を得る。これはコアの現行検査範囲の成功であり、全コアの凍結や既存target付きprofile・実機の適合ではない。残るtransport/複数経路/資源寿命も揃えてコアの区切りを判断し、共通interface、OEP固有へ進める。

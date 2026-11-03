@@ -2,11 +2,11 @@
 
 [日本語](README.ja.md)
 
-This describes the current Python hardware harness. The shared [testing policy](../../docs/testing-policy.ja.md) and [guide for projects using OEP](../../docs/testing-consumers.ja.md) distinguish firmware-provider checks from consumer checks. Each owner makes its own release decision; releases are not coupled automatically.
+This describes the Python hardware harness. The shared [testing policy](../../docs/testing-policy.ja.md) and [guide for projects using OEP](../../docs/testing-consumers.ja.md) distinguish firmware-provider checks from consumer checks. Each owner makes its own release decision; releases are not coupled automatically.
 
-Ordinary `uv run pytest` runs hardware-free checks. Hardware tests skip unless `OEP_HW_BOARDS` is set. **The new offline TOML validator/planner is available via `oep-hardware`; integration with this legacy hardware runner is pending.** The `.env.example` and input/resolved TOML examples describe the proposed [configuration format](../../docs/hardware-schema.ja.md), with offline validation/planning available; they are not inputs to this legacy hardware runner.
+Ordinary `uv run pytest` runs hardware-free checks. Hardware tests skip unless `OEP_HW_BOARDS` is set. Equipment TOML is checked with `oep-hardware preflight` and `pytest tests/equipment` (probe-only; [quickstart](../../docs/hardware-quickstart.ja.md)). The `.env.example` and input/resolved TOML examples follow the [configuration format](../../docs/hardware-schema.ja.md); the hardware tests in this directory do not read them.
 
-Run the current entry point from the repository root. Replace `PROBE_ID` with an explicit ID accepted by the current `boards.py`. Commands other than the virtual example operate hardware.
+Run the entry point from the repository root. Replace `PROBE_ID` with an explicit ID accepted by `boards.py`. Commands other than the virtual example operate hardware.
 
 ```sh
 # Use installed firmware. This skips firmware flashing, not all mutations.
@@ -115,9 +115,9 @@ oep settings save <probe>      # or `oep settings unset --all <probe> --save` wh
 
 ## Targets and update paths
 
-The current `boards.py` is a legacy table combining physical devices, profiles and wiring defaults. Moving physical devices to explicit external configuration is pending; a generic TOML cannot be supplied yet. Equipment managers keep physical inventory, serials, USB topology and historical measurements separately.
+`boards.py` is a table combining physical devices, profiles and wiring defaults; it does not read the generic TOML. Equipment managers keep physical inventory, serials, USB topology and historical measurements separately.
 
-| Kind | Current update path |
+| Kind | Update path |
 |---|---|
 | Classic ESP32 | esptool and a merged image |
 | ESP32-P4 | USB DFU app image, or an explicitly selected USB-Serial/JTAG path |

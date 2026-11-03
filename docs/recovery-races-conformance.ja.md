@@ -61,4 +61,4 @@ with equipment_lock(os.environ['OEP_HW_LOCK']):
 
 `.env.example`の既存SPEC/共有lockを明示する。公開側に私的ベンチ探索や設備項目を加えない。全raw交換・force地点・host ledger・状態比較・独立待機窓を保存する。
 
-`full_conformance=false`。physical timeout/framing/reconnectとreader停止、production Host統合、任意の並行writer/atomic snapshot、他のbatchサイズや保持上限、任意の拡張の回復意味論は未検査。SPECとArduino firmwareは変更していない。
+`full_conformance=false`。physical timeout/framing/reconnectとreader停止、production Host統合、任意の並行writer/atomic snapshot、他のbatchサイズや保持上限、任意の拡張の回復意味論は未検査。

@@ -2,11 +2,11 @@
 
 [English](README.md)
 
-現在の Python 実機ハーネスの手順です。共通の責任と保証対象は [全体テスト方針](../../docs/testing-policy.ja.md)、OEP を利用する任意のプロジェクト向けの進め方は [利用者ガイド](../../docs/testing-consumers.ja.md)を参照してください。プローブ更新の検証は firmware 所有側、クライアントの動作は client 側が判定します。両方のリリースを一律に連動させません。
+Python 実機ハーネスの手順です。共通の責任と保証対象は [全体テスト方針](../../docs/testing-policy.ja.md)、OEP を利用する任意のプロジェクト向けの進め方は [利用者ガイド](../../docs/testing-consumers.ja.md)を参照してください。プローブ更新の検証は firmware 所有側、クライアントの動作は client 側が判定します。両方のリリースを一律に連動させません。
 
-通常の `uv run pytest` は仮想ベンチ等のボード不要検査を行います。このディレクトリの実機検査は `OEP_HW_BOARDS` を指定しない限り skip します。**新しい設備 TOML は `oep-hardware preflight` と `pytest tests/equipment` で probe 単体確認に使用できます。[手順](../../docs/hardware-quickstart.ja.md)を参照してください。このディレクトリの legacy target suite への adapter は未実装です。** `.env.example`、`hardware.example.toml`、`hardware.resolved.example.toml` は [設定形式案](../../docs/hardware-schema.ja.md)の雛形で、offline 検査と plan には使えますが、この実機 suite が読み込むものではありません。
+通常の `uv run pytest` は仮想ベンチ等のボード不要検査を行います。このディレクトリの実機検査は `OEP_HW_BOARDS` を指定しない限り skip します。設備 TOML は `oep-hardware preflight` と `pytest tests/equipment` で probe 単体の確認に使います（[手順](../../docs/hardware-quickstart.ja.md)）。`.env.example`、`hardware.example.toml`、`hardware.resolved.example.toml` は [設定形式](../../docs/hardware-schema.ja.md)の雛形で、このディレクトリの実機試験は読みません。
 
-現行入口は repository root で実行します。`PROBE_ID` は現在の `boards.py` が受理する明示 ID に置き換えます。仮想例以外のコマンドは実機を操作します。
+入口は repository root で実行します。`PROBE_ID` は `boards.py` が受理する明示 ID に置き換えます。仮想例以外のコマンドは実機を操作します。
 
 ```sh
 # 設置済み firmware を使う。firmware 書込みを省く指定で、read-only 試験ではない。
@@ -22,7 +22,7 @@ OEP_HW_BOARDS="$PROBE_ID" OEP_PROBE_VERSION="$PROBE_VERSION" uv run pytest tests
 OEP_HW_BOARDS=virtual-esp32-v003 uv run pytest tests/hw -m hw
 ```
 
-`OEP_HW_NOFLASH=1` は firmware 書込みを省き、使用した firmware 文字列を記録します。config 試験は設定変更・保存・復元を行い、Wi-Fi 試験は指定したネットワーク設定を保存します。下記の副作用と終了状態を確認し、設備管理者と共有資源の利用を調整してください。現行ハーネスには新設計のホスト共通ロックは未接続です。
+`OEP_HW_NOFLASH=1` は firmware 書込みを省き、使用した firmware 文字列を記録します。config 試験は設定変更・保存・復元を行い、Wi-Fi 試験は指定したネットワーク設定を保存します。下記の副作用と終了状態を確認し、設備管理者と共有資源の利用を調整してください。このハーネスは `OEP_HW_LOCK` のロックを取りません。
 
 複数ボードは `OEP_HW_BOARDS=a,b` でボードごとに順次処理します。候補 source と設置済み firmware の試験を別の結果として残し、使用版の文字列だけで互換性を判定しません。必須契約の skip はリリース確認の未完了です。
 
@@ -112,9 +112,9 @@ oep settings save <probe>      # 走る前に何も保存されていなけれ�
 
 ## 対象と更新経路
 
-現行の `boards.py` は個体と profile・配線既定値を束ねた legacy 表です。個体表は外部設定へ移す改修対象であり、新規利用者が汎用 TOML を渡せる状態にはまだなっていません。実設備の配置、観測結果、serial、USB topology は各設備管理者が別に管理します。
+`boards.py` は個体と profile・配線既定値を束ねた表です。汎用 TOML は読みません。実設備の配置、観測結果、serial、USB topology は各設備管理者が別に管理します。
 
-| 種類 | 現行の更新経路 |
+| 種類 | 更新経路 |
 |---|---|
 | classic ESP32 | esptool と merged image |
 | ESP32-P4 | USB DFU の app image、または明示した USB-Serial/JTAG 経路 |

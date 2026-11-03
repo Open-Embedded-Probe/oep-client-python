@@ -1,7 +1,7 @@
 # Hostのsave待ち時間と転送時間の部分検査
 
 SPEC checkoutを明示し、`HostWaitChecks(SampleHostWaitAdapter(), spec=path).run()`を実行する。
-core §4.4/7.5、transports §6の本文SHA（oep-spec 02c08c9）と待ちの数値/現在のsave番号を照合する。
+core §4.4/7.5、transports §6の本文のレビュー済みSHAと待ちの数値/現在のsave番号を照合する。
 registryのcore_quick_op_max_ms（1000）も照合する。
 private設備を探索せず、MemoryStreamだけを使う。OSの口を開いたり実時計で待ったりしない。
 
@@ -32,4 +32,4 @@ confirmの応答が来る前はmax_frame64、その後は直近の応答値を�
 外側待ちの消失/失敗時の漏れ、save投影番号/結果/latest confirmの不正を検出する。
 save/Linkの時間処理は既存実装のままPASSし、production sourceは変更しない（confirmの処理上限は上の投影による）。
 実際の期限開始/timeout発生/再送、pipelineの先行応答待ち、link自身の交渉待ち、
-他opの処理上限、production Hostによるfn 0処理上限の選択、実transport/flash、旧registryからのwire移行と全Host統合は残る。full_conformance=false。
+他opの処理上限、production Hostによるfn 0処理上限の選択、実transport/flash、production Hostとの統合は検査しない。full_conformance=false。

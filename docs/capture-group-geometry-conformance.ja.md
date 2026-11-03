@@ -31,10 +31,10 @@ sample時刻の推定値は一般には実時間と完全には一致しない�
 これはmetadata例の生成器で、取得エンジンや大量のsample bufferを実装するmodelではない。
 configure例はrate/capacity以外の通常の必須情報も持つが、全layout/scaleなどの検証は別checkerの担当。
 
-単体62件は27例、28の不正観測/前提（旧形式のstart/statusを含む）、報告不確かさの非利用、
-既存仮想Endpointの6構成を含む。Endpoint構成はlogic/analogのbind順と3組の範囲内rate。
+単体62件は27例、28の不正観測/前提（誤った形のstart/statusを含む）、報告不確かさの非利用、
+仮想ベンチの`Endpoint`の6構成を含む。Endpoint構成はlogic/analogのbind順と3組の範囲内rate。
 実際の応答bodyをwireから取り、組のstart_nsとADCの既知の変換遅れ（5000ns）から起点を求めて照合する。
-既存Endpoint/Hostのlegacy coreやop番号の適合を証明する検査ではない。
+`Endpoint`/Hostのcoreやop番号の適合を証明する検査ではない。
 
 `full_conformance`はfalse。wire拒否/再送/全世代進行、bindの実現可能性、全configure/data構造、
 repeat/streaming/通知、stopの短い区画、物理clock/skew/精度は未検査。

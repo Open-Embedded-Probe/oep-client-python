@@ -1,7 +1,7 @@
 # lease・forceの大枠検査
 
-`SessionSmokeChecks`は現行の循環corr作業版の選択したsession寿命をraw要求で確認する。
-レビュー済みcoreのガードを持つ`CoreSmokeChecks`をcontextに使い、旧checkerのガードは変更しない。
+`SessionSmokeChecks`は選択したsession寿命をraw要求で確認する。
+レビュー済みcoreのガードを持つ`CoreSmokeChecks`をcontextに使う。
 
 ```python
 from oep_client.conformance import spec_identity

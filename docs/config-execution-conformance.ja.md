@@ -30,4 +30,4 @@ lease停止漏れ/早い更新/待機中停止・更新/送信後更新漏れ、
 誤った実行時間、pin変更、同内容/拒否時/再送の書込みを検出する。
 set/unsetは要求の先頭のcount(u8)から項目/行を読み、固定長に頼らない。
 Host実時計のtimeout、物理flash、保存後のqueue処理、実経路の同時実行、応答待ち中のforce/open競合、
-eraseの実行時間とproduction追従は残る。full_conformance=false。
+eraseの実行時間とproductionのHostは検査しない。full_conformance=false。

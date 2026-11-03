@@ -21,7 +21,7 @@
 
 論理pin組はRVSWD (0,1)/(2,3)/(6,7)、SWIO (0,0xFFFF)/(2,0xFFFF)/(6,0xFFFF)、SWD (4,5)。channel_groupで明示する。scanは実装しない。method 0の論理成功だけを確認し、haltや電気的な速度選定を証明しない。resetの線の動作、idle_clock、targetselは未検査（`WireOptionsChecks`）。reset TLVはsampleのreset channel（8）で受理とraw tagの拒否、先頭コピーの使用（hold）だけを確かめる。
 
-仮想コアへ`request_tags` / `dispatch_request`の明示拡張入口を加え、拡張固有critical TLVを検査・実行へ渡す。入口がない既存拡張は従来の処理を使う。session・header・cacheの判定は入口より先に行う。同一要求再送でTLV解析や実行を繰り返さない。
+仮想コアは`request_tags` / `dispatch_request`の明示拡張入口で、拡張固有critical TLVを検査・実行へ渡す。入口が無い拡張は共通の処理を使う。session・header・cacheの判定は入口より先に行う。同一要求再送でTLV解析や実行を繰り返さない。
 
 単体19件でmax_speed 0の受理、未知critical無視、既知noncritical拒否、raw tag喪失、後のtag優先、後のコピーの未検証、拒否時targetアクセス、console応答の余分なbyte、ARM console受理、方式競合無視、速度上限超過、再送再実行、connectionsのmetadata不正を検出する。採用条件/選択SPEC変更、所有中fixture再起動拒否、拡張入口とsession/cacheの優先順も確認する。
 

@@ -1,7 +1,7 @@
 # 全拡張に使うインターフェース大枠検査
 
 `InterfaceSmokeChecks`は、標準OEPと独自拡張に共通する選択した契約を確認する。
-新しいcore contextを使い、旧検査のcore SHAガードを解除しない。
+レビュー済みcoreのガードを持つcore contextを使う。
 
 ```python
 from oep_client.conformance import spec_identity

@@ -4,8 +4,8 @@ OEP debug §2/4.1の検査を`RetryChecks`、明示的な論理fixtureを`RetryM
 `SampleRetryAdapter`で提供する。任意のOEP利用プロジェクトから公開Pythonライブラリだけで利用できる。
 SPEC/registryは呼び出し元で明示的に選び、`Checks`へ渡す。私的な設備設定やベンチを探索しない。
 
-三段階のうち、共通宣言は第二段階、今回の前提と動作は第三段階。
-`full_conformance`はfalse。既存fixtureを変更せず、新fixtureを独立して実行する。
+三段階のうち、共通宣言は第二段階、前提と動作は第三段階。
+`full_conformance`はfalse。専用のfixtureで独立して実行する。
 
 - hostのDMI手順は、届いた可能性があれば読み/書きとも繰り返さない。DATA書き込みと
   resumereqも対象。失敗した手順と後続をdoneに含めず、failed/partialで答える。

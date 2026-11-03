@@ -1,6 +1,6 @@
-"""Virtual fn 0 implementation of the pre-freeze core (oep-spec 4681d22).
+"""Virtual fn 0 implementation of the core, for the core-v1 profile and the conformance sample models.
 
-Independent of the conformance checker and the legacy interface registry.
+Independent of the conformance checker and of the virtual bench's Endpoint and its interface registry.
 The core-v1 profile has no resources, subscriptions, interfaces or targets.
 Explicit sample models may supply an independently defined extension hook.
 """
@@ -62,8 +62,7 @@ def tail(data, owner=False):
 class Core:
     def __init__(self, endpoint, extension=None):
         self.ep = endpoint
-        # Only explicit current-contract models supply this hook. Legacy profiles
-        # and the core-v1 profile continue to expose fn 0 alone.
+        # Only explicit sample models supply this hook; the core-v1 profile exposes fn 0 alone.
         self.extension = extension
         self.holder, self.last, self.owner = None, None, b''
         self.lease, self.deadline, self.high = 3000, 0, 0

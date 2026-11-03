@@ -4,11 +4,10 @@
 
 The host side of Open Embedded Probe (OEP). It speaks the v1 protocol of
 [oep-spec](https://github.com/Open-Embedded-Probe/oep-spec) (the core `docs/oep-core.ja.md`, `docs/oep-transports.ja.md`
-and the interfaces `interfaces/*.ja.md`), v1 before the freeze: until the freeze the spec may still break. The wire numbers come from `oep_client.registry`, a verbatim copy of
-oep-spec's generated `generated/oep-v1/oep_v1_registry.py`. This is an experimental stage: breaking changes are expected and
-no compatible API is promised.
+and the interfaces `interfaces/*.ja.md`). The wire numbers come from `oep_client.registry`, a verbatim copy of
+oep-spec's generated `generated/oep-v1/oep_v1_registry.py`.
 
-**The spec this implements: the oep-spec commit in `tests/vectors/SPEC_COMMIT`** (no `v0.x` tag yet; oep-spec versioning §2 / §6 - before the
+**The spec this implements: the oep-spec commit in `tests/vectors/SPEC_COMMIT`** (oep-spec versioning §2 / §6: before the
 freeze, revision 1 alone does not fix the forms, so an implementation names the spec commit it implements). The registry
 and the shared vectors in `tests/vectors/` are copied from that commit; the history is in [CHANGELOG.md](CHANGELOG.md).
 
@@ -39,7 +38,7 @@ sets the version in pyproject.toml, uv.lock and `oep_client.__version__` and tur
 the tests and the build it commits, tags, makes the GitHub Release and publishes to PyPI (Trusted Publishing). Record changes
 under Unreleased in CHANGELOG.md, (EN) and (JA).
 
-A minimal check: [hardware quickstart](docs/hardware-quickstart.ja.md). See the shared [testing policy](docs/testing-policy.ja.md) and [guide for projects using OEP](docs/testing-consumers.ja.md). The [hardware design](docs/hardware-configuration.ja.md) and [configuration examples](docs/hardware-schema.ja.md) describe the planned format; its offline validator/planner is available; integration with the hardware runner is pending. These working documents are in Japanese.
+A minimal check: [hardware quickstart](docs/hardware-quickstart.ja.md). See the shared [testing policy](docs/testing-policy.ja.md) and [guide for projects using OEP](docs/testing-consumers.ja.md). Equipment configuration: [hardware design](docs/hardware-configuration.ja.md) and [configuration examples](docs/hardware-schema.ja.md) (in Japanese).
 
 ## Modules (`oep_client`)
 
@@ -473,4 +472,3 @@ IP_MULTICAST_IF 127.0.0.1. A different `--unit-id` per job keeps parallel jobs a
 name too). A container or VM answers only on its own network. tests/test_virtual_bench_announce.py does this with
 `oep find`, `discovery.find_unit` and `oep://UNIT_ID?via=net` (both engines) - with in-process responders announcing a non-OEP
 TCP service and a wrong TXT unit_id beside it, which the verify drops - skipped where multicast does not loop back.
-

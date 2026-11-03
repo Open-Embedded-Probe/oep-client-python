@@ -1,7 +1,7 @@
 # Host待受けループの期限開始点
 
 SPEC checkoutを明示し、`HostDeadlineChecks(SampleHostDeadlineAdapter(), spec=path).run()`を実行する。
-core §4.4/7.5、transports §3/6の本文SHA（oep-spec 02c08c9）と待ちの数値を照合し、OEP固有のconfig仕様には依存しない。
+core §4.4/7.5、transports §3/6の本文のレビュー済みSHAと待ちの数値を照合し、OEP固有のconfig仕様には依存しない。
 private設備を探索しない。既存SerialLink._send/_exchange_once/_recv_forとLengthFrames.recvを、
 予定したbyte列を返すScheduledStreamと仮想時計で通す。OSの口や実時計のsleepを使わない。
 
@@ -42,4 +42,4 @@ timeout後の_recoverは観測用hookで止める。再送/resyncの検査へ結
 既存実装の待受け処理は、処理上限を与えれば変更なしでPASSする。
 実時計の精度、物理transport、resync/retry/own-link交渉、pipeline内の異なる処理上限、
 操作が定める短い処理上限、production Hostによる処理上限の選択、
-全production Host統合とregistry移行は残る。full_conformance=false。
+production Hostとの統合は検査しない。full_conformance=false。

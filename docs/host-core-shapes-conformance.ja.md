@@ -29,7 +29,7 @@ TLV値と名前は生bytesで保持し、表示前のtext sanitizationは別の�
 | lock_state | 無し | locked1、remaining_ms4（5 byte） |
 
 省略可能なownerはopen要求とlock_state/locked応答のTLVで、固定部分には入らない。
-openのownerは本文§6.4に従って非critical。今回のreader検査は要求encoderの確認ではない。
+openのownerは本文§6.4に従って非critical。このreader検査は要求encoderの確認ではない。
 拒否payloadはlockedだけremaining_ms4、unsupportedだけtag1、ほかの9理由は固定部分無し。
 unsupportedのtag 0は固定部分の値を示す印で、TLV番号0とは区別する。
 未定義のcore failed/partial payloadを成功の形で読まない。
@@ -56,7 +56,7 @@ KNOWN-WIDTHは、正しい既知TLVの後に同じtagの壊れた値を置き、
 listは0/1/48/255 entry、channel_groupは0/1/255 member、text/TLV値は65535 byteまでの試料を含む。
 これらはpayload部品の境界検査で、transportのmax_frameへ収まることを証明するものではない。
 
-本文SHAとprotocol revision/番号/tag空間をレビュー時の値に固定する。現在の固定はoep-spec 02c08c9のcore本文。
+本文SHAとprotocol revision/番号/tag空間をレビュー時の値に固定する（[適合検査とSPECの版](conformance-spec-compatibility.ja.md)）。
 SPECが変わった場合は入力を読み直すまで停止し、番号が同じだけで形の互換性を推定しない。
 固定形を変更する将来のrevisionは、このrevision 1 readerへ無条件で適用しない。
 

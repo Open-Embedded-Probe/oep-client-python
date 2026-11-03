@@ -15,7 +15,6 @@ describeの成功だけで取得操作やデータ寿命の適合を証明しな
 - analog: frontendの9 byte固定形（frontend、range_min_mv、range_max_mv）を1つ以上、番号ごとに1行。
 - capture-group: tracksの要素数n≥1とu16列の形。
 - config: items（0x41）の存在、1つ以上、重複なし、項目番号0を含まない（probe.config §4）。
-  旧版のslots_max/wifi_maxは現仕様に無いため検査しない。
 
 storage max_bytesとsave/erase提供時の存在は既存SelectedMetadataChecksで別に確認する。
 itemsの未知tagを独自拡張でないと推測して禁止しない。

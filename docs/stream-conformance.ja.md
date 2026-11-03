@@ -6,10 +6,10 @@
 | --- | --- |
 | oep.fixture.uart | common §1を採用。fnで直接指し、同bootのposition/mark serialを戻さない。 |
 | oep.target.console | common §1を採用。stream資源を指すため、資源の作成・解放も別途検査する。 |
-| oep.fixture.logic / analog | capture文書の区画・世代付き形式。今回のread/marks検査を適用しない。 |
+| oep.fixture.logic / analog | capture文書の区画・世代付き形式。このread/marks検査を適用しない。 |
 | 独自拡張 | 拡張の仕様とadapterがcommon §1の採用・addressing・op対応を明示した場合だけ適用。 |
 
-今回のadapterは独自のpersistent-fn sampleへ、read/marks/clear/mark/writeの対応、規範の参照、byte ring 64、mark ring 5を明示する。5 opの宣言は必須で、writeがないものをreadだけの成功で適合としない。writeの動作適合は今回の実行範囲に含めない。
+このadapterは独自のpersistent-fn sampleへ、read/marks/clear/mark/writeの対応、規範の参照、byte ring 64、mark ring 5を明示する。5 opの宣言は必須で、writeがないものをreadだけの成功で適合としない。writeの動作適合はこの検査の範囲に含めない。
 
 | case | 検査 |
 | --- | --- |
@@ -32,7 +32,7 @@
 
 read/marksはSID 0で使い、各応答の前後で独立stream状態を照合して非消費性を確認する。未知応答TLVを固定部/data/mark配列の後で処理する。markのserial/kind/position/detailは既知の刺激と照合し、time_nsは刺激を挟むwire clockの区間と単調性で確認する。
 
-sample contractはfn 1、read 16（from u8/arg u64/max u16）、marks 17（from_serial u32）、clear 18、mark 19（value u8）、write 20（count u16/data）。read/marksだけがlock不要。writeは今回の論理modelで全入力をqueueへ受け付けるが、物理配送・送信容量・partial/failedを証明しない。
+sample contractはfn 1、read 16（from u8/arg u64/max u16）、marks 17（from_serial u32）、clear 18、mark 19（value u8）、write 20（count u16/data）。read/marksだけがlock不要。writeはこの論理modelで全入力をqueueへ受け付けるが、物理配送・送信容量・partial/failedを証明しない。
 
 `StreamModel`は独立した論理fixture。外部bytesとmark刺激をadapterで与える。境界値の初期化は毎回新しいbootの明示logical restartとして記録する。同bootのposition/serialを巻き戻して境界を作らない。serialの一周は初期値を境界直前に置く条件で、2^32回の刺激や実機の再起動を行ったという意味ではない。resetイベントはmark刺激であり、実際のtarget resetではない。
 

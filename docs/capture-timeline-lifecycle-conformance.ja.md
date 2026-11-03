@@ -15,7 +15,7 @@ fast 2種類それぞれで20ケース、計40構成を検査する。
 - startの再送は取得中、stopの再送は部分区画を完成させた後で行う。
   同じ要求の応答と状態が一致し、世代やデータを変えないことを確認する。
 - queryは取得中と片方が完了した状態で両trackへ送る。
-  提案した537Hz/5 sampleを答え、元の設定・timeline・データを保持することを確認する。
+  probeが候補として返した537Hz/5 sampleを答え、元の設定・timeline・データを保持することを確認する。
 - endとforceによるsession交代は取得中、lease期限は取得中と取得完了後の保持データを持つ状態で確認する。
   bind、plan、購読、取得データと区画を解放し、pinをidleへ戻す。世代は保持する。
 - 世代の使い切り: groupの世代が0xFFFFFFFFならgroup startを、trackの世代が0xFFFFFFFFなら

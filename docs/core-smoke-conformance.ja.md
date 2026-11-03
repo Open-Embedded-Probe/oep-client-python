@@ -1,9 +1,8 @@
-# 循環corr作業版のコア大枠検査
+# コア大枠検査
 
-`CoreSmokeChecks`は、現行作業版の選択した契約を、小さいraw messageの検査で確認するAPIである。
-旧`Checks`のガードを解除したり、旧検査全部を新仕様の検査として走らせたりはしない。
+`CoreSmokeChecks`は、coreの選択した契約を、小さいraw messageの検査で確認するAPIである。
 選択したSPECのcore SHAとheader/corr定義を確認し、レビューしていない本文では送信前に止める。
-レビュー済みの本文はoep-spec 02c08c9の`docs/oep-core.ja.md`である。
+固定の仕方は[適合検査とSPECの版](conformance-spec-compatibility.ja.md)にある。
 
 ```python
 from oep_client.conformance import spec_identity
@@ -38,5 +37,5 @@ listはflagsなしの6byte entryを読む。名前付き機能なしでもよく
 転送の失敗ではopenが実行されたか不明な場合もあるため、呼び出す側が経路と状態を確認して回復する。
 この検査はforceで他のセッションを奪わない。対象が使用中なら実行前に調整する。
 
-全core準拠ではない。CRC/COBS/USB/TCP障害、leaseの全時間条件、fn 0の短い処理上限（core_quick_op_max_ms）、方針判定、force、owner表示を提供する場合の全規則、資源寿命、Hostの半周制限/旧応答排出、個別interface動作は別の検査である。
+全core準拠ではない。CRC/COBS/USB/TCP障害、leaseの全時間条件、fn 0の短い処理上限（core_quick_op_max_ms）、方針判定、force、owner表示を提供する場合の全規則、資源寿命、Hostの半周制限/古い応答の排出、個別interface動作は別の検査である。
 reportは常にfull_conformance=falseで、scopeとuncheckedを結果と一緒に扱う。

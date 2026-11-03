@@ -1,10 +1,10 @@
-# 実機設定形式 v1 の提案
+# 実機設定形式 v1
 
-状態: v1 の初期実装あり。offline validate/plan と virtual smoke が使用可能。実機の probe 単体 preflight と明示 pytest 入口も使用可能。配線 discovery/target runner adapter は未実装。[全体テスト方針](testing-policy.ja.md)と[構成管理方針](hardware-configuration.ja.md)を具体化する。現行の legacy 実機 runner はこの形式を読まない。最小入口は [動作確認手順](hardware-quickstart.ja.md)。OEP の wire protocol や SPEC を変更する提案ではない。
+[全体テスト方針](testing-policy.ja.md)と[構成管理方針](hardware-configuration.ja.md)を具体化する設定の形式。`oep-hardware` が offline の validate / plan、仮想 smoke、実機の probe 単体 preflight を行い、`tests/equipment` が明示 pytest 入口になる。配線の discovery と target の runner adapter は持たず、[tests/hw](../tests/hw/README.ja.md) の実機試験はこの形式を読まない。最小入口は [動作確認手順](hardware-quickstart.ja.md)。OEP の wire protocol や SPEC は変えない。
 
 ## 所有と境界
 
-汎用形式と参照 validator の保守窓口は、既存実機ハーネスと discovery を持つ `oep-client-python` とする。offline validator と構造上の planner は実装済みで、実機 runner adapter はこれから改修する。形式の文書、雛形、適合例を公開し、probe firmware の合否は `oep-probe-arduino`、client は各 client、Core の合否は Core が所有する。Python の実行依存を Rust client に強制しない。Arduino の build/upload/peer lifecycle は既存 pytest plugin に任せ、設備の役割解決と共有 control session を接続する adapter を設ける。
+汎用形式と参照 validator の保守窓口は、既存実機ハーネスと discovery を持つ `oep-client-python` とする。形式の文書、雛形、適合例を公開し、probe firmware の合否は `oep-probe-arduino`、client は各 client、Core の合否は Core が所有する。Python の実行依存を Rust client に強制しない。Arduino の build/upload/peer lifecycle は既存 pytest plugin に任せ、設備の役割解決と共有 control session を接続する adapter を設ける。
 
 この文書と同梱の雛形を汎用設定形式の正本として保守する。実設備の台帳と export は各設備管理者が別に持つ。runner がその台帳の path、checkout、生成器を参照しないこと、この雛形だけをコピーして手書きできることを必須条件とする。
 
@@ -42,7 +42,7 @@ node の ID は probe/target 全体で重複禁止。各種類の接続 ID と e
 
 identity は probe の `oep-unit-id`、target の `chip-uid` を優先する。`manual-label` は `reason` を必須とし、preflight で人の確認が必要な識別として扱う。serial port、chip family、slot label だけで物理個体の一致を判断しない。観測できない UID を生成しない。
 
-v1 の transport は OEP `serial`、unit ID で名指す `usb`、明示指定 `tcp`、実機を使わない `virtual`（既存仮想 profile を指定）、debug は `swio` / `rvswd` / `swd` を扱う。serial は path、tcp は host/port、usb は完全な unit_id（core §7.5: `a-z 0-9 -` の 1〜32 byte。`x-` で始まるものは名指しに使えない）を持つ。usb selector と identity の一致を validator で検証し、接続後も OEP describe の unit_id を照合する。channel 対応は `data`、`clock`、任意の `reset` を共通キーとし、protocol ごとの本数を offline validator で検証し、profile/pad 機能と予約 pin は今後の preflight で検証する。WCH-Link は別 backend であり OEP probe を装わない。**WCH-Link、計測器、自動電源 switch の具体キーは今回の v1 雛形の対象外**。全体計画から外すのでなく、それらの実機契約を採用する前に追加例と validator を揃える作業として残す。
+v1 の transport は OEP `serial`、unit ID で名指す `usb`、明示指定 `tcp`、実機を使わない `virtual`（既存仮想 profile を指定）、debug は `swio` / `rvswd` / `swd` を扱う。serial は path、tcp は host/port、usb は完全な unit_id（core §7.5: `a-z 0-9 -` の 1〜32 byte。`x-` で始まるものは名指しに使えない）を持つ。usb selector と identity の一致を validator で検証し、接続後も OEP describe の unit_id を照合する。channel 対応は `data`、`clock`、任意の `reset` を共通キーとし、protocol ごとの本数を offline validator で検証し、profile/pad 機能と予約 pin は検証しない。WCH-Link は別 backend であり OEP probe を装わない。WCH-Link、計測器、自動電源 switch の具体キーは v1 の雛形に無い。
 
 signal endpoint は target の pad または probe の非負 channel のいずれかを持つ。mode は `input-only` / `output-only` / `bidirectional` / `open-drain`。共有 bus の同時駆動条件、pull-up、アナログ値等は契約に必要な詳細を追加してからその試験を採用する。`digital` の接続だけで I2C、PWM 精度、電圧精度を保証しない。
 
@@ -88,7 +88,7 @@ CLI 名は各 runner 実装時に確定するが、処理境界は次で固定�
 
 OEP の経路は resolved から adapter が解決する。既存 Arduino plugin に直接指定した primary/peer port がある場合、**明示指定を無言で上書きせず、解決した経路と照合して不一致は設定エラー**にする。plugin 内の CLI→profile 環境変数→共通環境変数→sketch の優先順は保持する。一般の serial upload/monitor と OEP debug control を別の経路として扱い、同じ文字列の port に押し込まない。
 
-初期実装は `OEP_HW_LOCK` のホスト共通ロックで実機を直列化する。path は明示必須とし、checkout 内に別ロックを自動生成しない。後に個体単位へ細分化する場合も、probe transport alias、target、電源影響先を含めて一括取得する。DUT/peer が同一 probe を使うときは一つの session と broker を共有する。
+`OEP_HW_LOCK` のホスト共通ロックで実機を直列化する。path は明示必須とし、checkout 内に別ロックを自動生成しない。後に個体単位へ細分化する場合も、probe transport alias、target、電源影響先を含めて一括取得する。DUT/peer が同一 probe を使うときは一つの session と broker を共有する。
 
 ## 雛形と生成の運用
 
@@ -96,9 +96,7 @@ OEP の経路は resolved から adapter が解決する。既存 Arduino plugin
 
 私的台帳からの生成も同じ validator を通す。出力先を必須にし、通常は新規ファイルへ書いて差分を確認する。既存 `.env` 全体を再生成して秘密値・手編集を消さない。自動生成する4つの path だけを `.env.generated` 等へ提案し、採用時に明示して更新する。生成しても `.env` の自動読込みは始めない。
 
-公開側の実装前に、(1) scope と契約 manifest、(2) schema と正常／異常の適合 fixture、(3) offline loader と planner、(4) shared session adapter、(5) discovery の全候補保存と confirm、(6) 実機 preflight と試験、の順で整備する。WCH-Link・観測器・switch、USB profile と給電制約の追加例を含め、実装に必要な形式をレビューしてから公開側へ反映する。
-
-## 初期実装の保証範囲
+## 保証範囲
 
 `oep-hardware validate` は本雛形のキー・型・参照を検査し、`plan` は PROBE-DECLARE / TOOL-FLASH / USB-DATA の接続に基づく割当を表示する。plan は宣言能力、pad の機能、電気条件、build profile を実測・認定しない。USB pair は既知リンクのみを列挙し、同一 probe 上で重複する debug channel を持つ同時割当を除く。必要 connection 数を表示し、実際の能力不足を暗黙 skip へ変換しない。
 

@@ -1,6 +1,6 @@
 # 実機構成と配線を探索して確定する設計
 
-状態: [全体テスト方針](testing-policy.ja.md)から導く構成管理の設計案。ここに記した schema と処理境界の設計、および初期 offline 実装を示す。現行 runner が読み込める設定の説明ではない。
+[全体テスト方針](testing-policy.ja.md)から導く構成管理の設計。キー、選択と判定、処理の入口は [実機設定形式](hardware-schema.ja.md)にある。
 
 一つの probe に一つの target を束ねた設定をやめ、物理個体、接続、探索候補、確定情報、試験時の役割を分ける。テスト本体は固定 channel や個体名を持たず、論理信号と必要な能力を要求する。設定を読み込んだだけで探索、書込み、firmware 更新が始まる構成にはしない。
 
@@ -107,10 +107,10 @@ tests/hw/
 
 `.env` と `*.local.toml` は Git 管理外にする。実際の file 名や出力先は変更可能だが、雛形とローカル設定の区別は維持する。確定構成は self-contained にして初期入力ファイルへの include を要求しない。手で全配線を記入した環境も、検証して同じ確定形式へ出力する。
 
-環境変数の案:
+環境変数:
 
 ```dotenv
-# tests/hw/ から実行する想定。offline CLI の設定と、今後の実機 adapter の設定。
+# tests/hw/ から実行する。
 OEP_HW_CONFIG=./hardware.resolved.local.toml
 OEP_HW_RESULTS=./.pytest-results
 ```
@@ -130,18 +130,3 @@ OEP_HW_RESULTS=./.pytest-results
 既存 `.env` を無条件に上書きしない。生成は出力先を明示し、差分確認と置換を別段階にする。ユーザーが指定する実行対象と、機械が確定した signal map の所有を分ける。派生設定を更新しても手編集した秘密値や実行オプションを消さない。
 
 再生成はファイルを作るだけで、firmware 更新、slot 保存、電源操作を行わない。それらは明示的な別の処理として扱う。通常の client/Core テストは設置済み probe を使う。probe 更新後は影響する確定情報を再確認し、新しい export を作る。
-
-## 9. schema を確定する前の検討項目
-
-| 項目 | 推奨する方向 |
-|---|---|
-| 契約の宣言形式 | ID、role、requirement、観測、採用範囲を所有側で定義する。既存 plugin の fixture/lifecycle を利用する |
-| 確定情報の形式 | input と resolved は同じノード・接続概念を使い、根拠・世代を resolved に追加する |
-| 制御の共有 | 同一 probe の transport/session を共有し、target ごとの stream を分離する。既存 broker を活用できる範囲を検証する |
-| discovery の診断 image | target family/board の制約を持つ既知 image。実装の検証用 sketch と役割を分ける |
-| target の個体識別 | UID を優先し、取得不能時の明示対応を定義する。family や slot 名だけで物理個体としない |
-| 実機対象の選択 | 明示した構成の範囲内で role を解決し、実行前に plan を確認できるようにする |
-| 共通 schema の保守 | oep-client-python を保守窓口として schema と雛形を同期する。設備固有の台帳に正本を置かない |
-| platform ごとの複数接続 | 採用 platform と必要 connection/console 数を決め、実装差分と試験契約へ落とす |
-
-具体的なキー、選択と判定、処理の入口を [実機設定形式 v1 の提案](hardware-schema.ja.md)へまとめた。`.env.example` と input/resolved の TOML 雛形も同時に管理する。これはレビュー用の案で、offline CLI と loader は実装済みで、probe preflight・共通ロック・結果保存と明示 pytest 入口も実装済みである。target/peer runner adapter と配線診断の確定・変更検出は今後追加する。

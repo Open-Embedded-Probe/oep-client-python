@@ -18,7 +18,7 @@ privateベンチや隣接checkoutは探索しない。資源opの符号化はres
 境界seed 0xFFFFFFFE/0xFFFFFFFFと時計はlogical fixtureの明示制御であり、実機opではない。
 seedを設定するのはfresh/空のallocatorだけ。この検査で2^32−1回の実割当を行ったとは主張しない。
 通常の容量不足と区別し、sample容量8に対して同時資源は最大2で試す。
-予約だけで失敗した番号を欠番にしてよい規則は変更せず、一般の作成失敗でnext_id不変は要求しない。
+予約だけで失敗した番号は欠番にしてよく、一般の作成失敗でnext_id不変は要求しない。
 
 client checkoutのルートで実行する。
 

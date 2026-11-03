@@ -12,7 +12,7 @@ common §1.4のwrite、§3のdebug status/doneを採用したインターフェ�
 | 再送 | queueの空きや失敗条件を変えても、同一要求は保存済みの応答bytesを返し、書込み・進捗を重複しない。 |
 | 拒否 | malformedとSID 0のsession_requiredではqueue/進捗を変更しない。 |
 
-今回の独自sample contractは、fn 1のwrite op 20（count u16＋data、応答accepted u16＋TLV）、fn 2のbatch op 16（count u16、応答done u16/status u8/done個のu32＋TLV）とsingle op 17（要求空、成功u32＋TLV、失敗status u8＋TLV）。queue容量4 byte、batch上限8、全opはlock必須。batch count=0はこのsampleではsuccessと定める。singleは共通失敗形の例で、標準のscan/attach/detachを実装したものではない。
+独自sample contractは、fn 1のwrite op 20（count u16＋data、応答accepted u16＋TLV）、fn 2のbatch op 16（count u16、応答done u16/status u8/done個のu32＋TLV）とsingle op 17（要求空、成功u32＋TLV、失敗status u8＋TLV）。queue容量4 byte、batch上限8、全opはlock必須。batch count=0はこのsampleではsuccessと定める。singleは共通失敗形の例で、標準のscan/attach/detachを実装したものではない。
 
 `SampleOutcomeAdapter`は両部品の採用、fn/op対応、容量、上限、規範参照を明示する。`OutcomeModel`は独立した論理fixtureで、失敗条件の設定、queueのdrain、状態観測をadapter経由で記録する。各動作は新bootの明示logical restartから始める。物理UARTの配送やtargetの進捗を観測した結果ではない。
 

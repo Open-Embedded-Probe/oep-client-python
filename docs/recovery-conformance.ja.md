@@ -43,4 +43,4 @@ assert report['status'] == 'passed', report
 
 既存`.env.example`のSPEC/共有lockを使い、私的ベンチの探索や新しい設備設定を追加しない。証跡には失った元のraw応答も保存するが、回復hostにその内容を渡さない。
 
-`full_conformance=false`。物理損失/timeout/再接続、production Host統合、並行writerとatomicな状態取得、読み直し中のforce、任意の拡張の回復意味論、他の保持サイズは未検査。SPECとArduino firmwareは変更していない。
+`full_conformance=false`。物理損失/timeout/再接続、production Host統合、並行writerとatomicな状態取得、読み直し中のforce、任意の拡張の回復意味論、他の保持サイズは未検査。

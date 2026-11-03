@@ -21,7 +21,7 @@ core/transports本文SHAとregistry待ち値を照合する。private設備・�
 admission_reason=6は現Coreの明示モデルhookで、物理buffer容量の証明ではない。
 
 単体32件：正常1、誤理由10、状態/保持故障10、最後の段階の許容理由3、実Core順序故障4、制御不足4。
-新規拒否の記録で旧履歴を壊さず、保持上限に応じたrequest/result byteを記録することも照合する。cache観測は正規化したdebug情報で、wire形式ではない。
-初期検査で終了した最後のSIDの新規拒否履歴更新を見落としていたため、検査側を修正した。Core/モデル本体は不変。
-全拡張のpayload/資源状態の組合せ、実admission・transport・production Host統合は別途検査する。
+新規拒否の記録で既存の履歴を壊さず、保持上限に応じたrequest/result byteを記録することも照合する。cache観測は正規化したdebug情報で、wire形式ではない。
+終了した最後のSIDでの新規拒否の履歴更新も照合する。
+全拡張のpayload/資源状態の組合せ、実admission・transport・production Hostとの統合は検査しない。
 full_conformance=false。

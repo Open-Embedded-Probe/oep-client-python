@@ -10,7 +10,7 @@ getの項目とgeneration 1、stateのstorage_state/saved_generation 0/reason、
 ch1/ch6へのplanの可否（disableならunavailable cause 5）を照合する。
 
 - FORMAT：容器が壊れて境界を確かめられない。何も適用せずstate 2/reason 1。保存のdisable ch6も効かない。
-- UNKNOWN：未知の項目（旧planの0x01）。それを除き適用し、state 3/reason 2。
+- UNKNOWN：未知の項目。それを除き適用し、state 3/reason 2。
 - CHANNEL：channels以上のlabel。MODE：未知のidle mode。LABEL：textの無いlabel。いずれも除いて適用し、3/2。
 - CONFLICT：同じchannelにidleとdisable。disableを優先してidleを適用せず、3/2。
 - DUPLICATE：同じキーのlabelが2つ。そのキーを適用せず、3/2。
@@ -30,4 +30,4 @@ idleの優先、重複キーの片方の採用、容量不足時の順序、起�
 set/save/erase後の誤った保存状態、idleの未適用を検出する。
 get pagingは[別の部分検査](config-paging-conformance.ja.md)で確認する。
 同内容saveの書込み抑止は[別の部分検査](config-storage-conformance.ja.md)で確認する。
-erase中の電源断で残る完全性を確認できない保存、保存中排他/電源断、物理保存とproduction追従は残る。full_conformance=false。
+erase中の電源断で残る完全性を確認できない保存、保存中排他/電源断、物理保存とproductionのHostは検査しない。full_conformance=false。
