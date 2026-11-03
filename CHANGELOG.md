@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 0.0.44
 - (EN) Changed: `targets` names the CH32V20x family `ch32v20x` (was `ch32v203`) and knows the CH32V208 by its target_id
   (top 12 bits 0x208; a CH32V208WBU6 measured), so `oep pins` identifies it and maps its pads; the CH32V203's id is not
   recorded yet. The module and `oep pins` no longer point to documents oep-spec no longer has.
