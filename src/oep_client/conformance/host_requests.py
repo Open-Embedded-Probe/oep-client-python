@@ -12,11 +12,11 @@ from . import require, spec_identity
 REVIEWED = {
     'interfaces/oep-if-plan.ja.md': 'da8bd60af53499573c07bc33dbd8c4df93eb61a93b91dc57907f26620ae36bbf',
     'interfaces/oep-if-fixture.ja.md': '780beb7a3f9adb51fccf3441930e4c04d2bb64ef738e302195cf5a4e7c2a60a6',
-    'docs/oep-core.ja.md': 'd63f99f1809146ad41f1643526c81417b366d7a9d85af3845daee6654a229a14',
-    'interfaces/oep-if-debug.ja.md': '6743420c31bcd354dd5b4b5352f4d8bcfa695f787dbc28644dba9e9533357338',
+    'docs/oep-core.ja.md': '699f7eb6333b6eb6678ddcf27074c03544f0f0a6ee0ef6ccdf02edd3757f962e',
+    'interfaces/oep-if-debug.ja.md': '58843357aae5afd31082b068c76c754cbd047446fe4b0aa77b5c22cbedf1f3f8',
     'interfaces/oep-if-capture.ja.md': 'ffd89a6a1abf006aea788a6b47b270e6ac0e6d8190a716f4123c4f499bd3a61e',
 }
-REVIEWED_REGISTRY_SHA256='21057dbfc117365e0b9f9d96f377ed99dbc28568efc70829bf8d53384077f44e'
+REVIEWED_REGISTRY_SHA256='278114efc9235b4c6026cd66e11ed558e0ac5afd789011973f6293ae1abffb9c'
 
 
 def reviewed_identity(spec):

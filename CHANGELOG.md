@@ -1,6 +1,15 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Fixed: `oep-conformance` stopped before any check against oep-spec 364827b ("checker migration required"): the
+  checkers' reviewed-document pins were still oep-spec 02c08c9's. They are raised to 364827b (core §2.3 is checked by
+  the core owner case; the debug document's change is the settings' names, which the pinned checkers do not use).
+  `tools/sync_registry.sh` now records the spec documents' digests (tests/spec/DOCS_SHA256), and a test fails when a
+  sync leaves a pin behind.
+- (JA) 修正: `oep-conformance` が oep-spec 364827b に対して、検査の前に止まっていた（「checker migration required」）。検査が
+  レビュー済みとして固定する文書の hash が、oep-spec 02c08c9 のままだった。364827b に上げた（core §2.3 は core の owner の
+  確かめが見る。debug の文書の変更は設定の項目名で、固定している検査は使わない）。`tools/sync_registry.sh` は仕様の文書の
+  hash も記録し（tests/spec/DOCS_SHA256）、写したのに固定が古いままなら試験が落ちる。
 
 ## 0.0.42
 - (EN) Changed (breaking): follows oep-spec 364827b (core §2.3) - a request with a known non-repeating TLV given twice

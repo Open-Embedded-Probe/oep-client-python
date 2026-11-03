@@ -29,5 +29,11 @@ for name, raw in blobs.items():
 (root / 'tests/vectors/SPEC_COMMIT').write_text(commit + '\n')
 (root / 'tests/vectors/SPEC_SHA256').write_text(''.join(
     hashlib.sha256(raw).hexdigest() + '  ' + name + '\n' for name, raw in sorted(blobs.items())))
+# the normative documents' digests at that commit: the conformance checkers pin the ones they were reviewed against
+docs = ['docs/oep-core.ja.md', 'docs/oep-transports.ja.md'] + ['interfaces/' + name for name in subprocess.check_output(
+    ['git', '-C', spec, 'ls-tree', '--name-only', commit + ':interfaces'], text=True).splitlines() if name.endswith('.ja.md')]
+(root / 'tests/spec/DOCS_SHA256').write_text(''.join(
+    hashlib.sha256(subprocess.check_output(['git', '-C', spec, 'show', commit + ':' + name])).hexdigest() + '  ' + name + '\n'
+    for name in sorted(docs)))
 print('synced registry/vectors from SPEC ' + commit)
 PY

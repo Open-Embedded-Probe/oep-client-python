@@ -6,10 +6,10 @@ import struct
 
 from . import ops, require, tlvs
 
-REVIEWED_INTERFACES = {  # oep-spec 02c08c9 interfaces/
+REVIEWED_INTERFACES = {  # oep-spec 364827b interfaces/
     'oep-if-fixture.ja.md': '780beb7a3f9adb51fccf3441930e4c04d2bb64ef738e302195cf5a4e7c2a60a6',
     'oep-if-plan.ja.md': 'da8bd60af53499573c07bc33dbd8c4df93eb61a93b91dc57907f26620ae36bbf',
-    'oep-if-debug.ja.md': '6743420c31bcd354dd5b4b5352f4d8bcfa695f787dbc28644dba9e9533357338',
+    'oep-if-debug.ja.md': '58843357aae5afd31082b068c76c754cbd047446fe4b0aa77b5c22cbedf1f3f8',
     'oep-if-common.ja.md': '25fed0b1b8b7f246a8b71d02cea810249803b1c3c1e9c3df466c04f38687f70c',
 }
 
