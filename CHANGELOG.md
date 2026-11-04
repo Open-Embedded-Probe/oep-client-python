@@ -1,6 +1,15 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Added: `python -m oep_client.conformance.notify_hw` checks subscriptions and notifications on a real probe
+  (core §10, §9, §6.4; transports §3) with a logic capture streaming on one channel the user names: subscribe needs the
+  lock, unsubscribe with none succeeds, seq from 0 one by one with positions back to back, answers first while it
+  streams, a new subscribe restarts seq, max_delay_ms batches, nothing on another route, nothing after end or a force.
+  All nine pass on ESP32-P4 and P4X probes.
+- (JA) 追加: `python -m oep_client.conformance.notify_hw` は、利用者が名指した 1 本の線でロジックのキャプチャをストリーミングさせ、
+  実機で購読と通知を確かめる（core §10、§9、§6.4、transports §3）: subscribe はロックが要る、購読が無い unsubscribe は成功、seq は 0 から
+  1 ずつで position は途切れない、ストリーミング中も応答が先、subscribe し直すと seq は 0 から、max_delay_ms でまとめて送る、ほかの
+  経路には届かない、end と force の後は届かない。ESP32-P4 と P4X のプローブで 9 つとも通る。
 - (EN) Added: `python -m oep_client.conformance.force_hw` checks on a real probe that force releases the resources of the
   session it takes from (core §6.4, §9): S attaches to a target (a debug connection), T of another id opens with force;
   S's connection is gone from connections, its number is no_resource, S's keepalive is refused, and T's attach gets a new,
