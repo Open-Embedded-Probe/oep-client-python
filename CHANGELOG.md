@@ -1,6 +1,14 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Added: `oep_client.memo` for `oep.probe.memo` (oep-if-memo): list (paged, by prefix), read and write in parts at the
+  route's max_frame, delete; a read whose data does not match its crc raises MemoTorn. `oep dump` names the interface and
+  its max_object / max_objects. Registry and documents synced from oep-spec 2cd20aa (the memo interface; MUSTs that only
+  touch quality relaxed to SHOULD); the conformance checkers' pins moved with it after a review (none checks a relaxed rule).
+- (JA) 追加: `oep.probe.memo`（oep-if-memo）の `oep_client.memo`。list（ページ分け、prefix）、経路の max_frame に合わせて分ける read と
+  write、delete。データが crc と合わない read は MemoTorn。`oep dump` がこのインターフェースと max_object / max_objects を示す。registry と
+  文書を oep-spec 2cd20aa から同期した（メモ欄。品質だけにかかわる必須を推奨にした）。適合の検査の固定は、見直して合わせた（緩めた規則を
+  確かめる検査は無い）。
 - (EN) Fixed (tests/hw): capture_repeat_rearm configured 100 kHz whatever the probe declared, so a probe whose lowest rate
   is above it (ESP32-P4: 627 kHz) refused the rate and the test skipped as if rearm were missing. It takes a declared
   rate, and skips only when trigger_opts is the refused tag. It passes on ESP32-P4 and P4X probes.

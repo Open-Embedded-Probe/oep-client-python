@@ -4,7 +4,7 @@ from pathlib import Path
 import struct
 from . import require,spec_identity
 
-REVIEWED_CORE_SHA256='fc2f5e9e239a45b46b8b1e52431070574b115f0771d958291e5f3618637d608e'
+REVIEWED_CORE_SHA256='b90ae1b15f10442ff411929e80d8457e754d5f11f227167d3c142f54ff14768a'
 CORE_OPS={'confirm':1,'list':2,'describe':3,'clock':4,'open':16,'end':17,'keepalive':18,'lock_state':19}
 # the settings' ops (core §13.5 / §13.7, transports §7.3): their numbers reviewed, their results not read here
 SETTINGS_OPS={'get':32,'set':33,'unset':34,'save':35,'state':36,'network':37}
