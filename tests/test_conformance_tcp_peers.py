@@ -106,7 +106,7 @@ def test_checker_catches_response_leak_to_other_connection():
         check.tcp_peer_open = open_peer
         check.check('peer', 'transports', Peers(check).route)
         assert check.results[-1]['status'] == 'failed'
-        assert 'wrong TCP connection' in check.results[-1]['error']
+        assert 'wrong route' in check.results[-1]['error']
 
 
 def test_checker_catches_separate_lock_on_peer():
