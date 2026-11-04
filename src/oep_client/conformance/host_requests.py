@@ -11,10 +11,10 @@ from . import require, spec_identity
 
 REVIEWED = {
     'interfaces/oep-if-plan.ja.md': 'da8bd60af53499573c07bc33dbd8c4df93eb61a93b91dc57907f26620ae36bbf',
-    'interfaces/oep-if-fixture.ja.md': '780beb7a3f9adb51fccf3441930e4c04d2bb64ef738e302195cf5a4e7c2a60a6',
-    'docs/oep-core.ja.md': '699f7eb6333b6eb6678ddcf27074c03544f0f0a6ee0ef6ccdf02edd3757f962e',
+    'interfaces/oep-if-fixture.ja.md': '53c81882c1789f4e5dd055977066ebd1dedc6c282d772218e85a402a1ba65d39',
+    'docs/oep-core.ja.md': 'fc2f5e9e239a45b46b8b1e52431070574b115f0771d958291e5f3618637d608e',
     'interfaces/oep-if-debug.ja.md': '58843357aae5afd31082b068c76c754cbd047446fe4b0aa77b5c22cbedf1f3f8',
-    'interfaces/oep-if-capture.ja.md': 'ffd89a6a1abf006aea788a6b47b270e6ac0e6d8190a716f4123c4f499bd3a61e',
+    'interfaces/oep-if-capture.ja.md': '4f340bc846e95268da1728ad1673bc9a9c539fe302325fe3af86a60ffc42f7ff',
 }
 REVIEWED_REGISTRY_SHA256='278114efc9235b4c6026cd66e11ed558e0ac5afd789011973f6293ae1abffb9c'
 

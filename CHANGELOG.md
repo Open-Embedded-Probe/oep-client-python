@@ -1,6 +1,12 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Tests: the spec snapshot (vectors, registry, the documents' digests) follows oep-spec b8d63c6, and the conformance
+  checkers' reviewed pins move with it: the core, capture and fixture changes since are wording only (a §0 heading, the
+  state table's stopped 2, the critical-bit sentence, no product names). The core checker passes on an ESP32-P4 probe.
+- (JA) 試験: 仕様の写し（ベクタ、registry、文書のハッシュ）を oep-spec b8d63c6 に合わせ、適合の検査器の固定も移した。core、capture、
+  fixture のその間の変更は文言だけ（§0 の見出し、状態の表の stopped 2、critical の bit の文、製品名の削除）。core の検査器は
+  ESP32-P4 のプローブで通る。
 - (EN) Docs: comments, docstrings and documents cite the spec's sections as they are now (core §10 for notifications,
   §5.1 for resending, plan §2.4, restart §2, link §3). The port_speed procedure, once host guide §17 and now this
   client's own, is cited as the README's section. `acquire` takes describe's tags and the trigger types from the
