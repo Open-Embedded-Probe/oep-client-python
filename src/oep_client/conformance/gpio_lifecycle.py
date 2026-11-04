@@ -59,11 +59,11 @@ class GpioLifecycleChecks(GpioChecks):
             specs={s['name']:s for s in self.c.reg['interface']};require(all(specs[n]['revision']==1 for n in self.a.selection.values()),'selected revision differs')
             self.codes={fn:{r['name']:r['code'] for r in specs[name]['op']} for fn,name in self.a.selection.items()};self.assignment=specs['oep.probe.plan']['tlv']['plan_apply']['role_assignment']
             self.c.confirm();self.c.identity();self.c.declarations();entries=self.c.list_snapshot();require(all(any(r['fn']==fn and r['name']==name and r['revision']==1 for r in entries) for fn,name in self.a.selection.items()),'selected fn identity differs');require(self.a.state()['clock_scope']=='explicit-logical-ms','explicit clock required')
-        self.c.check('CORE-GPIO-LIFECYCLE-CONTEXT','core §5.2/6/8/9; logical fixture',context)
+        self.c.check('CORE-GPIO-LIFECYCLE-CONTEXT','core §5.1/6/8/9; logical fixture',context)
         if self.c.results[-1]['status']!='passed':self.c.abort=True
         for kind in self.cases:
             action=(lambda kind=kind:self.expiry(kind)) if kind.startswith('EXPIR') else self.ended_id if kind=='ENDED-ID' else self.same_id if kind=='SAME-ID-OPEN' else (lambda:self.force(False)) if kind=='FORCE' else (lambda:self.force(True)) if kind=='FORCE-OLD' else (lambda:self.renewed(False)) if kind=='KEEPALIVE' else (lambda:self.renewed(True)) if kind=='REJECTED-RENEWAL' else self.nonrenewal
             def isolated(action=action):self.fresh();action()
-            first=len(self.a.trace);self.c.check('CORE-GPIO-LIFECYCLE-'+kind,'core §5.2/6/8/9; GPIO plan resources',isolated);self.c.results[-1]['adapter_trace']=self.a.trace[first:]
+            first=len(self.a.trace);self.c.check('CORE-GPIO-LIFECYCLE-'+kind,'core §5.1/6/8/9; GPIO plan resources',isolated);self.c.results[-1]['adapter_trace']=self.a.trace[first:]
         rows=self.c.results[start:]
         return dict(status='passed' if all(r['status']=='passed' for r in rows) else 'failed',checks=rows,observed=self.c.observed,adapter_trace=self.a.trace,full_conformance=False,scope='core session ownership/expiry/replay with explicit logical GPIO plan resources',unchecked=['physical pin transition timing and persisted config idle/disable','deferred writer/force concurrency with these GPIO resources','other fixture plan role constraints/channel_group','production Host and other standard operation behaviors'])

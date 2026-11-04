@@ -1,6 +1,6 @@
 """The client and the virtual
 bench: capture §3.3's configure contract, §3.4's generations (events carry them, a host drops another start's),
-§3.2's segments paged by common §1.3, §4's capture-group start answer, status and events with the group's generation."""
+§3.2's segments paged by common §1.3, capture §4's capture-group start answer, status and events with the group's generation."""
 
 import collections
 import struct
@@ -181,7 +181,7 @@ def test_track_events_carry_the_generation():
 
 
 def test_an_event_of_an_earlier_start_is_dropped():
-    """The stop of generation 1 is still on the link when generation 2's start has answered (core §11.4): the host
+    """The stop of generation 1 is still on the link when generation 2's start has answered (core §10.4): the host
     does not take it for the current capture's (§3.4)."""
     ep, hst, lc, clock = bench()
     core.plan_apply(hst, [(lc.fn, 0, 20)])

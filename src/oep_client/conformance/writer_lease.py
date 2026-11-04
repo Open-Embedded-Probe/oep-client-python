@@ -72,6 +72,6 @@ class WriterLeaseChecks(CutChecks):
         if self.c.results[-1]['status']!='passed':self.c.abort=True
         cases=[('DELIVERY',self.delivery),('REJECTED',lambda:self.delivery(True)),('REPLAY-EXPIRED',lambda:self.delivery(replay_expired=True)),('EXECUTION',self.execution),('EXPIRED',self.expiry),('CUT-EXPIRED',lambda:self.expiry(True))]
         for name,case in cases:
-            first=len(self.a.trace);self.c.check('CORE-WRITER-LEASE-'+name,'core §5.2/6.1/9; common §1/2',case);self.c.results[-1]['adapter_trace']=self.a.trace[first:]
+            first=len(self.a.trace);self.c.check('CORE-WRITER-LEASE-'+name,'core §5.1/6.1/9; common §1/2',case);self.c.results[-1]['adapter_trace']=self.a.trace[first:]
         rows=self.c.results[start:]
         return dict(status='passed' if all(r['status']=='passed' for r in rows) else 'failed',checks=rows,adapter_trace=self.a.trace,observed=self.c.observed,full_conformance=False,scope='core lease pause/delivery/expiry with logical standard dependency resources and stale writer token',unchecked=['physical transport completion and wall-clock timing','concurrent writers/force during queued response','other execution budgets/geometries','production Host integration'])

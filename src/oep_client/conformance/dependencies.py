@@ -250,7 +250,7 @@ class DependencyChecks:
         cases += [('MARKS',self.marks),('MALFORMED',lambda:self.refusal(True)),('OWNER',self.refusal),('DETACH',self.detach),('BREAK',lambda:self.detach(True)),('REPLAY',self.replay),('DETACH-REPLAY',self.detach_replay),('SAME-SESSION',self.same_session)]
         cases += [(kind,lambda kind=kind:self.ending(kind)) for kind in ('END','EXPIRY','FORCE')]+[('LOCKS',self.locks)]
         for name,case in cases:
-            first=len(self.a.trace);self.c.check('IF-DEPENDENCY-'+name,'common §1/2; core §5.2/9',case)
+            first=len(self.a.trace);self.c.check('IF-DEPENDENCY-'+name,'common §1/2; core §5.1/9',case)
             self.c.results[-1]['adapter_trace']=self.a.trace[first:]
         rows=self.c.results[start:]
         return {'status':'passed' if all(r['status']=='passed' for r in rows) else 'failed','full_conformance':False,

@@ -47,7 +47,7 @@ def test_mutants(defect, method):
                 pipe['active']=(pipe['push'].popleft(),0)
             service()
         model.service=altered
-    runner.c.check('IF-ROUTE-MUTANT','core §11.4',getattr(runner,method))
+    runner.c.check('IF-ROUTE-MUTANT','core §10.4',getattr(runner,method))
     assert runner.c.results[-1]['status']=='failed'
     assert adapter.trace
 
@@ -63,14 +63,14 @@ def test_dropped_notifications_must_consume_seq():
             fn = int.from_bytes(frame[1:3], 'little')
             model.extension.subscriptions[fn] = (model.extension.subscriptions[fn] - 1) & 65535
     model.offer = altered
-    runner.c.check('IF-ROUTE-MUTANT', 'core §11.2', runner.drop)
+    runner.c.check('IF-ROUTE-MUTANT', 'core §10.2', runner.drop)
     assert runner.c.results[-1]['status'] == 'failed'
 
 
 def test_partial_suffix_and_result_priority():
     model, adapter, runner = build()
     runner.c.confirm(); runner.peer.confirm()
-    runner.c.check('IF-ROUTE-PARTIAL', 'core §11.4', runner.partial)
+    runner.c.check('IF-ROUTE-PARTIAL', 'core §10.4', runner.partial)
     assert runner.c.results[-1]['status'] == 'passed'
     queues = [row['result'] for row in adapter.trace if row['method'] == 'queue']
     assert any(sum(len(bytes.fromhex(part['hex'])) for part in row) == 57 for row in queues)
@@ -101,7 +101,7 @@ def test_service_timeout_is_not_nonblocking_pass():
         time.sleep(.01)
         service()
     model.service = delayed
-    runner.c.check('IF-ROUTE-SERVICE', 'core §11.4; fixture budget', runner.service)
+    runner.c.check('IF-ROUTE-SERVICE', 'core §10.4; fixture budget', runner.service)
     assert runner.c.results[-1]['status'] == 'failed'
     assert 'service observation budget' in runner.c.results[-1]['error']
 

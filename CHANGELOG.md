@@ -1,6 +1,13 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Docs: comments, docstrings and documents cite the spec's sections as they are now (core §10 for notifications,
+  §5.1 for resending, plan §2.4, restart §2, link §3). The port_speed procedure, once host guide §17 and now this
+  client's own, is cited as the README's section. `acquire` takes describe's tags and the trigger types from the
+  registry instead of writing their numbers.
+- (JA) 文書: 注釈、docstring、文書は、仕様の今の節を指す（通知は core §10、再送は §5.1、plan §2.4、restart §2、link §3）。
+  前は host ガイド §17 にあり今はこの client 自身のものになった port_speed の手順は、README の節として指す。`acquire` は describe の
+  tag とトリガの型を、番号を書かずに registry から引く。
 
 ## 0.0.44
 - (EN) Changed: `targets` names the CH32V20x family `ch32v20x` (was `ch32v203`) and knows the CH32V208 by its target_id

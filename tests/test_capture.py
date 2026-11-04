@@ -74,7 +74,7 @@ class FakeLink:
 
 
 def push(fn, seq, position, data, generation=None):
-    """A data frame (core §11.2): role fn seq position(u64) len(u16) data [TLV generation]."""
+    """A data frame (core §10.2): role fn seq position(u64) len(u16) data [TLV generation]."""
     tail = b"" if generation is None else struct.pack("<BHI", c.DATA_GENERATION, 4, generation)
     return bytes([m.ROLE_DATA]) + struct.pack("<HHQH", fn, seq, position, len(data)) + data + tail
 

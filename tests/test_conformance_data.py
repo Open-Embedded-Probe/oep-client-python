@@ -275,7 +275,7 @@ def test_late_observation_must_not_claim_first_byte_deadline_pass():
     # Notifications are correct, but a late observer cannot separate the two deadlines.
     times = iter((0, 230, 650))
     runner.clock_ms = lambda: next(times)
-    checks.check('IF-DATA-FIRST-BYTE', 'core §11.3', runner.first_byte)
+    checks.check('IF-DATA-FIRST-BYTE', 'core §10.3', runner.first_byte)
     assert checks.results[-1]['status'] == 'failed'
     assert 'cannot distinguish' in checks.results[-1]['error']
     assert runner.notifications[-1]['last_age_ms'] == 420

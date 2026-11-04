@@ -78,6 +78,6 @@ class CutChecks(DebugChecks):
         if self.c.results[-1]['status']!='passed':self.c.abort=True
         cases=[('REQUEST',self.request_cut),('REQUEST-HALTED',lambda:self.request_cut(True)),('REQUEST-PARTIAL',lambda:self.request_cut(partial=True)),('CONSOLE',self.console_cut),('CONSOLE-HALTED',lambda:self.console_cut(True)),('RECOVERY',self.recovery),('ISOLATED',self.isolated),('REJECTED',self.rejected)]
         for name,case in cases:
-            first=len(self.a.trace);self.c.check('OEP-CUT-'+name,'debug §2; common §1/2; core §5.2/9',case);self.c.results[-1]['adapter_trace']=self.a.trace[first:]
+            first=len(self.a.trace);self.c.check('OEP-CUT-'+name,'debug §2; common §1/2; core §5.1/9',case);self.c.results[-1]['adapter_trace']=self.a.trace[first:]
         rows=self.c.results[start:]
         return dict(status='passed' if all(r['status']=='passed' for r in rows) else 'failed',checks=rows,adapter_trace=self.a.trace,observed=self.c.observed,full_conformance=False,scope='logical response writer before request wire-cut; console line loss and dependent release',unchecked=['physical writer/pins and actual transport delivery','writer concurrency, lease expiry while blocked and alternate budgets','resync/TO/framing marks','poll/wait DMI failure injection and store-trigger writes','production Host integration'])

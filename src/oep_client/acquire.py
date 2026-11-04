@@ -41,6 +41,8 @@ from dataclasses import dataclass, field
 from fractions import Fraction
 from pathlib import Path
 
+from . import registry as _reg
+
 __all__ = ["Analog", "Bits", "Changes", "OnDisk", "Part", "Request", "Result", "capture", "capture_at"]
 
 TRIGGERS = ("high", "low", "rise", "fall", "both")
@@ -338,13 +340,14 @@ def from_interleaved(data: bytes | bytearray | memoryview, names: list[str], wid
     return out
 
 
-TRIGGER = {"high": (1, 1), "low": (1, 0), "rise": (2, 0), "fall": (2, 1), "both": (2, 2)}   # (type, value), oep-if-capture
-TAG_CHIP, TAG_MODEL, TAG_FIRMWARE, TAG_UNIT_ID = 0x4C, 0x41, 0x40, 0x42     # core describe
+_LEVEL, _EDGE = (_reg.FIXTURE_LOGIC.enum["trigger"][k] for k in ("level", "edge"))
+TRIGGER = {"high": (_LEVEL, 1), "low": (_LEVEL, 0), "rise": (_EDGE, 0), "fall": (_EDGE, 1), "both": (_EDGE, 2)}   # (type, value), capture §3.3
+TAG_CHIP, TAG_MODEL, TAG_FIRMWARE, TAG_UNIT_ID = (_reg.CORE.tlv["describe"][k] for k in ("chip", "model", "firmware", "unit_id"))
 # UART link rates tried by default (port_speed): fastest first. oep-client refuses a rate that breaks and drops back
 # to the boot speed on repeated broken frames, so trying never ends slower than the boot speed; capture_at's
 # fast=[] keeps the boot speed, fast=[RATE, ...] tries those.
 FAST = [1_500_000, 921_600, 500_000]
-PER_SESSION = 2          # candidates tried per open: each costs up to ~1 s, plus a wait when it fails (core §3.5)
+PER_SESSION = 2          # candidates tried per open: each costs up to ~1 s, plus a wait when it fails (oep-if-link §3)
 FLOWS = [("in", 0)]      # a capture reads back: verify probe -> host only, at the link's largest in-flight n
 
 

@@ -1735,7 +1735,7 @@ class Endpoint(FixtureDrive):
                 tags.setdefault(a[0], tag)                         # the tag as received, for unsupported (§2.4): the
                 tags.setdefault(a, tag)                            # refused assignment's own (core §4.3), or the fn's first
             if len(set(got)) != len(got) or any(fn == m.CORE_FN for fn, _, _ in got):
-                raise Reject(m.MALFORMED)                          # the same (fn, role, channel) twice, or fn 0 (oep-if-plan §2.5)
+                raise Reject(m.MALFORMED)                          # the same (fn, role, channel) twice, or fn 0 (oep-if-plan §2.4)
             named = {fn for fn, _, _ in got}
             if any(fn not in self.names for fn in named):
                 raise Reject(m.UNKNOWN_FUNCTION)                   # ... then its fns ...
@@ -1838,7 +1838,7 @@ class Endpoint(FixtureDrive):
         current = [None]                                           # the fn of the assignment being checked
 
         def not_declared(ch: int) -> Reject | None:
-            # a role or channel the describe does not offer: unsupported, tag 0x90 + the channel (oep-if-plan §2.5); this pass
+            # a role or channel the describe does not offer: unsupported, tag 0x90 + the channel (oep-if-plan §2.4); this pass
             # raises only its own kind (None: the other pass's)
             if not declared:
                 return None

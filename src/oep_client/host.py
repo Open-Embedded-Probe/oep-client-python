@@ -631,7 +631,7 @@ class Host:
     def end(self) -> None:
         """End the session: the probe releases the lock and everything the session created (core §6.4, §9) - its
         plan, its shares of connections and streams, its subscriptions. A resent end is answered from the probe's
-        resend table (core §5.2)."""
+        resend table (core §5.1)."""
         self.request(m.CORE_FN, m.OP_END)
         self.session = None
         self._swept()

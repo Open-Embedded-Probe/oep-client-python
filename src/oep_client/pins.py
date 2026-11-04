@@ -4,7 +4,7 @@ from what worked and what misled (ESP32-P4 probe, CH32V003 target).
 Steps, each optional and each saying what it did:
 
 1. classify every channel oep.fixture.gpio allows (less the power channel, --exclude and pins a live connection
-   holds): a short series of reads under the probe's pull-up, then its pull-down (host guide §19.1). Something that
+   holds): a short series of reads under the probe's pull-up, then its pull-down. Something that
    changes between reads is active (an output the target toggles); the same level under both pulls is driven
    (push-pull, or a pull stronger than the probe's: an idle-high UART line looks like this); 1 under pull-up and 0
    under pull-down is floating - a pull weaker than the probe's (a reset line's weak pull-up) included. Reading under a

@@ -87,7 +87,7 @@ def test_the_interface_row_lists_oep_probe_restart_at_revision_1():
 
 
 def test_nothing_of_the_old_boot_is_left_on_the_bench():
-    """restart §2.5 (after the restart, core §9's restart row): runtime resources, subscriptions and the resend state
+    """restart §2 (after the restart, core §9's restart row): runtime resources, subscriptions and the resend state
     of the old boot are gone - the connection, the plan and the gpio drive (the pin back at its idle), the uart stream
     with its configure, bytes and position, the remembered answers; a request naming the old connection is
     no_resource in the new boot."""

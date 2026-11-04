@@ -1,6 +1,6 @@
 # 保持欠落・履歴の追い出しとsession/boot寿命の補助検査
 
-core §5.2/6/9を、明示した16 byte / 8件の[retention sample](retention-conformance.ja.md)で検査する。要求欠落、応答欠落、記録追い出しをそれぞれ作り、期限切れと異なるIDのforceでの扱いを分ける。終了と同じboot内のID継続、boot変更時の無効化は別の契約。
+core §5.1/6/9を、明示した16 byte / 8件の[retention sample](retention-conformance.ja.md)で検査する。要求欠落、応答欠落、記録追い出しをそれぞれ作り、期限切れと異なるIDのforceでの扱いを分ける。終了と同じboot内のID継続、boot変更時の無効化は別の契約。
 
 reset能力はsession操作の前に確認し、`reset_scope='logical-model'`だけを許す。実機の再起動/転送をこのadapterへ渡さない。
 

@@ -136,7 +136,7 @@ def test_a_lapsed_lock_is_no_session_and_the_host_opens_anew(bench):
 
 def test_end_releases_the_session_and_its_id_is_then_no_session(bench):
     """core §6.4, §9: end releases the lock and everything the session created; nothing resumes it, and a resent end
-    is answered from the resend table (core §5.2)."""
+    is answered from the resend table (core §5.1)."""
     clock, ep = bench
     a = new_host(ep, 1)
     a.open(lease_ms=2000)
@@ -187,7 +187,7 @@ def test_a_probe_reboot_forgets_the_last_id_and_boot_id_says_so(bench):
 
 
 def test_subscriptions_survive_a_same_id_open_while_held_and_go_with_the_lock(bench):
-    """core §6.2 / §11.3: subscribe is the emitting interface's own op (0x30, no target fn); an open of the id that
+    """core §6.2 / §10.3: subscribe is the emitting interface's own op (0x30, no target fn); an open of the id that
     holds the lock keeps the subscriptions; an fn that sends nothing (the toy, fn 0) has no subscribe -
     unknown_operation; unsubscribing nothing is ok; the subscriptions go with the lock."""
     clock, ep = bench

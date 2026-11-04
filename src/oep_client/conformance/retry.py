@@ -73,6 +73,6 @@ class RetryChecks(DebugChecks):
         cases += [('BUSY-'+kind,lambda kind=kind:self.busy(kind)) for kind in ('READ','WRITE')]+[('BUSY-EXHAUST',lambda:self.busy('WRITE',True))]
         cases += [('OWNED-'+str(idle),lambda idle=idle:self.owned(idle)) for idle in (0,1)]+[('OWNED-EXHAUST',lambda:self.owned(1,True)),('PROGRESS',self.progress),('ISOLATED',self.isolated),('PREFLIGHT',self.invalid)]
         for name,case in cases:
-            first=len(self.a.trace);self.c.check('OEP-RETRY-'+name,'debug §2/4.1; core §5.2',case);self.c.results[-1]['adapter_trace']=self.a.trace[first:]
+            first=len(self.a.trace);self.c.check('OEP-RETRY-'+name,'debug §2/4.1; core §5.1',case);self.c.results[-1]['adapter_trace']=self.a.trace[first:]
         rows=self.c.results[start:]
         return dict(status='passed' if all(r['status']=='passed' for r in rows) else 'failed',checks=rows,adapter_trace=self.a.trace,observed=self.c.observed,full_conformance=False,scope='logical host DMI ambiguous delivery and probe-owned read retry',unchecked=['wire-cut response/write/release ordering and console link-lost','physical packet drive, pull and timing','resync/TO/framing marks','poll/wait DMI failure injection and store-trigger writes','other retry budgets and production Host integration'])

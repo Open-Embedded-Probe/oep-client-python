@@ -145,7 +145,7 @@ def test_finds_the_swio_pin_and_the_reset_line_without_being_told():
     r = finder(hst, t, lines, power=5, name="v003").run()
     k = kinds(r)
     assert k[pins.DRIVEN_HIGH] == [7, 22, 23] and k[pins.DRIVEN_LOW] == [3] and k[pins.ACTIVE] == [21]
-    assert {4, 19} <= set(k[pins.FLOATING])                   # a weak pull-up reads as floating (host guide §19.1)
+    assert {4, 19} <= set(k[pins.FLOATING])                   # a weak pull-up reads as floating
     assert not hasattr(pins, "PULLED_UP") and pins.KINDS == (pins.FLOATING, pins.DRIVEN_HIGH, pins.DRIVEN_LOW,
                                                               pins.ACTIVE)
     assert set(r.follows_power) == TARGET_PINS
@@ -220,7 +220,7 @@ def test_steps_are_optional():
     ([1, 0, 1, 1], [0] * 4, pins.ACTIVE), ([1] * 4, [0, 1, 0, 0], pins.ACTIVE), ([0] * 4, [1] * 4, pins.ACTIVE),
 ])
 def test_classify(pu, pd, kind):
-    """Host guide §19.1: reads under pull-up, then pull-down - no both-pulls mode; a weak pull-up is floating."""
+    """Reads under pull-up, then pull-down - no both-pulls mode; a weak pull-up is floating."""
     assert pins.classify(pu, pd)[0] == kind
 
 

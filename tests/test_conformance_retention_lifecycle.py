@@ -78,7 +78,7 @@ def test_lifecycle_mutants_fail(defect):
         model.restart = altered
     case = (lambda: runner.expiry('request')) if defect.startswith('expiry') else (
            (lambda: runner.force('response')) if defect.startswith('force') else runner.reboot)
-    runner.c.check('CORE-LIFECYCLE-MUTANT', 'core §5.2/6/9', case)
+    runner.c.check('CORE-LIFECYCLE-MUTANT', 'core §5.1/6/9', case)
     assert runner.c.results[-1]['status'] == 'failed'
 
 

@@ -366,14 +366,14 @@ class RetentionChecks(ReplayPressureChecks):
                         for row in entry['describe'])[7]) for entry in self.c.observed['interfaces']}
             require(self.a.functions and type(self.a.functions[0]) is int and self.a.functions[0] in declared and
                     {16, 17, 18, 19} <= declared[self.a.functions[0]], 'sample resource operations missing')
-        self.c.check('CORE-RETENTION-IDENTITY', 'core §5.2/7.1; explicit bounded sample', identify)
+        self.c.check('CORE-RETENTION-IDENTITY', 'core §5.1/7.1; explicit bounded sample', identify)
         if self.c.results[-1]['status'] != 'passed': self.c.abort = True
         for name, case in [('REQUEST-BOUNDARY', self.request_boundary), ('REQUEST-LOST', self.request_lost),
                            ('RESPONSE-BOUNDARY', self.response_boundary), ('RESPONSE-LOST', self.response_lost),
                            ('EVICTION', self.eviction), ('REJECTED', self.rejected_lost), ('END', self.end_lost),
                            ('SAME-OPEN', self.same_open), ('KEEPALIVE', self.keepalive_state), ('OWNER', self.owner_lifecycle), ('OWNER-INPUTS', self.owner_inputs), ('SESSION-ZERO', self.session_zero)]:
             first = len(self.a.trace)
-            self.c.check('CORE-RETENTION-' + name, 'core §5.2/6.1/9; bounded fixture', case)
+            self.c.check('CORE-RETENTION-' + name, 'core §5.1/6.1/9; bounded fixture', case)
             self.c.results[-1]['adapter_trace'] = self.a.trace[first:]
         return {'status': 'passed' if all(x['status'] == 'passed' for x in self.c.results) else 'failed',
                 'full_conformance': False, 'scope': 'explicit bounded request/result history',

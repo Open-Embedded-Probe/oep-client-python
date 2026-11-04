@@ -94,7 +94,7 @@ def test_normal_pipeline_retention_stays_unchanged():
 def test_repeated_session_zero_executes_after_clock_advance():
     now,model,adapter,runner=build()
     runner.c.confirm();runner.c.identity();runner.peer.confirm();runner.peer.identity()
-    runner.c.check('CORE-RETENTION-SESSION-ZERO','core §5.2',runner.session_zero)
+    runner.c.check('CORE-RETENTION-SESSION-ZERO','core §5.1',runner.session_zero)
     assert runner.c.results[-1]['status']=='passed',runner.c.results
     evidence=runner.c.observed['retention_session_zero']
     first=bytes.fromhex(evidence['first_clock_hex']);second=bytes.fromhex(evidence['second_clock_hex'])
@@ -111,7 +111,7 @@ def test_private_session_zero_reply_cache_is_detected():
         return handle(data,transport,**kwargs)
     core.handle=cached
     runner.c.confirm();runner.c.identity();runner.peer.confirm();runner.peer.identity()
-    runner.c.check('CORE-RETENTION-SESSION-ZERO','core §5.2',runner.session_zero)
+    runner.c.check('CORE-RETENTION-SESSION-ZERO','core §5.1',runner.session_zero)
     assert runner.c.results[-1]['status']=='failed',runner.c.results
     assert 'deduplicated' in runner.c.results[-1]['error']
 

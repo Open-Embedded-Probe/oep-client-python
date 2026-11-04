@@ -69,7 +69,7 @@ def test_a_missing_answer_goes_once_more_with_the_same_corr():
     assert lk.retries == 1 and sent[0] == sent[1]
 
 
-# ---- a broken frame on a held serial port (host guide §8, core §5.2) --------------------------------------------------
+# ---- a broken frame on a held serial port (host guide §8, core §5.1) --------------------------------------------------
 
 def broken(corr):
     """The answer to `corr` as the line broke it: framed, its CRC spoiled."""

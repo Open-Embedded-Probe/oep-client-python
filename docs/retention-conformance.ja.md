@@ -1,6 +1,6 @@
 # 再送cacheの保持上限とresult_lostの補助検査
 
-core §5.2は直近max_inflight個以上の記録とcorrの最大値を保持し、要求/応答bytesの保持にサイズ上限を認める。保存済み要求は全bytesで比較し、変更ならmalformed。同じ要求でも応答を保持できなければresult_lost。要求そのものを保持できない場合や、記録が追い出されて最大corr以下の場合もresult_lost。どの場合も再実行・lease更新・資源変更をしない。
+core §5.1は直近max_inflight個以上の記録とcorrの最大値を保持し、要求/応答bytesの保持にサイズ上限を認める。保存済み要求は全bytesで比較し、変更ならmalformed。同じ要求でも応答を保持できなければresult_lost。要求そのものを保持できない場合や、記録が追い出されて最大corr以下の場合もresult_lost。どの場合も再実行・lease更新・資源変更をしない。
 
 一般probeに具体的な保持サイズを要求しない。このfixtureはmax_frame=64に対し保持上限16 byte、履歴8件を明示した`virtual-retention-1` / `io.github.open-embedded-probe.retention` revision 1。通常のcore/pipelineの保持上限72 byteを変更しない。経路の宣言値はpipeline sampleと同じ64/80/3、peerは64/96/2。履歴8件は両経路のmax_inflight以上。
 

@@ -1,6 +1,6 @@
 # 通知seqの一周・再購読・再送の検査
 
-`NotificationSequenceChecks`はcore §5.2/10.2/10.3/10.4、transports §3に基づく第二段階の補助検査。
+`NotificationSequenceChecks`はcore §5.1/10.2/10.3/10.4、transports §3に基づく第二段階の補助検査。
 公開`RouteModel`と`SampleNotificationSequenceAdapter`を使い、選択SPEC checkoutを明示する。
 privateベンチや隣接checkoutの探索は行わない。
 

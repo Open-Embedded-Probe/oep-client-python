@@ -131,7 +131,7 @@ def test_replay_accepts_cached_or_lost_result_but_catches_reexecution(monkeypatc
 
     check = Checks(send, REG, 'unit')
     check.boot = 17
-    check.check('replay', 'core §5.2', lambda: check.replay(across_open))
+    check.check('replay', 'core §5.1', lambda: check.replay(across_open))
     assert check.results[0]['status'] == ('failed' if changed else 'passed')
     assert check.session is None
 
@@ -255,7 +255,7 @@ def test_old_unseen_corr_is_result_lost_not_a_new_operation(monkeypatch, reexecu
 
     check = Checks(send, REG, 'unit')
     check.boot = 17
-    check.check('old', 'core §5.2', check.unseen_old)
+    check.check('old', 'core §5.1', check.unseen_old)
     assert check.results[0]['status'] == ('failed' if reexecuted else 'passed')
     assert check.session is None
 

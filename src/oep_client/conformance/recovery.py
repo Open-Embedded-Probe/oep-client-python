@@ -119,7 +119,7 @@ class RecoveryChecks(RetentionChecks):
                   ('EXPIRY', self.expiry), ('BOOT', self.reboot)]
         for name, method in cases:
             first = len(self.a.trace)
-            self.c.check('CORE-RECOVERY-' + name, 'core §5.2/6; sample state readback policy', method)
+            self.c.check('CORE-RECOVERY-' + name, 'core §5.1/6; sample state readback policy', method)
             self.c.results[-1]['adapter_trace'] = self.a.trace[first:]
         report.update(status='passed' if all(x['status'] == 'passed' for x in self.c.results) else 'failed',
                       checks=self.c.results, adapter_trace=self.a.trace, peer_exchanges=self.peer.trace,

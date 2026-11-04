@@ -11,7 +11,7 @@
                                            port, IP; each verified first by confirm + describe's unit_id, host guide
                                            §4.1 - one that fails is dropped with a warning)
   oep speed <probe> [--candidates 921600,500000] [--verify [--flows in:2,out:2]] (port_speed, oep-if-link §3 and the host
-                                           guide §17: try the candidates in order on a UART bridge, report; default
+                                           the port_speed procedure (README): try the candidates in order on a UART bridge, report; default
                                            500000 - a faster rate only when named, after its 1 s verify each way)
   oep linktest <probe> --rates now,921600 --patterns in,out,duplex --inflight 1,2 --sizes 128,496 --frames 300
   oep pins <probe> --power 5 --wire swio  (find the target's debug pins and reset line: classify the channels, scan,
@@ -64,13 +64,13 @@ def main(argv=None) -> int:
     sp.add_argument("--candidates", default="", help="the candidates, comma-separated (default 500000, the default "
                     "ceiling of oep-if-link §3 obligation 7). A rate above 500000 is tried only when named here, and "
                     "is committed only after full frames ran 1 s each way (in, out; duplex too with --verify's "
-                    "default flows) at it (host guide §17.3.3)")
+                    "default flows) at it (the port_speed procedure (README))")
     sp.add_argument("--flows", default="", help="the flows to verify, comma-separated FLOW[:N] (in, out, duplex; N in "
                     "flight, 0 = the most the link keeps; default: all three at that N). Selects --verify")
     form = sp.add_mutually_exclusive_group()
-    form.add_argument("--verify", action="store_true", help="the full form (guide §17.3): baseline, the flows measured "
+    form.add_argument("--verify", action="store_true", help="the full form (the port_speed procedure (README)): baseline, the flows measured "
                       "at every candidate, a failed flow run again one at a time")
-    form.add_argument("--minimal", action="store_true", help="the minimal form (guide §17.2, the default): try, confirm, "
+    form.add_argument("--minimal", action="store_true", help="the minimal form (the port_speed procedure (README), the default): try, confirm, "
                       "commit, no measurement")
     sp.add_argument("--frames", type=int, default=link.FLOW_FRAMES, help="frames per flow when verifying (default 16)")
     sp.add_argument("--no-record", action="store_true", help="do not read or write the record of passed / failed rates "

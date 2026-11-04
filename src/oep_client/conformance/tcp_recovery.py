@@ -14,7 +14,7 @@ class TcpRecoveryChecks:
     def __init__(self, adapter, *, spec):
         self.a=adapter; self.identity=reviewed_identity(spec); self.checks=[]; self.observations=[]
     def check(self,name,fn):
-        row=dict(id='TCP-RECOVERY-'+name,level='core',clause='transports §2/3/5; core §5.2')
+        row=dict(id='TCP-RECOVERY-'+name,level='core',clause='transports §2/3/5; core §5.1')
         try:fn();row['status']='passed'
         except Exception as exc:row.update(status='failed',error=f'{type(exc).__name__}: {exc}')
         self.checks.append(row)

@@ -152,7 +152,7 @@ def test_repeat_confirm_preserves_replay_history(monkeypatch, clear_history):
 
     check = Checks(send, copy.deepcopy(REG), 'unit')
     check.confirm()
-    check.check('confirm-history', 'core §5.2', check.confirm_history)
+    check.check('confirm-history', 'core §5.1', check.confirm_history)
     assert check.results[-1]['status'] == ('failed' if clear_history else 'passed')
     assert probe.sid is None
 

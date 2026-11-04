@@ -70,7 +70,7 @@ def describe(ep, fn):
             return out
 
 
-# ---- the resend table (core §5.2) --------------------------------------------------------------------
+# ---- the resend table (core §5.1) --------------------------------------------------------------------
 
 def test_a_resent_request_gets_its_remembered_result_and_runs_once():
     ep = endpoint.Endpoint(virtual_bench.with_stand_in(virtual_bench.esp32_v003()), Clock())

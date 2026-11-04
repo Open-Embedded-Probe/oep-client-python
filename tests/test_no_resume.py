@@ -40,7 +40,7 @@ def test_a_session_end_of_any_kind_releases_what_it_created(how):
     conn, _ = riscv.Wire(a).attach(halt=False, pins=ep.pairs[1][0])
     con = console.Console(a)
     sid = con.open(conn)
-    a.subscribe(core.find(a, "oep.fixture.logic"))                            # its own subscribe (core §11.3)
+    a.subscribe(core.find(a, "oep.fixture.logic"))                            # its own subscribe (core §10.3)
     assert ep.subscribed
     ep.emit(sid, b"last words")
     if how == "end":

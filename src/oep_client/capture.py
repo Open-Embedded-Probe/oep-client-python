@@ -879,7 +879,7 @@ class LogicCapture(Interface):
         unavailable (cause 6), so an old read never gets the next capture's bytes.
 
         The reads need no lock and go without the session id, so a repeat after a broken reply is simply run again
-        (reads are not deduplicated, oep-core §5.2). They do not extend the lease, though: a long read (64 KB over a
+        (reads are not deduplicated, oep-core §5.1). They do not extend the lease, though: a long read (64 KB over a
         115200 bps UART probe takes seconds) sends a keepalive between batches, or the lease lapsed mid-read, the plan
         went with it (core §9) and the capture read back nothing (2026-09-26, V003 jig)."""
         g = self._generation(generation)

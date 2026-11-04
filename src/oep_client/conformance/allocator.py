@@ -80,7 +80,7 @@ class AllocatorChecks(ResourceChecks):
         if self.c.results[-1]['status']!='passed':self.c.abort=True
         for name,case in [('BOUNDARY',self.boundary),('END',self.ended_boundary),('EXPIRY',lambda:self.ended_boundary(True)),
                           ('FORCE',self.force_boundary),('REPLAY',self.replay_boundary),('REBOOT',self.reboot_boundary)]:
-            first=len(self.a.trace);self.c.check('CORE-ALLOCATOR-'+name,'core §5.2/6/9',case);self.c.results[-1]['adapter_trace']=self.a.trace[first:]
+            first=len(self.a.trace);self.c.check('CORE-ALLOCATOR-'+name,'core §5.1/6/9',case);self.c.results[-1]['adapter_trace']=self.a.trace[first:]
         rows=self.c.results[start:]
         return dict(status='passed' if all(x['status']=='passed' for x in rows) else 'failed',checks=rows,adapter_trace=self.a.trace,
                     observed=self.c.observed,full_conformance=False,scope='logical seeded u32 allocation boundary and session/reboot invariants',

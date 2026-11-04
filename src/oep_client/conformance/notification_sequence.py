@@ -204,7 +204,7 @@ class NotificationSequenceChecks(RouteChecks):
         for name, method in [('WRAP', self.wrap), ('DROP-WRAP', self.dropped), ('REPLACE', self.replace), ('DISCARD', self.discard), ('UNSUBSCRIBE', self.unsubscribe),
                              ('REPLAY', self.replay), ('REPLAY-REFUSED', lambda: self.replay(True)), ('REJECTED', self.rejected)]:
             first = len(self.a.trace)
-            self.c.check('IF-NOTIFY-SEQ-'+name, 'core §5.2/10.2/10.3/10.4; transports §3', method)
+            self.c.check('IF-NOTIFY-SEQ-'+name, 'core §5.1/10.2/10.3/10.4; transports §3', method)
             self.c.results[-1]['adapter_trace'] = self.a.trace[first:]
         rows = self.c.results[start:]
         return dict(status='passed' if all(x['status'] == 'passed' for x in rows) else 'failed', full_conformance=False,

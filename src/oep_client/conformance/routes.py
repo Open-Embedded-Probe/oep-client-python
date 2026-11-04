@@ -249,7 +249,7 @@ class RouteChecks:
                 except (OSError, TimeoutError):
                     self.c.abort = True
                     raise
-            self.c.check(name, 'core §11.4; transports §3', execute)
+            self.c.check(name, 'core §10.4; transports §3', execute)
             self.c.results[-1]['adapter_trace'] = self.a.trace[first:]
             self.c.results[-1]['peer_exchanges'] = self.peer.trace[peer_first:]
         rows = self.c.results[start:]

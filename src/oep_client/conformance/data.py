@@ -301,7 +301,7 @@ class DataChecks(SubscriptionChecks):
         super().run()
         for name, method in DATA_CASES:
             first = len(self.notifications)
-            self.c.check(name, 'core §11.2/11.3', getattr(self, method))
+            self.c.check(name, 'core §10.2/11.3', getattr(self, method))
             self.c.results[-1]['notification_observations'] = self.notifications[first:]
         rows = self.c.results[start:]
         return {'status': 'passed' if all(row['status'] == 'passed' for row in rows) else 'failed',

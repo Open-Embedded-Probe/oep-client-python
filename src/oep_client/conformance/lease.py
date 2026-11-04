@@ -156,7 +156,7 @@ class LeaseChecks(ReplayPressureChecks):
         for name, case in [('WHOLE', self.whole), ('REJECTED', self.rejected_sent), ('NO-RENEW', self.no_renew),
                            ('EXPIRE', self.expiry), ('FORCE', self.old_after_force), ('END', self.ended)]:
             first = len(self.a.trace)
-            self.c.check('CORE-LEASE-' + name, 'core §5.2/6.1/6.4/9; logical writer', case)
+            self.c.check('CORE-LEASE-' + name, 'core §5.1/6.1/6.4/9; logical writer', case)
             self.c.results[-1]['adapter_trace'] = self.a.trace[first:]
         report.update(status='passed' if all(x['status'] == 'passed' for x in self.c.results) else 'failed',
                       checks=self.c.results, adapter_trace=self.a.trace, peer_exchanges=self.peer.trace,

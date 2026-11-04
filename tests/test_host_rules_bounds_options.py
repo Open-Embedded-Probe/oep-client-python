@@ -1,6 +1,6 @@
 """The host: confirm's bounds (core §7.1), max_op_ms's ceiling, the transfer time before the first confirm answer
 (core §4.4), no resume (core §6.5, §9), clock's boot_id and times, short answers and wrong-direction roles (core §2.4),
-an unanswered resend fails the transport (core §5.2), the optional ops, cs_setup_ns and i2c-target's reserved addresses,
+an unanswered resend fails the transport (core §5.1), the optional ops, cs_setup_ns and i2c-target's reserved addresses,
 and the ops encoding (core §7.4)."""
 
 import struct

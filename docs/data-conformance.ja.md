@@ -1,6 +1,6 @@
 # データ通知とまとめ送りの検査
 
-SPEC core §11.2/11.3の、data/event共通seq、データの形、min_bytes/max_delayを検査する。先に検査側の刺激と期待値を定め、独立したin-processサンプルへ適用する。実機transport、応答優先、送信queue上限、dropによるseq欠落は別段階。
+SPEC core §10.2/11.3の、data/event共通seq、データの形、min_bytes/max_delayを検査する。先に検査側の刺激と期待値を定め、独立したin-processサンプルへ適用する。実機transport、応答優先、送信queue上限、dropによるseq欠落は別段階。
 
 条件は明示した2 fn、既知bytesのデータ刺激と既知markerの出来事刺激、全raw通知の受信。データ位置はinterfaceが決めるので、adapterは外部刺激の開始位置を返す。probeが返したpositionを期待値へ転記してはいけない。共通検査はdata見出し、position:u64、len:u16、後続TLVと、データ内容を独立に検証する。
 

@@ -1,7 +1,7 @@
 """port_speed (oep-if-link §3, an op of the optional oep.probe.link; the handshake only): the virtual bench's state machine (the
 request baud / step / verify_ms on the port it came on, try / commit / revert, port_speed_tolerance_pct, going back
 after verify_ms, after port_speed_idle_ms with no good frame or answer, or at the session's end - never on broken
-candidates - another port and off), and the client's opt-in raise_speed against it (host guide §17: the procedure, the
+candidates - another port and off), and the client's opt-in raise_speed against it (the port_speed procedure (README): the procedure, the
 first wait and the resend at the raised rate before the boot speed) - in process, where the virtual bench also sees the host's
 own rate (`VirtualSerialStream`), and on a pty through open_host(port_speed=...)."""
 
@@ -23,7 +23,7 @@ PS = endpoint.OP_PORT_SPEED
 def _ceiling(request, monkeypatch):
     """Most tests here are about the procedure at any rate the virtual bench makes (1500000, 921600 ... included): they run
     without the default ceiling, so a rate above 500000 is not given the 1 s verify. The tests named `ceiling` keep
-    the real one (host guide §17, §17.3.3)."""
+    the real one (the port_speed procedure (README))."""
     if "ceiling" not in request.node.name:
         monkeypatch.setattr(link, "DEFAULT_CEILING", 10 ** 9)
 
@@ -290,7 +290,7 @@ def test_only_the_uart_bridge_the_request_came_in_on_and_one_port_at_a_time():
     assert r.detail == m.UNAVAILABLE and r.payload[:4] == CAUSE_6 and u.ep.speed_state == "base"
 
 
-# ---- the client: raise_speed (host guide §17) -----------------------------------------------------------------------------
+# ---- the client: raise_speed (the port_speed procedure (README)) -----------------------------------------------------------------------------
 
 def quick(probe, max_op_ms=1):
     """The probe declaring a short max_op_ms (core §7.5): an answer lost costs the wait floor, max_op_ms (fn 0's quick
@@ -326,7 +326,7 @@ def ops(ep, since=0):
 
 
 def test_the_minimal_form_tries_confirms_and_commits_without_a_measurement():
-    """Host guide §17.2: one candidate, switch, 20 ms, a confirm, commit - no flows, no baseline."""
+    """The port_speed procedure (README): one candidate, switch, 20 ms, a confirm, commit - no flows, no baseline."""
     ep, hst, lk = in_process()
     n = len(ep.requests)
     report = link.raise_speed(hst, [1500000], **FAST)
@@ -364,7 +364,7 @@ def test_minimal_form_falls_back_when_the_confirm_does_not_come_and_goes_on():
 
 
 def test_the_full_form_measures_every_flow_and_fails_a_rate_whose_frames_break():
-    """Host guide §17.3.2: a baseline per flow at the boot speed, then 16 frames per flow at each candidate; a flow fails
+    """The port_speed procedure (README): a baseline per flow at the boot speed, then 16 frames per flow at each candidate; a flow fails
     on broken + lost >= 3 over max(2 x baseline, 5 %), and one failed flow fails the candidate."""
     ep, hst, lk = in_process()
     ep.broken_rates[230400] = endpoint.BrokenRate(min_size=40, to_probe=False)   # the confirm passes, full answers break
@@ -461,7 +461,7 @@ def test_a_revert_seen_as_a_timeout_goes_back_to_the_boot_speed(monkeypatch):
 
 def test_raise_speed_sends_no_idle_ms_the_probe_keeps_port_speed_idle_ms():
     """oep-if-link §1: commit is baud step verify_ms like every step; the idle time is the registry's
-    port_speed_idle_ms, and the link's keepalive comes well inside half of it (host guide §17)."""
+    port_speed_idle_ms, and the link's keepalive comes well inside half of it (the port_speed procedure (README))."""
     ep, hst, lk = in_process()
     n = len(ep.requests)
     link.raise_speed(hst, [750000], **FAST)
@@ -513,7 +513,7 @@ def raised_in_use(lease=10000, max_op_ms=1, **kw):
 
 
 def test_in_use_the_3_s_window_over_10_percent_steps_down_for_the_session():
-    """Host guide §17.3.2 item 4: the last 3 s judged once 50 frames are in them; over max(2 x baseline, 10 %) broken
+    """The port_speed procedure (README): the last 3 s judged once 50 frames are in them; over max(2 x baseline, 10 %) broken
     or lost -> revert, the boot speed, never raised again in this session."""
     ep, hst, lk, report = raised_in_use()
     ep.broken_rates[921600] = endpoint.BrokenRate(to_probe=False, every=4)   # answers only: the probe sees nothing
@@ -589,7 +589,7 @@ def test_no_answer_at_a_raised_rate_falls_back_well_inside_the_lease():
 
 
 def test_raised_in_use_the_first_wait_is_at_most_a_third_of_the_idle_time_never_under_the_floor():
-    """Host guide §17.3.2 item 4: the first wait for an answer at a raised rate in use ends well inside
+    """The port_speed procedure (README): the first wait for an answer at a raised rate in use ends well inside
     port_speed_idle_ms (RAISED_FIRST_WAIT_S), so its resend reaches a probe still at the rate; never under core §4.4's
     floor (argument time + host_wait_add_ms + the transfer time)."""
     assert link.RAISED_FIRST_WAIT_S == pytest.approx(link.IDLE_MS / 1000 / 3) == pytest.approx(1.0)
@@ -620,8 +620,8 @@ def answer_dropped(ep, lk, op):
 
 
 def test_raised_a_lost_answer_is_resent_at_the_raised_rate_first_and_no_step_down():
-    """Host guide §17.3.2 item 4: no answer within the first wait - the request again at the raised rate, same corr
-    (core §5.2); the probe answers it from its resend table and the link stays at the rate."""
+    """The port_speed procedure (README): no answer within the first wait - the request again at the raised rate, same corr
+    (core §5.1); the probe answers it from its resend table and the link stays at the rate."""
     ep, hst, lk, report = raised_in_use(lease=60000)
     lk.timeout = 3.0
     dropped = answer_dropped(ep, lk, m.OP_LOCK_STATE)
@@ -639,7 +639,7 @@ def test_raised_a_lost_answer_is_resent_at_the_raised_rate_first_and_no_step_dow
 
 def test_raised_no_answer_to_the_resend_either_then_the_boot_speed():
     """The probe went back by itself: the request at the raised rate, again at it (same corr), and only then the
-    boot speed, its confirm, and the request once more there (host guide §17.3.2 item 4)."""
+    boot speed, its confirm, and the request once more there (the port_speed procedure (README))."""
     ep, hst, lk, report = raised_in_use(lease=60000)
     lk.timeout = 3.0
     writes = []
@@ -840,7 +840,7 @@ def test_not_a_serial_port_of_its_own():
     assert not report.supported and "serial port" in report.why
 
 
-# ---- step downs, the probation, max_tries (host guide §17.3.2 item 4) ----------------------------------------------------
+# ---- step downs, the probation, max_tries (the port_speed procedure (README)) ----------------------------------------------------
 
 def move(hst, until, size=40, limit_s=3.0):
     """In-use traffic: oep.link source answers of `size` bytes until `until()` (at most `limit_s`)."""
@@ -980,7 +980,7 @@ def test_max_tries_bounds_the_candidates_tried_and_the_step_downs():
     assert [t.rate for t in report.trials] == [1500000] and report.capped == [921600] and report.chosen is None
 
 
-# ---- the record (host guide §17.4) --------------------------------------------------------------------------------------
+# ---- the record (the port_speed procedure (README)) --------------------------------------------------------------------------------------
 
 def test_the_record_puts_passed_rates_first_skips_failed_ones_and_expires(tmp_path):
     from oep_client import speed_record
@@ -1060,7 +1060,7 @@ def test_the_record_is_a_cache_an_unreadable_file_is_not_an_error(tmp_path):
     assert speed_record.default_path().name == "link-speed.json" and speed_record.default_path().parent.name == "oep-client"
 
 
-# ---- the default ceiling (host guide §17, §17.3.3) --------------------------------------------------------------------
+# ---- the default ceiling (the port_speed procedure (README)) --------------------------------------------------------------------
 
 def try_verify_ms(ep, rate):
     """verify_ms of the host's try at `rate`."""

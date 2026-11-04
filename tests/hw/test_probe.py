@@ -57,8 +57,8 @@ CAPTURE_WINDOW_S = 0.01          # the capture tests' window: samples = rate x t
 CAPTURE_MIN_SAMPLES = 16
 CAPTURE_BYTES_MAX = 16384        # a segment longer than this is cut (a 115200 bps link reads 11 KB/s)
 I2C_ADDRESS = 0x42
-# port_speed verdict (host guide §17.3.2): a one-at-a-time cell at a raised rate fails when broken + lost >= 3 and its ratio is
-# over max(2 x the same cell's ratio at the boot speed, this floor). The floor is the guide's measured 5 %.
+# port_speed verdict (the port_speed procedure (README)): a one-at-a-time cell at a raised rate fails when broken + lost >= 3 and its ratio is
+# over max(2 x the same cell's ratio at the boot speed, this floor). The floor is a measured 5 %.
 ERROR_RATE_FLOOR = float(os.environ.get("OEP_HW_ERROR_MAX", "") or 0.05)
 MIN_BAD_FRAMES = 3
 
@@ -243,7 +243,7 @@ def _config_steps(run: record.Run, hst: h.Host, st: settings.Settings, rec: dict
             max_ms, more_s = core.restart_max_ms(hst), record.reopen_s()
             t0 = time.monotonic()
             try:
-                # restart_max_ms is all a host may retry for (oep-if-restart §3); OEP_HW_REOPEN_S opens a probe given up
+                # restart_max_ms is all a host may retry for (oep-if-restart §2); OEP_HW_REOPEN_S opens a probe given up
                 # that way again for that much more (a WSL host: usbipd attaches the re-enumerated device later)
                 after = hst.restart_probe(reopen_s=more_s or None)
             except Exception as e:

@@ -122,10 +122,10 @@ class RetentionLifecycleChecks(RetentionChecks):
         for group, method in [('EXPIRY', self.expiry), ('FORCE', self.force)]:
             for mode in ('request', 'response', 'evicted'):
                 first = len(self.a.trace)
-                self.c.check('CORE-LIFECYCLE-' + group + '-' + mode.upper(), 'core §5.2/6/9', lambda mode=mode, method=method: method(mode))
+                self.c.check('CORE-LIFECYCLE-' + group + '-' + mode.upper(), 'core §5.1/6/9', lambda mode=mode, method=method: method(mode))
                 self.c.results[-1]['adapter_trace'] = self.a.trace[first:]
         first = len(self.a.trace)
-        self.c.check('CORE-LIFECYCLE-REBOOT', 'core §5.2/6.5/9; logical model reset', self.reboot)
+        self.c.check('CORE-LIFECYCLE-REBOOT', 'core §5.1/6.5/9; logical model reset', self.reboot)
         self.c.results[-1]['adapter_trace'] = self.a.trace[first:]
         report.update(status='passed' if all(x['status'] == 'passed' for x in self.c.results) else 'failed',
                       checks=self.c.results, adapter_trace=self.a.trace, peer_exchanges=self.peer.trace,

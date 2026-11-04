@@ -80,7 +80,7 @@ def test_sink_takes_up_to_max_frame_less_12_and_a_count_past_the_bytes_is_malfor
 
 def test_the_host_waits_for_a_source_answer_as_for_any_request_never_repeating_it_like_confirm():
     """link §2: the host waits for the answer as for other requests (core §4.4): one resend with the same corr after
-    the wait (core §5.2), then the failure - not confirm's repeated tries."""
+    the wait (core §5.1), then the failure - not confirm's repeated tries."""
     s = Scripted()
     lk = link.SerialLink.on_stream(s, "cobs", 0.05)
     writes = []
@@ -208,7 +208,7 @@ def test_the_host_reads_the_phase_with_a_new_corr_not_from_an_old_answer():
 
 
 def test_a_pending_return_starts_no_new_notification_frame_until_the_port_is_back():
-    """link §3.12 (link §3, the return waits for a frame boundary): once a return is pending (phase 3), the probe starts no
+    """link §3 (the return waits for a frame boundary): once a return is pending (phase 3), the probe starts no
     new notification frame on the raised port - the subscribed capture's events wait, none lost - and sends them at the
     boot speed after the frame on the line has ended and the port has gone back; without a pending return the same
     events go out at once."""
