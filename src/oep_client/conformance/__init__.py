@@ -75,6 +75,7 @@ TCP_CASES = tuple(('CORE-TCP-' + kind.upper(), kind) for kind in
 
 TCP_PEER_CASES = tuple(('CORE-TCP-PEER-' + kind.upper(), kind) for kind in
                        ('identity', 'lock', 'route', 'partial', 'close', 'oversized'))
+ROUTE_PEER_CASES = tuple(('CORE-ROUTE-PEER-' + kind.upper(), kind) for kind in ('identity', 'lock', 'route'))
 
 
 class NotApplicable(Exception):
@@ -213,6 +214,7 @@ class Checks:
         self.usb_wire = None
         self.tcp_peer_open = None
         self.tcp_reopen = None
+        self.route_peer = None    # another route of the same probe: (open, Checks attribute, this route's wire)
 
     def request(self, op, payload=b'', *, session=0, corr=None, fn=0):
         automatic = corr is None
@@ -1015,6 +1017,12 @@ class Checks:
             cases = USB_CASES + (HID_CASES if self.usb_wire.kind == 'hid' else BULK_CASES)
             for name, kind in cases:
                 self.check(name, 'transports §1/2/3; core §2.4', lambda kind=kind: run(self, kind))
+        if self.route_peer is not None:
+            from .tcp_peers import Peers
+            open_peer, attr, own = self.route_peer
+            routes = Peers(self, open_peer, attr, own)
+            for name, kind in ROUTE_PEER_CASES:
+                self.check(name, 'transports §3; core §6', lambda kind=kind: getattr(routes, kind)())
         if self.tcp_peer_open is not None:
             from .tcp_peers import Peers
             peers = Peers(self)

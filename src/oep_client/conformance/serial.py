@@ -62,6 +62,11 @@ class SerialWire:
         self.op_wait_s = 1.0   # the request's processing bound: core_quick_op_max_ms until max_op_ms is read (core §4.4)
         self.last_exchange = {}
 
+    def close(self):
+        from ..link import _exclusive_off
+        _exclusive_off(self.stream)       # the next opener gets the port (transports §3: opened exclusive)
+        self.stream.close()
+
     def send(self, message):
         replies = self.exchange([frame(message)], 1)
         if len(replies) != 1:

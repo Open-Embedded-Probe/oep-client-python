@@ -1,4 +1,5 @@
-"""Explicit two-connection TCP core contracts; no session requests change route."""
+"""Two routes at once (transports §3): two TCP connections, or two USB routes of one probe (bulk next to HID or its CDC);
+no session requests change route."""
 from contextlib import contextmanager
 import secrets
 import struct
@@ -19,15 +20,20 @@ def lock_state(check):
 
 
 class Peers:
-    def __init__(self, primary):
+    """`open` gives the second route's wire, `attr` its Checks attribute (tcp_wire, usb_wire or wire: the transport kind
+    its confirm must name), `wire` the primary's own wire. The defaults are the TCP pair."""
+    def __init__(self, primary, open=None, attr='tcp_wire', wire=None):
         self.primary = primary
+        self.open = open or primary.tcp_peer_open
+        self.attr = attr
+        self.wire = wire if wire is not None else primary.tcp_wire
 
     @contextmanager
     def peer(self):
         primary = self.primary
         peer = None
         try:
-            wire = primary.tcp_peer_open()
+            wire = self.open()
         except ConnectionRefusedError:
             # transports §1: a probe may cap its connections, at one too, and refuse or close one past the cap
             raise NotApplicable('the probe does not take a second TCP connection (transports §1: a cap, even of one, '
@@ -39,7 +45,7 @@ class Peers:
         primary.trace.append(record)
         try:
             peer = Checks(wire.send, primary.reg, primary.unit)
-            peer.tcp_wire = wire
+            setattr(peer, self.attr, wire)
             record['exchanges'] = peer.trace
             # Confirm-only discovery until the handshake succeeds. A wrong endpoint must
             # never get open/force/end requests from any of these tests.
@@ -56,10 +62,13 @@ class Peers:
                 peer.identity()
                 peer.transport_declarations()
                 require(peer.observed['core_describe'] == primary.observed['core_describe'],
-                        'core describe differs between TCP connections')
+                        'core describe differs between routes')
+                if self.attr != 'tcp_wire':      # two USB routes: two entries of describe's transport (core §7.5)
+                    require(peer.confirm_transport != primary.confirm_transport,
+                            'two routes confirm the same transport index')
                 entries = [{k: v for k, v in entry.items() if k != 'describe'}
                            for entry in primary.observed.get('interfaces', [])]
-                require(peer.list_snapshot() == entries, 'interface list differs between TCP connections')
+                require(peer.list_snapshot() == entries, 'interface list differs between routes')
             except NotApplicable:
                 raise
             except Exception:
@@ -96,7 +105,7 @@ class Peers:
         replies = wire.exchange([], 0, silence=0.1)
         check.trace.append({'tcp_silence': wire.last_exchange,
                             'responses_hex': [reply.hex() for reply in replies]})
-        require(not replies, 'response leaked to the wrong TCP connection')
+        require(not replies, 'response leaked to the wrong route')
 
     def route(self):
         primary = self.primary
@@ -109,7 +118,7 @@ class Peers:
             require(len(payload) >= 12 and int.from_bytes(payload[:4], 'little') == primary.boot,
                     'peer clock result')
             tlvs(payload[12:])
-            self.silence(primary, primary.tcp_wire)
+            self.silence(primary, self.wire)
 
     def partial(self):
         primary = self.primary

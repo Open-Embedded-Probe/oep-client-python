@@ -41,6 +41,8 @@ uv run --group dev python -m oep_client.conformance.usb_hw --kind bulk \
 | USB-DESC-WINUSB | MS OS 2.0のcompatible ID `WINUSB`（SHOULD。無ければwarning） |
 | CORE-USB-IN-END（bulk） | `oep.probe.link` のsourceで、枠がちょうどIN packet 1個分と2個分の答えを出させ、続くdataなしで届くこと（probeの最後の転送の終わり、transports §1）。linkが無いか、max_frameが足りなければnot_applicable |
 
+`--peer hid|bulk`（同じdeviceのもう一方のUSBの経路）か `--peer-port PATH`（そのOEPのCDCの口）を付けると、2つ目の経路を開き、2つの経路の検査 CORE-ROUTE-PEER-IDENTITY / LOCK / ROUTE（transports §3: 同じ個体・boot・describe、別のtransportの番号、1つのロックと持ち主、答えは要求の来た経路にだけ）も回す。
+
 ## raw adapterの契約
 
 `oep_client.conformance.usb.inspect(factory, ...)` が、新規出力先の予約と共有lockの取得後にfactoryを呼ぶ。shapeが不正ならfactoryを呼ばない。終了・例外時にもbackendをcloseし、close失敗は実行全体をFAILにする。個体不一致・不正confirmではsession操作へ進まない。

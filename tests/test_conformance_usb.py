@@ -367,3 +367,25 @@ def test_in_end_needs_the_link_and_the_packet_size():
     check.usb_wire.in_packet_size = None
     with pytest.raises(NotApplicable, match='packet size'):
         run(check, 'in-end')
+
+
+def test_two_usb_routes_share_one_session_and_answer_on_their_own_route(monkeypatch):
+    # bulk and HID of one probe (transports §3): one lock seen from both, an answer only on the route of its request
+    clock = Clock()
+    monkeypatch.setattr('oep_client.conformance.time.sleep', clock.sleep)
+    ep = endpoint.Endpoint(virtual_bench.core_v1(), lambda: int(clock() * 1000), boot_id=17)
+    bulk = Usb(ep, 'bulk', clock=clock, sleep=clock.sleep)
+    primary = UsbWire(bulk, 'bulk', clock=clock, sleep=clock.sleep, out_packet_size=8)
+    check = Checks(primary.send, copy.deepcopy(REG), 'virtual-core-1')
+    check.usb_wire = primary
+    hid = Usb(ep, 'hid', clock=clock, sleep=clock.sleep, report_id=6, input_size=9, output_size=11)   # both routes from boot
+
+    def open_hid():
+        hid.closed = False
+        return UsbWire(hid, 'hid', clock=clock, sleep=clock.sleep, report_id=6, input_size=9, output_size=11)
+    check.route_peer = (open_hid, 'usb_wire', primary)
+    report = check.run()
+    peers = {r['id']: r['status'] for r in report['checks'] if r['id'].startswith('CORE-ROUTE-PEER-')}
+    assert peers == {'CORE-ROUTE-PEER-IDENTITY': 'passed', 'CORE-ROUTE-PEER-LOCK': 'passed',
+                     'CORE-ROUTE-PEER-ROUTE': 'passed'}, [(r['id'], r.get('error')) for r in report['checks']
+                                                          if r['id'].startswith('CORE-ROUTE-PEER-')]

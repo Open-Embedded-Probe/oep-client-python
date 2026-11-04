@@ -6,6 +6,10 @@ backend moves whole USB transfers (bulk: a read ends at a short packet or a zero
 whole HID reports; it never strips, repairs or reassembles bytes. pyusb (libusb) only.
 
     python -m oep_client.conformance.usb_hw --kind bulk --unit UNIT --spec SPEC --out NEW.json --lock LOCK
+
+--peer hid / bulk (the other USB kind of the same device) or --peer-port PATH (its OEP CDC port, a serial port) also
+opens a second route of the probe for the two-route checks (transports §3: one session and one lock for every route,
+an answer on the route its request came on).
 """
 import argparse
 import os
@@ -175,7 +179,10 @@ class _Reader:
 
 
 class BulkBackend:
-    """The vendor interface's bulk IN / OUT pair, claimed."""
+    """The vendor interface's bulk IN / OUT pair, claimed. `owner`: close also frees the device handle (a second route
+    on the same device leaves it to the first)."""
+    owner = True
+
     def __init__(self, dev, usb_reg):
         import usb.util
         for intf in dev.get_active_configuration():
@@ -204,11 +211,14 @@ class BulkBackend:
         import usb.util
         self._reader.stop()
         usb.util.release_interface(self.dev, self.number)
-        usb.util.dispose_resources(self.dev)
+        if self.owner:
+            usb.util.dispose_resources(self.dev)
 
 
 class HidBackend:
     """The OEP HID interface: interrupt IN, and interrupt OUT or SET_REPORT (Output) as asked; reports with their ID."""
+    owner = True
+
     def __init__(self, dev, usb_reg):
         import usb.util
         from ..hid_stream import parse_report_descriptor
@@ -245,7 +255,24 @@ class HidBackend:
         import usb.util
         self._reader.stop()
         _release(self.dev, self.number, self.detached)
-        usb.util.dispose_resources(self.dev)
+        if self.owner:
+            usb.util.dispose_resources(self.dev)
+
+
+def peer_attr(args):
+    return ('usb_wire',) if args.peer else ('wire',)
+
+
+def open_peer(dev, usb_reg, args):
+    """The second route's wire: the other USB kind on the same device handle, or the CDC port."""
+    from .usb import UsbWire
+    if args.peer:
+        backend = BulkBackend(dev, usb_reg) if args.peer == 'bulk' else HidBackend(dev, usb_reg)
+        backend.owner = False
+        return UsbWire(backend, args.peer, **backend.shape)
+    from .. import link
+    from .serial import SerialWire
+    return SerialWire(link.open_serial(args.peer_port))
 
 
 def main(argv=None):
@@ -256,7 +283,11 @@ def main(argv=None):
                       ('out', 'OEP_CONFORMANCE_OUT'), ('lock', 'OEP_HW_LOCK')]:
         parser.add_argument('--' + name, default=os.environ.get(env))
     parser.add_argument('--vid-pid', help='VID:PID in hex (default: the project VID:PID of the SPEC registry)')
+    parser.add_argument('--peer', choices=('bulk', 'hid'), help='a second route: the other USB kind of the device')
+    parser.add_argument('--peer-port', help="a second route: the probe's OEP CDC port (a serial port path)")
     args = parser.parse_args(argv)
+    if args.peer == args.kind:
+        parser.error('--peer must be the other USB kind')
     if not all(getattr(args, name) for name in ('unit', 'spec', 'out', 'lock')):
         parser.error('explicit unit, SPEC checkout, new output file and existing shared lock required')
     registry, _ = spec_identity(args.spec)
@@ -269,6 +300,8 @@ def main(argv=None):
         descriptors = descriptor_checks(dev, args.unit, usb_reg)
         probe = BulkBackend(dev, usb_reg) if args.kind == 'bulk' else HidBackend(dev, usb_reg)
         probe.descriptors = descriptors
+        if args.peer or args.peer_port:
+            probe.route_peer = lambda own: (lambda: open_peer(dev, usb_reg, args), *peer_attr(args), own)
         return probe
     report = inspect(factory, kind=args.kind, unit=args.unit, spec=args.spec, out=args.out, lock=args.lock,
                      adapter=f'pyusb {vid:04x}:{pid:04x} serial {args.unit}', shape_from_backend=True)

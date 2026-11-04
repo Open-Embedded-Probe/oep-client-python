@@ -1,6 +1,14 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Added: the two-route checks (one lock seen from both routes, another session's open refused locked with its owner,
+  an answer only on the route of its request; transports §3) run on any second route, not only a second TCP connection:
+  `usb_hw --peer hid|bulk` opens the other USB kind of the same device, `--peer-port` its OEP CDC port (CORE-ROUTE-PEER-*).
+  They pass on ESP32-P4 and P4X probes for bulk with HID and bulk with CDC.
+- (JA) 追加: 2 つの経路の検査（どちらの経路からも同じ 1 つのロックが見え、別のセッションの open は持ち主つきの locked で断られ、
+  答えは要求の来た経路にだけ返る。transports §3）を、2 本目の TCP の接続だけでなく、どの経路でも回す: `usb_hw --peer hid|bulk` は同じ
+  device のもう一方の USB の経路を、`--peer-port` はその OEP の CDC の口を開く（CORE-ROUTE-PEER-*）。ESP32-P4 と P4X のプローブで、bulk と
+  HID、bulk と CDC の組で通る。
 - (EN) Added: oep-conformance runs the reconnect checks over TCP too (a new connection is the route moving, transports §3):
   the session, its lock, its replay record and its lease outlive the connection. New check CORE-RECONNECT-UNREAD (serial
   and TCP): a request whose answer is lost with the closed route is resent on the new one and comes back as the recorded

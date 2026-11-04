@@ -164,6 +164,8 @@ arguments above), and its descriptor checks as `backend.descriptors`.
                         report['usb_descriptors'] = descriptors
                     checks = Checks(wire.send, registry, unit)
                     checks.usb_wire = wire
+                    if hasattr(backend, 'route_peer'):      # a second route of the probe (conformance.usb_hw --peer)
+                        checks.route_peer = backend.route_peer(wire)
                     report.update(checks.run())
                     if any(d['status'] == 'failed' for d in descriptors):
                         report['status'] = 'failed'
