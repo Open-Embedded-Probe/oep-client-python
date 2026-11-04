@@ -1,6 +1,13 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Docs: the rule-by-rule trace (docs/trace) names the tests as they are now (the subject-named modules, no review
+  rounds or item numbers; the later-copy tests as the refusal tests that replaced them), and core §2.3's rows follow the
+  spec's split of the twice-sent tag into requests (malformed) and answers (the first is used). tools/check_trace.py
+  passes on oep-spec 3b6dbbc.
+- (JA) 文書: 規則ごとの対応表（docs/trace）は、今の試験の名前を指す（主題で名付けたモジュール、回や項目の番号なし。後の写しの試験は、
+  置き換えた断りの試験）。core §2.3 の行は、2 回送られた tag を要求（malformed）と応答（最初を使う）に分けた仕様に合わせた。
+  tools/check_trace.py は oep-spec 3b6dbbc で通る。
 - (EN) Removed: capture's optional features no probe implemented, as oep-spec 3b6dbbc drops them. `configure` no longer
   takes `format_name`, and its `options` take only `glitch_filter` (group 0) and `clock`; `Config.format_name` and the
   `threshold_used`, `coupling_used`, `offset_used`, `bandwidth_used`, `resolution_used` and `oversample_used` entries of

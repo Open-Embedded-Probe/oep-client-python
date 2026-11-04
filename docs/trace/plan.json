@@ -1,5 +1,5 @@
 {
- "spec_commit": "320c626",
+ "spec_commit": "3b6dbbc",
  "units": {
   "plan:pre:1": {
    "text": "| `oep.probe.plan` | 1 | どのインターフェースのどの役（",
@@ -43,7 +43,7 @@
     "tests/test_plan.py::test_ops_and_plan_roles_are_declared",
     "tests/test_plan.py::test_apply_answers_success_with_no_payload_and_an_assignment_is_fn_role_channel",
     "tests/test_trace_plan.py::test_plan_apply_and_plan_release_need_the_lock[plan_apply-16]",
-    "tests/test_review7_exact_payload.py::test_samples_seed_plan_and_gpio_whatever_tlvs_follow[link]"
+    "tests/test_exact_payload_rules.py::test_samples_seed_plan_and_gpio_whatever_tlvs_follow[link]"
    ],
    "mutants": [],
    "note": "plan_apply 0x10 declared, needs the lock (session_required), role_assignment TLVs, empty answer"
@@ -99,13 +99,13 @@
     "tests/test_plan.py::test_a_running_function_refuses_a_change_with_cause_6",
     "tests/test_plan.py::test_a_resource_bound_to_another_fn_refuses_with_cause_4",
     "tests/test_trace_plan.py::test_an_unchanged_set_keeps_a_running_function_as_it_is",
-    "tests/test_review4_small.py::test_a_capture_model_keeps_its_configuration_on_the_same_set_and_refuses_a_change_while_running[logic-rows0]",
-    "tests/test_review4_small.py::test_a_capture_model_keeps_its_configuration_on_the_same_set_and_refuses_a_change_while_running[analog-rows1]",
+    "tests/test_fixture_link_settings_rules.py::test_a_capture_model_keeps_its_configuration_on_the_same_set_and_refuses_a_change_while_running[logic-rows0]",
+    "tests/test_fixture_link_settings_rules.py::test_a_capture_model_keeps_its_configuration_on_the_same_set_and_refuses_a_change_while_running[analog-rows1]",
     "tests/test_conformance_gpio.py::test_gpio_plan_checks",
     "tests/test_conformance_logic.py::test_logic_contract",
-    "tests/test_review5_small.py::test_the_uart_model_keeps_a_kept_tx_through_an_unconfigured_replacement",
-    "tests/test_review7_state_resources.py::test_a_channel_moving_to_another_fn_is_released_to_the_idle_the_settings_give_it_now",
-    "tests/test_review7_state_resources.py::test_group_model_refuses_changing_a_running_tracks_plan_with_cause_6"
+    "tests/test_fixture_link_settings_rules.py::test_the_uart_model_keeps_a_kept_tx_through_an_unconfigured_replacement",
+    "tests/test_state_resource_rules.py::test_a_channel_moving_to_another_fn_is_released_to_the_idle_the_settings_give_it_now",
+    "tests/test_state_resource_rules.py::test_group_model_refuses_changing_a_running_tracks_plan_with_cause_6"
    ],
    "mutants": [],
    "note": "a kept triple keeps its pin state (bench; gpio checker PLAN-REPLACE now adds a channel beside a set one); the same set does nothing (logic / analog checkers PLAN-REPLACE: the same set keeps a running capture, review 4 - they had required it closed); a running fn cause 6; a bound one cause 4; an unchanged set keeps a running UART configured with its bytes and pins"
@@ -135,15 +135,15 @@
     "tests/test_trace_plan.py::test_the_sessions_end_releases_a_plan_plan_release_would_refuse",
     "tests/test_trace_plan.py::test_plan_release_checks_every_fn_before_it_releases_any",
     "tests/test_trace_plan.py::test_a_refused_plan_request_changes_no_pin_and_no_function",
-    "tests/test_review4_small.py::test_plan_release_naming_fn_0_is_ignored_like_any_existing_fn_without_a_plan",
-    "tests/test_review4_small.py::test_every_model_refuses_a_plan_release_naming_an_fn_it_lacks_and_ignores_fn_0[analog]",
-    "tests/test_review4_small.py::test_every_model_refuses_a_plan_release_naming_an_fn_it_lacks_and_ignores_fn_0[capture-group]",
-    "tests/test_review4_small.py::test_every_model_refuses_a_plan_release_naming_an_fn_it_lacks_and_ignores_fn_0[capture-timeline]",
-    "tests/test_review4_small.py::test_every_model_refuses_a_plan_release_naming_an_fn_it_lacks_and_ignores_fn_0[gpio]",
-    "tests/test_review4_small.py::test_every_model_refuses_a_plan_release_naming_an_fn_it_lacks_and_ignores_fn_0[i2c]",
-    "tests/test_review4_small.py::test_every_model_refuses_a_plan_release_naming_an_fn_it_lacks_and_ignores_fn_0[logic]",
-    "tests/test_review4_small.py::test_every_model_refuses_a_plan_release_naming_an_fn_it_lacks_and_ignores_fn_0[spi]",
-    "tests/test_review4_small.py::test_every_model_refuses_a_plan_release_naming_an_fn_it_lacks_and_ignores_fn_0[uart]"
+    "tests/test_fixture_link_settings_rules.py::test_plan_release_naming_fn_0_is_ignored_like_any_existing_fn_without_a_plan",
+    "tests/test_fixture_link_settings_rules.py::test_every_model_refuses_a_plan_release_naming_an_fn_it_lacks_and_ignores_fn_0[analog]",
+    "tests/test_fixture_link_settings_rules.py::test_every_model_refuses_a_plan_release_naming_an_fn_it_lacks_and_ignores_fn_0[capture-group]",
+    "tests/test_fixture_link_settings_rules.py::test_every_model_refuses_a_plan_release_naming_an_fn_it_lacks_and_ignores_fn_0[capture-timeline]",
+    "tests/test_fixture_link_settings_rules.py::test_every_model_refuses_a_plan_release_naming_an_fn_it_lacks_and_ignores_fn_0[gpio]",
+    "tests/test_fixture_link_settings_rules.py::test_every_model_refuses_a_plan_release_naming_an_fn_it_lacks_and_ignores_fn_0[i2c]",
+    "tests/test_fixture_link_settings_rules.py::test_every_model_refuses_a_plan_release_naming_an_fn_it_lacks_and_ignores_fn_0[logic]",
+    "tests/test_fixture_link_settings_rules.py::test_every_model_refuses_a_plan_release_naming_an_fn_it_lacks_and_ignores_fn_0[spi]",
+    "tests/test_fixture_link_settings_rules.py::test_every_model_refuses_a_plan_release_naming_an_fn_it_lacks_and_ignores_fn_0[uart]"
    ],
    "mutants": [],
    "note": "named fns released, n 0 all, no plan ignored (fn 0 exists and has none: ignored, review 4); an fn the probe lacks / bound: whole request refused - on the bench and every checker model (the gpio checker had required [2, 99] to succeed); the session's end still releases; every fn checked before any release; a refused release leaves the pins and the functions as they were"
@@ -189,14 +189,14 @@
     "tests/test_trace_plan.py::test_plan_apply_refusals_follow_the_tables_order[unknown-fn-before-role]",
     "tests/test_trace_plan.py::test_plan_apply_refusals_follow_the_tables_order[role-before-pin-conflict]",
     "tests/test_trace_plan.py::test_plan_apply_refusals_follow_the_tables_order[role-before-plan-roles]",
-    "tests/test_review4_small.py::test_a_capture_role_twice_or_two_roles_on_one_pin_is_unsupported_not_malformed[logic-rows0]",
-    "tests/test_review4_small.py::test_a_capture_role_twice_or_two_roles_on_one_pin_is_unsupported_not_malformed[logic-rows1]",
-    "tests/test_review4_small.py::test_a_capture_role_twice_or_two_roles_on_one_pin_is_unsupported_not_malformed[analog-rows2]",
-    "tests/test_review4_small.py::test_a_capture_role_twice_or_two_roles_on_one_pin_is_unsupported_not_malformed[analog-rows3]",
-    "tests/test_review4_small.py::test_a_capture_role_twice_or_two_roles_on_one_pin_is_unsupported_not_malformed[capture-group-rows4]",
-    "tests/test_review4_small.py::test_a_capture_role_twice_or_two_roles_on_one_pin_is_unsupported_not_malformed[capture-timeline-rows5]",
-    "tests/test_review5_small.py::test_plan_unsupported_names_the_tag_of_the_refused_assignment",
-    "tests/test_review8_core_2.py::test_plan_apply_refuses_a_role_on_a_channel_role_channels_offers_another_role_only"
+    "tests/test_fixture_link_settings_rules.py::test_a_capture_role_twice_or_two_roles_on_one_pin_is_unsupported_not_malformed[logic-rows0]",
+    "tests/test_fixture_link_settings_rules.py::test_a_capture_role_twice_or_two_roles_on_one_pin_is_unsupported_not_malformed[logic-rows1]",
+    "tests/test_fixture_link_settings_rules.py::test_a_capture_role_twice_or_two_roles_on_one_pin_is_unsupported_not_malformed[analog-rows2]",
+    "tests/test_fixture_link_settings_rules.py::test_a_capture_role_twice_or_two_roles_on_one_pin_is_unsupported_not_malformed[analog-rows3]",
+    "tests/test_fixture_link_settings_rules.py::test_a_capture_role_twice_or_two_roles_on_one_pin_is_unsupported_not_malformed[capture-group-rows4]",
+    "tests/test_fixture_link_settings_rules.py::test_a_capture_role_twice_or_two_roles_on_one_pin_is_unsupported_not_malformed[capture-timeline-rows5]",
+    "tests/test_fixture_link_settings_rules.py::test_plan_unsupported_names_the_tag_of_the_refused_assignment",
+    "tests/test_core_rules.py::test_plan_apply_refuses_a_role_on_a_channel_role_channels_offers_another_role_only"
    ],
    "mutants": [
     "tests/test_trace_plan.py::test_a_bench_that_skips_the_role_and_channel_checks_fails_them[test_one_refusal_changes_nothing_not_even_the_replaced_fns_plan]",
@@ -224,9 +224,9 @@
    "verify": [
     "tests/test_plan.py::test_a_running_function_refuses_a_change_with_cause_6",
     "tests/test_plan.py::test_a_resource_bound_to_another_fn_refuses_with_cause_4",
-    "tests/test_review4_small.py::test_a_capture_model_keeps_its_configuration_on_the_same_set_and_refuses_a_change_while_running[logic-rows0]",
-    "tests/test_review4_small.py::test_a_capture_model_keeps_its_configuration_on_the_same_set_and_refuses_a_change_while_running[analog-rows1]",
-    "tests/test_review7_state_resources.py::test_group_model_refuses_changing_a_running_tracks_plan_with_cause_6"
+    "tests/test_fixture_link_settings_rules.py::test_a_capture_model_keeps_its_configuration_on_the_same_set_and_refuses_a_change_while_running[logic-rows0]",
+    "tests/test_fixture_link_settings_rules.py::test_a_capture_model_keeps_its_configuration_on_the_same_set_and_refuses_a_change_while_running[analog-rows1]",
+    "tests/test_state_resource_rules.py::test_group_model_refuses_changing_a_running_tracks_plan_with_cause_6"
    ],
    "mutants": [],
    "note": "unavailable cause 6 (running), 4 (bound to another fn)"

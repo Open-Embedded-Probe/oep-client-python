@@ -1,4 +1,4 @@
-# oep-spec a09fa45 の規則ごとの対応表
+# oep-spec の規則ごとの対応表
 
 `tools/spec_units.py` が oep-spec の core / transports / 各インターフェース文書から規範の単位（箇条、番号つきの手順、表の
 データ行）を節ごとに抜き出し、`<文書>:<節>:<番号>`（見出しより前は `pre`）の ID を振る。`<文書>.json` は単位ごとに、

@@ -1,5 +1,5 @@
 {
- "spec_commit": "320c626",
+ "spec_commit": "3b6dbbc",
  "units": {
   "link:pre:1": {
    "text": "| `oep.probe.link` | 1 | 経路を試し（線の試験）、セッシ",
@@ -46,9 +46,9 @@
     "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[256]",
     "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[1024]",
     "tests/test_trace_link.py::test_the_lock_column_of_the_op_table[source-False]",
-    "tests/test_review6_rest.py::test_link_routes_accept_a_source_answer_tail",
-    "tests/test_review6_rest.py::test_port_speed_execution_accepts_source_and_sink_answer_tails",
-    "tests/test_review6_rest.py::test_port_speed_accepts_more_tlvs_in_its_refusals_and_a_source_tail"
+    "tests/test_fixture_link_settings_rules.py::test_link_routes_accept_a_source_answer_tail",
+    "tests/test_fixture_link_settings_rules.py::test_port_speed_execution_accepts_source_and_sink_answer_tails",
+    "tests/test_fixture_link_settings_rules.py::test_port_speed_accepts_more_tlvs_in_its_refusals_and_a_source_tail"
    ],
    "mutants": [
     "tests/test_conformance_link_transfers.py::test_wrong_wire_results_are_detected[SOURCE-64]",
@@ -65,7 +65,7 @@
     "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[256]",
     "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[1024]",
     "tests/test_trace_link.py::test_the_lock_column_of_the_op_table[sink-False]",
-    "tests/test_review6_rest.py::test_port_speed_execution_accepts_source_and_sink_answer_tails"
+    "tests/test_fixture_link_settings_rules.py::test_port_speed_execution_accepts_source_and_sink_answer_tails"
    ],
    "mutants": [
     "tests/test_conformance_link_transfers.py::test_wrong_wire_results_are_detected[SINK-64]",
@@ -145,7 +145,7 @@
    "text": "- host はその応答を、ほかの要求と同じように待つ（core §4.4）。c",
    "verify": [
     "tests/test_trace_link.py::test_the_host_waits_for_a_source_answer_as_for_any_request_never_repeating_it_like_confirm",
-    "tests/test_review7_host_recovery.py::test_a_measurements_source_and_sink_wait_max_op_ms"
+    "tests/test_host_recovery_rules.py::test_a_measurements_source_and_sink_wait_max_op_ms"
    ],
    "mutants": [],
    "note": "the host's wait for a line test: the normal wait and one resend with the same corr, no confirm-like retries"
@@ -190,9 +190,9 @@
     "tests/test_port_speed.py::test_try_then_commit_answered_at_the_old_speed",
     "tests/test_port_speed.py::test_only_the_uart_bridge_the_request_came_in_on_and_one_port_at_a_time",
     "tests/test_conformance_port_speed.py::test_port_speed_handshake",
-    "tests/test_review6_rest.py::test_port_speed_accepts_more_tlvs_in_its_refusals_and_a_source_tail",
-    "tests/test_review6_rest.py::test_port_speed_lifecycle_accepts_more_tlvs_in_its_refusals",
-    "tests/test_review6_rest.py::test_port_speed_still_requires_cause_6"
+    "tests/test_fixture_link_settings_rules.py::test_port_speed_accepts_more_tlvs_in_its_refusals_and_a_source_tail",
+    "tests/test_fixture_link_settings_rules.py::test_port_speed_lifecycle_accepts_more_tlvs_in_its_refusals",
+    "tests/test_fixture_link_settings_rules.py::test_port_speed_still_requires_cause_6"
    ],
    "mutants": [
     "tests/test_conformance_port_speed.py::test_wrong_wire_result_is_detected[STATES]",
@@ -284,7 +284,7 @@
    "verify": [
     "tests/test_port_speed.py::test_try_times_out_and_a_late_commit_is_wrong_state",
     "tests/test_conformance_port_speed.py::test_port_speed_handshake",
-    "tests/test_review4_small.py::test_a_commit_arriving_after_verify_ms_is_refused_cause_6_and_the_port_goes_back_after_its_answer"
+    "tests/test_fixture_link_settings_rules.py::test_a_commit_arriving_after_verify_ms_is_refused_cause_6_and_the_port_goes_back_after_its_answer"
    ],
    "mutants": [
     "tests/test_conformance_port_speed.py::test_wrong_wire_result_is_detected[VERIFY]",
@@ -336,8 +336,8 @@
     "tests/test_conformance_port_speed.py::test_port_speed_handshake",
     "tests/test_conformance_port_speed_lifecycle.py::test_session_release_and_stale_writes",
     "tests/test_trace_link.py::test_a_pending_return_starts_no_new_notification_frame_until_the_port_is_back",
-    "tests/test_review4_small.py::test_no_request_frame_cancels_an_idle_return",
-    "tests/test_review4_small.py::test_a_commit_arriving_after_verify_ms_is_refused_cause_6_and_the_port_goes_back_after_its_answer"
+    "tests/test_fixture_link_settings_rules.py::test_no_request_frame_cancels_an_idle_return",
+    "tests/test_fixture_link_settings_rules.py::test_a_commit_arriving_after_verify_ms_is_refused_cause_6_and_the_port_goes_back_after_its_answer"
    ],
    "mutants": [
     "tests/test_conformance_port_speed_execution.py::test_pause_faults_are_detected[consume_verify-VERIFY]",
@@ -378,8 +378,8 @@
     "tests/test_trace_link.py::test_the_host_goes_back_after_a_restart",
     "tests/test_port_speed.py::test_the_sessions_end_takes_the_link_back_to_the_boot_speed",
     "tests/test_trace_link.py::test_the_host_reads_the_phase_with_a_new_corr_not_from_an_old_answer",
-    "tests/test_review7_host_recovery.py::test_a_step_down_whose_revert_answer_is_lost_reads_port_state",
-    "tests/test_review7_host_recovery.py::test_linktests_lost_revert_answer_reads_port_state"
+    "tests/test_host_recovery_rules.py::test_a_step_down_whose_revert_answer_is_lost_reads_port_state",
+    "tests/test_host_recovery_rules.py::test_linktests_lost_revert_answer_reads_port_state"
    ],
    "mutants": [],
    "note": "the host goes back to the boot speed on revert / end / another id's force open / restart; not on the same id's open"

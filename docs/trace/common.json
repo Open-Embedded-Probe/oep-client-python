@@ -1,5 +1,5 @@
 {
- "spec_commit": "320c626",
+ "spec_commit": "3b6dbbc",
  "units": {
   "common:1.1:1": {
    "text": "- ストリームの各バイトに位置（u64、一周しない）を振る。資源として番号を持つ",
@@ -105,7 +105,7 @@
    "verify": [
     "tests/test_trace_common.py::test_read_from_a_position_the_oldest_now_and_the_last_mark",
     "tests/test_trace_common.py::test_read_from_a_mark_without_marks_is_unsupported",
-    "tests/test_virtual_bench_rules_core.py::test_c02_read_from_4_unsupported_and_from_3_with_a_wide_arg_reads_from_now",
+    "tests/test_virtual_bench_rules_core.py::test_read_from_4_unsupported_and_from_3_with_a_wide_arg_reads_from_now",
     "tests/test_conformance_stream.py::test_stream_contracts_pass"
    ],
    "mutants": [],
@@ -220,7 +220,7 @@
     "tests/test_interfaces.py::test_console_marks_follow_serials_and_more",
     "tests/test_conformance_stream.py::test_stream_contracts_pass",
     "tests/test_trace_common.py::test_mark_serials_are_counted_per_stream",
-    "tests/test_review6_core_early.py::test_the_stream_checker_holds_the_span_of_the_marks_kept_not_from_next_serial",
+    "tests/test_core_rules.py::test_the_stream_checker_holds_the_span_of_the_marks_kept_not_from_next_serial",
     "tests/test_conformance_dependencies.py::test_recreated_stream_may_start_its_mark_serial_anywhere"
    ],
    "mutants": [

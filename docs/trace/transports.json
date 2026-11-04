@@ -1,5 +1,5 @@
 {
- "spec_commit": "320c626",
+ "spec_commit": "3b6dbbc",
  "units": {
   "transports:1:1": {
    "text": "| 経路 | フレーム |",
@@ -168,7 +168,7 @@
     "tests/test_conformance_usb.py::test_current_virtual_core_passes_usb_contracts[bulk-0-9]",
     "tests/test_conformance_usb.py::test_current_virtual_core_passes_usb_contracts[hid-6-9]",
     "tests/test_virtual_core.py::test_current_virtual_tcp_passes_core_and_tcp_faults",
-    "tests/test_virtual_bench_rules_core.py::test_c05_c07_virtual_bench_serve_tcp_is_a_tcp_transport_and_closes_on_an_over_long_length"
+    "tests/test_virtual_bench_rules_core.py::test_virtual_bench_serve_tcp_is_a_tcp_transport_and_closes_on_an_over_long_length"
    ],
    "mutants": [
     "tests/test_conformance_usb.py::test_checker_detects_usb_probe_faults[accept_oversize]"
@@ -207,7 +207,7 @@
    "verify": [
     "tests/test_virtual_core.py::test_current_virtual_tcp_passes_core_and_tcp_faults",
     "tests/test_conformance_tcp_peers.py::test_virtual_core_passes_all_tcp_peer_contracts",
-    "tests/test_virtual_bench_rules_core.py::test_c05_c07_virtual_bench_serve_tcp_is_a_tcp_transport_and_closes_on_an_over_long_length"
+    "tests/test_virtual_bench_rules_core.py::test_virtual_bench_serve_tcp_is_a_tcp_transport_and_closes_on_an_over_long_length"
    ],
    "mutants": [],
    "note": "the self-answering TCP endpoint implements discovery, transport declaration, sessions, resend, resource lifetime in full"
@@ -218,7 +218,7 @@
     "tests/test_virtual_bench_serve_reboot.py::test_lose_closes_the_connection_and_its_streams",
     "tests/test_virtual_bench_serve_reboot.py::test_lose_on_stdin_over_tcp",
     "tests/test_virtual_bench_serve_reboot.py::test_reboot_on_stdin_over_tcp_length_framing",
-    "tests/test_spec_283e5b5.py::test_a_dropped_tcp_client_keeps_its_session_and_a_new_connection_takes_it_back"
+    "tests/test_transport_session_rules.py::test_a_dropped_tcp_client_keeps_its_session_and_a_new_connection_takes_it_back"
    ],
    "mutants": [],
    "note": "lost downstream line invalidates its resources (no_resource); a regenerated endpoint has a new boot_id; client close ends nothing"
@@ -226,7 +226,7 @@
   "transports:1:22": {
    "text": "- **TCP の経路**: TCP で待ち受ける probe は、待ち受けの ",
    "verify": [
-    "tests/test_virtual_bench_rules_core.py::test_c05_c07_virtual_bench_serve_tcp_is_a_tcp_transport_and_closes_on_an_over_long_length",
+    "tests/test_virtual_bench_rules_core.py::test_virtual_bench_serve_tcp_is_a_tcp_transport_and_closes_on_an_over_long_length",
     "tests/test_virtual_bench_serve_tcp_connections.py::test_two_clients_at_once_share_one_lock",
     "tests/test_virtual_bench_serve_tcp_connections.py::test_notifications_go_only_to_the_subscribers_connection_and_move_with_the_session",
     "tests/test_virtual_bench_serve_tcp_connections.py::test_a_fourth_connection_is_accepted_and_closed_at_once",
@@ -278,7 +278,7 @@
     "tests/test_trace_transports.py::test_usb_probe_drops_a_frame_that_stops_for_probe_frame_gap_ms[bulk]",
     "tests/test_trace_transports.py::test_usb_probe_drops_a_frame_that_stops_for_probe_frame_gap_ms[hid]",
     "tests/test_virtual_core.py::test_current_virtual_tcp_passes_core_and_tcp_faults",
-    "tests/test_host_rules_waits_lines.py::test_c07_on_tcp_a_pause_inside_a_frame_is_read_on",
+    "tests/test_host_rules_waits_lines.py::test_on_tcp_a_pause_inside_a_frame_is_read_on",
     "tests/test_trace_transports.py::test_after_a_gap_the_probe_reads_the_next_byte_as_a_length[bulk]",
     "tests/test_trace_transports.py::test_after_a_gap_the_probe_reads_the_next_byte_as_a_length[hid]"
    ],
@@ -303,8 +303,8 @@
   "transports:3:2": {
    "text": "- **経路が閉じても**（TCP の接続が閉じた、USB の device が",
    "verify": [
-    "tests/test_spec_283e5b5.py::test_a_dropped_tcp_client_keeps_its_session_and_a_new_connection_takes_it_back",
-    "tests/test_spec_283e5b5.py::test_a_dropped_tcp_client_lapses_only_with_its_lease",
+    "tests/test_transport_session_rules.py::test_a_dropped_tcp_client_keeps_its_session_and_a_new_connection_takes_it_back",
+    "tests/test_transport_session_rules.py::test_a_dropped_tcp_client_lapses_only_with_its_lease",
     "tests/test_virtual_bench_serve_tcp_connections.py::test_one_client_drops_while_another_keeps_going",
     "tests/test_virtual_core.py::test_current_virtual_serial_passes_faults_and_reconnect",
     "tests/test_conformance_reconnect.py::test_reconnect_retention_accepts_compliant_responses[session]",
@@ -364,7 +364,7 @@
   "transports:3:7": {
    "text": "- **ほかの device とシリアルの口**: 上の 2 つに当たらない U",
    "verify": [
-    "tests/test_usb_identity.py::test_a_named_vid_pid_has_no_cdc_fallback_and_no_listing",
+    "tests/test_usb_identity.py::test_the_old_usb_and_tcp_forms_name_the_oep_address_instead",
     "tests/test_usb_identity.py::test_project_serial_ports_lists_the_project_vid_pid_only",
     "tests/test_usb_identity.py::test_a_bare_usb_target_with_several_probes_opens_none_and_lists_them[devices0]"
    ],
@@ -380,7 +380,7 @@
     "tests/test_usb_identity.py::test_a_silent_serial_port_gets_only_confirms_then_is_closed",
     "tests/test_port_speed.py::test_open_waits_out_a_raised_rate_a_host_that_died_left",
     "tests/test_trace_transports.py::test_the_probing_confirm_waits_core_quick_op_max_ms_and_host_wait_add_ms",
-    "tests/test_review7_host_recovery.py::test_the_last_of_repeated_confirms_waits_its_floor"
+    "tests/test_host_recovery_rules.py::test_the_last_of_repeated_confirms_waits_its_floor"
    ],
    "mutants": [],
    "note": "probing: confirm (and its resend) only; no valid OEP! answer with the same corr -> closed, nothing else sent"
@@ -449,7 +449,7 @@
    "verify": [
     "tests/test_trace_transports.py::test_max_frame_binds_the_host_and_is_64_until_a_confirm_answer",
     "tests/test_trace_transports.py::test_the_host_reads_a_65535_byte_message",
-    "tests/test_host_rules_waits_lines.py::test_c05_the_confirm_names_the_transport_and_port_speed_takes_it"
+    "tests/test_host_rules_waits_lines.py::test_the_confirm_names_the_transport_and_port_speed_takes_it"
    ],
    "mutants": [],
    "note": "probes take 64-byte messages before confirm; host sends <=64 until confirm's answer; host reads 65535"
@@ -482,7 +482,7 @@
   "transports:4:1": {
    "text": "- **UART bridge の回線**: データ 8 bit、パリティなし、",
    "verify": [
-    "tests/test_host_rules_waits_lines.py::test_c09_a_serial_port_opens_8n1_without_flow_control_and_dtr_rts_asserted",
+    "tests/test_host_rules_waits_lines.py::test_a_serial_port_opens_8n1_without_flow_control_and_dtr_rts_asserted",
     "tests/test_trace_transports.py::test_a_uart_bridge_boots_at_115200_8n1_and_port_speed_changes_the_rate_alone"
    ],
    "mutants": [],
@@ -509,7 +509,7 @@
   "transports:4:4": {
    "text": "- **制御線**: probe は、OEP を受けるか送るかを DTR、RTS",
    "verify": [
-    "tests/test_host_rules_waits_lines.py::test_c09_a_serial_port_opens_8n1_without_flow_control_and_dtr_rts_asserted"
+    "tests/test_host_rules_waits_lines.py::test_a_serial_port_opens_8n1_without_flow_control_and_dtr_rts_asserted"
    ],
    "mutants": [],
    "note": "host asserts DTR and RTS while the port is open (probe side: no control lines in the bench)"
@@ -549,7 +549,7 @@
     "tests/test_trace_transports.py::test_on_tcp_broken_framing_closes_and_opens_the_connection_and_confirms_there",
     "tests/test_trace_transports.py::test_on_tcp_an_answer_to_a_corr_not_waited_for_is_read_past",
     "tests/test_trace_transports.py::test_on_tcp_a_pause_or_a_timeout_keeps_the_frame_being_read",
-    "tests/test_host_rules_waits_lines.py::test_c07_on_tcp_a_pause_inside_a_frame_is_read_on"
+    "tests/test_host_rules_waits_lines.py::test_on_tcp_a_pause_inside_a_frame_is_read_on"
    ],
    "mutants": [],
    "note": "TCP broken framing: close and reopen (client fixed); pause is no breakage; other-corr answers just dropped"
@@ -557,7 +557,7 @@
   "transports:5:2": {
    "text": "- vendor bulk と HID の区切りを失った host は入力を読み",
    "verify": [
-    "tests/test_host_rules_waits_lines.py::test_c07_a_resync_waits_250_ms_after_the_hosts_last_write",
+    "tests/test_host_rules_waits_lines.py::test_a_resync_waits_250_ms_after_the_hosts_last_write",
     "tests/test_link_host.py::test_an_impossible_length_resyncs",
     "tests/test_link_host.py::test_a_frame_that_stops_half_way_resyncs",
     "tests/test_trace_transports.py::test_a_length_port_that_never_goes_quiet_is_closed_and_opened_again[True]",
@@ -580,7 +580,7 @@
   "transports:5:4": {
    "text": "- 開き直してもセッションと再送履歴は残る（§3）。新しい経路で confirm",
    "verify": [
-    "tests/test_spec_283e5b5.py::test_a_dropped_tcp_client_keeps_its_session_and_a_new_connection_takes_it_back",
+    "tests/test_transport_session_rules.py::test_a_dropped_tcp_client_keeps_its_session_and_a_new_connection_takes_it_back",
     "tests/test_trace_transports.py::test_on_tcp_broken_framing_closes_and_opens_the_connection_and_confirms_there",
     "tests/test_conformance_reconnect.py::test_reconnect_retention_accepts_compliant_responses[replay]"
    ],
