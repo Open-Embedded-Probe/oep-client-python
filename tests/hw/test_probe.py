@@ -795,13 +795,17 @@ def test_capture_repeat_rearm(run: record.Run):
     gpio = fixture.Gpio(hst)
     core.plan_apply(hst, [(gpio.fn, GPIO_ROLE_LINE, ch), (cap_.fn, 0, ch)])
     pre, samples, segs = 20, 200, 3
-    rec = run.record("capture_repeat_rearm", channel=ch)
+    rr = _capture_declared(decl).get("rate_range")
+    rate = min(max(rr["min_hz"], 100000), rr["max_hz"]) if rr else 100000   # a rate the probe declares
+    rec = run.record("capture_repeat_rearm", channel=ch, rate=rate)
     try:
         gpio.set([(ch, gpio.OUTPUT_LOW)])
         try:
-            cfg = cap_.configure(rate=100000, mode=capture.REPEAT, samples=samples, segments=segs,
+            cfg = cap_.configure(rate=rate, mode=capture.REPEAT, samples=samples, segments=segs,
                                  trigger=(capture.EDGE, 0, 0), pretrigger=pre, trigger_opts=capture.TriggerOpts(rearm=1))
         except h.Unsupported as e:
+            if e.tag != capture.TRIGGER_OPTS:
+                raise                                                # refused for something else: not a skip
             pytest.skip(f"the probe does not take repeat with rearm 1: {e}")
         rec["segments"] = cfg.segments
         gen = cap_.start()

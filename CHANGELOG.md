@@ -1,6 +1,12 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Fixed (tests/hw): capture_repeat_rearm configured 100 kHz whatever the probe declared, so a probe whose lowest rate
+  is above it (ESP32-P4: 627 kHz) refused the rate and the test skipped as if rearm were missing. It takes a declared
+  rate, and skips only when trigger_opts is the refused tag. It passes on ESP32-P4 and P4X probes.
+- (JA) 修正（tests/hw）: capture_repeat_rearm は probe の宣言によらず 100 kHz で configure していたので、最も遅いレートがそれより速い
+  probe（ESP32-P4: 627 kHz）ではレートで断られ、rearm が無いかのように skip していた。宣言したレートを使い、断られた tag が
+  trigger_opts のときだけ skip する。ESP32-P4 と P4X のプローブで通る。
 - (EN) Added: `python -m oep_client.conformance.release_hw` checks electrically that a released pin goes back to its idle
   state whatever released it (core §8, §9, §6.4): the channel's idle is set to pull-up / pull-down, fixture gpio drives the
   line the other way, and a CH32 target's GPIO input, read over the probe's debug wire, must read the drive and then the
