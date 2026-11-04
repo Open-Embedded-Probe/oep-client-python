@@ -1,6 +1,13 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Added: `python -m oep_client.conformance.force_hw` checks on a real probe that force releases the resources of the
+  session it takes from (core §6.4, §9): S attaches to a target (a debug connection), T of another id opens with force;
+  S's connection is gone from connections, its number is no_resource, S's keepalive is refused, and T's attach gets a new,
+  larger number. It passes on an ESP32-P4 probe with a CH32V208 over rvswd.
+- (JA) 追加: `python -m oep_client.conformance.force_hw` は、実機で force が奪ったセッションの資源を解放することを確かめる（core §6.4、
+  §9）: S が target に attach し（debug の接続）、別の id の T が force で open する。S の接続は connections から消え、その番号は
+  no_resource、S の keepalive は断られ、T の attach は新しい大きい番号になる。ESP32-P4 のプローブと rvswd の CH32V208 で通る。
 - (EN) Added: the two-route checks (one lock seen from both routes, another session's open refused locked with its owner,
   an answer only on the route of its request; transports §3) run on any second route, not only a second TCP connection:
   `usb_hw --peer hid|bulk` opens the other USB kind of the same device, `--peer-port` its OEP CDC port (CORE-ROUTE-PEER-*).

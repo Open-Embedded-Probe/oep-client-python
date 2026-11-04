@@ -68,13 +68,13 @@ bulk/HIDには独立したraw adapter APIと、最小USBモデル、実機を開
 
 `result_lost` は仕様が許す保持サイズ上限を考慮して受ける。履歴の古い clock を送り直したとき、新しい時計値で completed を返せば再実行として失敗する。cacheの容量を実装固有の固定値と決めつけない。
 
-force時の資源解放、subscription、電気的なpin解放、複数target・各opの動作は未検査。serialではclientのencoder/decoderを使わず、CRCは標準ライブラリ、COBSと受信は別コードで確認する。OSのport排他とportの開閉だけ既存clientを利用する。再接続はOS portのclose/openであり、USBの物理抜き差し・給電断・USB resetを模擬しない。DTR/RTSやbridge配線により再起動した場合、boot変化のFAILとして記録し、session保持の成否は確定しない。重複応答の検査は結果後30msの観測窓内、過大frameの無応答は宣言されたframe gap＋100msの観測窓内に限る。TCPは独立したlengthの受信・送信を使い、壊れた応答の後は立て直しで隠さず止める。framing=clientでは独立wire検査を実行しない。これらを埋める前に全コア準拠・全インターフェース準拠と名乗らない。
+subscription、電気的なpin解放、複数target・各opの動作は未検査。serialではclientのencoder/decoderを使わず、CRCは標準ライブラリ、COBSと受信は別コードで確認する。OSのport排他とportの開閉だけ既存clientを利用する。再接続はOS portのclose/openであり、USBの物理抜き差し・給電断・USB resetを模擬しない。DTR/RTSやbridge配線により再起動した場合、boot変化のFAILとして記録し、session保持の成否は確定しない。重複応答の検査は結果後30msの観測窓内、過大frameの無応答は宣言されたframe gap＋100msの観測窓内に限る。TCPは独立したlengthの受信・送信を使い、壊れた応答の後は立て直しで隠さず止める。framing=clientでは独立wire検査を実行しない。これらを埋める前に全コア準拠・全インターフェース準拠と名乗らない。
 
 既存 `oep-hardware preflight` は個体・旧仕様の宣言・open/end に限った別契約。portable C++、共有ベクタ、仮想テストの成功も、実機適合とは別に報告する。
 
 既存の registry/vector は `tests/vectors/SPEC_COMMIT` と `SPEC_SHA256` で固定し、通常試験はその snapshot を検査する。明示した `OEP_SPEC_DIR` があれば、同じ commit の upstream 内容も比較する。SPEC の HEAD が先行しても旧回帰は自動同期しない。更新は `OEP_SPEC_DIR=/explicit/path OEP_SPEC_REF=<commit> tools/sync_registry.sh` で行う。
 
-資源寿命には[明示adapterによる補助検査](resource-conformance.ja.md)がある。最小サンプルは14資源契約＋2宣言検査を実行する。通常CLIへ自動追加せず、購読・route切断・依存順・電気的idleを未検査として残す。
+forceによる資源の解放は、実機の `python -m oep_client.conformance.force_hw` が、targetへのdebugの接続で確かめる（奪われたセッションの接続が消え、番号がno_resourceになり、奪った側の次の接続は新しい大きい番号）。資源寿命には[明示adapterによる補助検査](resource-conformance.ja.md)がある。最小サンプルは14資源契約＋2宣言検査を実行する。通常CLIへ自動追加せず、購読・route切断・依存順・電気的idleを未検査として残す。
 
 購読・出来事の寿命には[外部刺激adapterの補助検査](subscription-conformance.ja.md)がある。raw通知と観測窓を保存する。data、応答優先、route、queue上限は未検査で、通常CLIには自動追加しない。
 
