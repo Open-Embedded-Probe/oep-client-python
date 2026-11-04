@@ -1,6 +1,15 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Added: oep-conformance runs the reconnect checks over TCP too (a new connection is the route moving, transports §3):
+  the session, its lock, its replay record and its lease outlive the connection. New check CORE-RECONNECT-UNREAD (serial
+  and TCP): a request whose answer is lost with the closed route is resent on the new one and comes back as the recorded
+  answer or result_lost, never run again (core §5.1; a recorded clock answer is told by its uptime). The virtual bench's
+  loopback TCP passes all five.
+- (JA) 追加: oep-conformance は、接続し直しの検査を TCP でも回す（新しい接続は経路の移動、transports §3）: セッション、ロック、再送の
+  記録、lease は接続より長く残る。新しい検査 CORE-RECONNECT-UNREAD（シリアルと TCP）: 閉じた経路で答えを失った要求を新しい経路で
+  送り直すと、記録した答えか result_lost が返り、二度は実行されない（core §5.1。記録した clock の答えは uptime で分かる）。仮想ベンチの
+  loopback の TCP は 5 つとも通る。
 - (EN) Added: `python -m oep_client.conformance.usb_hw` runs the raw bulk / HID checks on a real probe, named by
   VID:PID and its serial number (the unit id), under the shared lock; it checks the USB descriptors too (serial = unit
   id, one OEP vendor interface with one bulk pair, one OEP HID with one report ID, MS OS 2.0 WINUSB as a SHOULD). New

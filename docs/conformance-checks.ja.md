@@ -42,7 +42,7 @@ uv run python -m oep_client.virtual_bench_serve --tcp 0 --profile core-v1
 
 追加する検査はpeerの識別、共通lock/ownerと他sessionの拒否、応答の送り先、接続ごとの途中frameの分離、片側のclose後のlock保持、peerの過大length切断時のprimary保持。応答漏れの無応答観測は100ms、途中header待ちは300ms。JSONにprimary/peerのraw bytesと観測を残す。
 
-close後はsession 0のpeerからlockを観測し、primaryを開き直して再照合する。元のsession Sの要求は新接続へ移さず、自分のownerを確認できた場合だけ別session Tでforceし、Tを同じ新接続でendする。識別・boot・owner・takeoverが不確かなら後続を止め、閉じた接続のsessionの後始末はleaseに任せる。同一sessionのTCP経路移動と再送は未検査として残す。
+close後はsession 0のpeerからlockを観測し、primaryを開き直して再照合する。元のsession Sの要求は新接続へ移さず、自分のownerを確認できた場合だけ別session Tでforceし、Tを同じ新接続でendする。識別・boot・owner・takeoverが不確かなら後続を止め、閉じた接続のsessionの後始末はleaseに任せる。同一sessionのTCP経路移動と再送は、primaryの接続を開き直すCORE-RECONNECT-*（session、replay、ended、lease、unread）で確かめる。
 
 ## raw USBとソフトウェアモデル
 
@@ -68,7 +68,7 @@ bulk/HIDには独立したraw adapter APIと、最小USBモデル、実機を開
 
 `result_lost` は仕様が許す保持サイズ上限を考慮して受ける。履歴の古い clock を送り直したとき、新しい時計値で completed を返せば再実行として失敗する。cacheの容量を実装固有の固定値と決めつけない。
 
-同一sessionのTCP経路移動・新接続での再送、force時の資源解放、subscription、電気的なpin解放、複数target・各opの動作は未検査。serialではclientのencoder/decoderを使わず、CRCは標準ライブラリ、COBSと受信は別コードで確認する。OSのport排他とportの開閉だけ既存clientを利用する。再接続はOS portのclose/openであり、USBの物理抜き差し・給電断・USB resetを模擬しない。DTR/RTSやbridge配線により再起動した場合、boot変化のFAILとして記録し、session保持の成否は確定しない。重複応答の検査は結果後30msの観測窓内、過大frameの無応答は宣言されたframe gap＋100msの観測窓内に限る。TCPは独立したlengthの受信・送信を使い、壊れた応答の後は立て直しで隠さず止める。framing=clientでは独立wire検査を実行しない。これらを埋める前に全コア準拠・全インターフェース準拠と名乗らない。
+force時の資源解放、subscription、電気的なpin解放、複数target・各opの動作は未検査。serialではclientのencoder/decoderを使わず、CRCは標準ライブラリ、COBSと受信は別コードで確認する。OSのport排他とportの開閉だけ既存clientを利用する。再接続はOS portのclose/openであり、USBの物理抜き差し・給電断・USB resetを模擬しない。DTR/RTSやbridge配線により再起動した場合、boot変化のFAILとして記録し、session保持の成否は確定しない。重複応答の検査は結果後30msの観測窓内、過大frameの無応答は宣言されたframe gap＋100msの観測窓内に限る。TCPは独立したlengthの受信・送信を使い、壊れた応答の後は立て直しで隠さず止める。framing=clientでは独立wire検査を実行しない。これらを埋める前に全コア準拠・全インターフェース準拠と名乗らない。
 
 既存 `oep-hardware preflight` は個体・旧仕様の宣言・open/end に限った別契約。portable C++、共有ベクタ、仮想テストの成功も、実機適合とは別に報告する。
 

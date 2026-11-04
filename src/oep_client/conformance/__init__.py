@@ -66,7 +66,7 @@ SERIAL_CASES = tuple(('CORE-SERIAL-' + kind.upper(), kind) for kind in
 
 
 RECONNECT_CASES = tuple(('CORE-RECONNECT-' + kind.upper(), kind) for kind in
-                        ('session', 'replay', 'ended', 'lease'))
+                        ('session', 'replay', 'ended', 'lease', 'unread'))
 
 
 TCP_CASES = tuple(('CORE-TCP-' + kind.upper(), kind) for kind in
@@ -208,6 +208,7 @@ class Checks:
         self.abort = False
         self.wire = None
         self.reopen = None
+        self.post = None          # with reopen: write one framed request and read nothing (the answer is left behind)
         self.tcp_wire = None
         self.usb_wire = None
         self.tcp_peer_open = None
@@ -452,7 +453,17 @@ class Checks:
     def reconnect(self, kind):
         lease = 1000 if kind == 'lease' else 60000
         with self.holding(lease) as sid:
-            request, original = self.clock(sid)
+            if kind == 'unread':
+                # the answer is lost with the connection: the request goes on the old one, nothing read (core §5.1,
+                # transports §3: what was not yet sent on a closed route is dropped)
+                if self.post is None:
+                    raise NotApplicable('no raw write on this route')
+                request, original = self.request(self.core['clock'], session=sid), None
+                self.post(request)
+                time.sleep(0.3)
+                posted = time.monotonic_ns()
+            else:
+                request, original = self.clock(sid)
             if kind == 'ended':
                 tlvs(self.success(self.request(self.core['end'], session=sid)))
                 self.session = None
@@ -491,6 +502,19 @@ class Checks:
                         self.session = sid  # clean up buggy resurrection
                     require(reply[3:5] == bytes((0, self.reasons['no_session'])),
                             'reconnect forgot ended session and allowed reopening')
+                elif kind == 'unread':
+                    # the same request on the new route: the recorded answer or result_lost, never run again - a
+                    # recorded clock answer is older than the time since it was posted, a run again is not
+                    reply = self.exchange(request)
+                    if reply[3:5] != bytes((0, self.reasons['result_lost'])):
+                        require(reply[3:5] == b'\x01\0' and len(reply) >= 17, 'resend after the route closed: '
+                                'neither the recorded answer nor result_lost')
+                        then = int.from_bytes(reply[9:17], 'little')
+                        waited = time.monotonic_ns() - posted
+                        _, now = self.clock()
+                        require(int.from_bytes(now[4:12], 'little') - then >= waited - 50_000_000,
+                                'the request resent on the new route ran again (core §5.1)')
+                    tlvs(self.success(self.request(self.core['keepalive'], session=sid)))
                 elif kind == 'lease':
                     time.sleep(0.6)
                     state = self.success(self.request(self.core['lock_state']))
@@ -1065,6 +1089,8 @@ def main(argv=None):
                                 wire.stream.close()
                                 wire.stream = link.open_serial(args.address)
                             checks.reopen = reopen
+                            from .serial import frame as serial_frame
+                            checks.post = lambda message: wire.stream.write(serial_frame(message))
                             report.update(checks.run())
                         finally:
                             link._exclusive_off(wire.stream)
@@ -1075,6 +1101,13 @@ def main(argv=None):
                         try:
                             checks = Checks(wire.send, registry, args.unit)
                             checks.tcp_wire = wire
+                            from .tcp import frame as tcp_frame
+
+                            def reopen():               # a new connection: the route moves (transports §3)
+                                wire.stream.close()
+                                wire.stream = TcpWire.open(args.address).stream
+                            checks.reopen = reopen
+                            checks.post = lambda message: wire.stream.sendall(tcp_frame(message))
                             if args.tcp_peer:
                                 checks.tcp_peer_open = lambda: TcpWire.open(args.tcp_peer)
                                 def reopen_tcp():

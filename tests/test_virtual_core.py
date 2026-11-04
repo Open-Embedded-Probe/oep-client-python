@@ -89,6 +89,42 @@ def test_current_virtual_tcp_passes_core_and_tcp_faults():
         proc.wait(timeout=5)
 
 
+def test_current_virtual_tcp_moves_a_session_to_a_new_connection():
+    # The session, its lock, its replay record and its lease outlive the connection; a request whose answer went with
+    # the closed connection is answered from the record or refused result_lost on the new one, never run again
+    # (transports §3, core §5.1). The same loopback server as above, kept up between connections.
+    from oep_client.conformance.tcp import frame
+    proc = subprocess.Popen([sys.executable, '-m', 'oep_client.virtual_bench_serve',
+                             '--tcp', '0', '--profile', 'core-v1'],
+                            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    wire = None
+    try:
+        line = proc.stdout.readline().split()
+        assert line and line[0] == 'PORT', proc.stderr.read() if proc.poll() is not None else line
+        address = 'tcp://127.0.0.1:' + line[1]
+        wire = TcpWire.open(address)
+        check = Checks(wire.send, copy.deepcopy(REG), 'virtual-core-1')
+        check.tcp_wire = wire
+
+        def reopen():
+            wire.stream.close()
+            wire.stream = TcpWire.open(address).stream
+        check.reopen = reopen
+        check.post = lambda message: wire.stream.sendall(frame(message))
+        report = check.run()
+        assert report['status'] == 'passed', [(x['id'], x.get('error')) for x in report['checks'] if x['status'] != 'passed']
+        moved = [x for x in report['checks'] if x['id'].startswith('CORE-RECONNECT-')]
+        assert [x['id'] for x in moved] == ['CORE-RECONNECT-' + k for k in ('SESSION', 'REPLAY', 'ENDED', 'LEASE', 'UNREAD')]
+        assert all(x['status'] == 'passed' for x in moved)
+    finally:
+        if wire:
+            wire.close()
+        proc.stdin.close()
+        if proc.poll() is None:
+            proc.terminate()
+        proc.wait(timeout=5)
+
+
 @pytest.mark.skipif(sys.platform != 'linux', reason='PTY exclusive-port lifecycle requires Linux')
 def test_current_virtual_serial_passes_faults_and_reconnect():
     from oep_client import link
@@ -108,9 +144,12 @@ def test_current_virtual_serial_passes_faults_and_reconnect():
             wire.stream.close()
             wire.stream = link.open_serial(line[1])
         check.reopen = reopen
+        from oep_client.conformance.serial import frame
+        check.post = lambda message: wire.stream.write(frame(message))
         report = check.run()
         assert report['status'] == 'passed', [(x['id'], x.get('error')) for x in report['checks'] if x['status'] != 'passed']
-        assert len(report['checks']) == 59 and not report['full_conformance']
+        assert len(report['checks']) == 60 and not report['full_conformance']
+        assert not [x['id'] for x in report['checks'] if x['status'] == 'not_applicable']
         assert report['framing_backend'] == 'independent serial'
     finally:
         if wire:
