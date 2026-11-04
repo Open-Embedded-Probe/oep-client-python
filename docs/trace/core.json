@@ -10,7 +10,7 @@
    "verify": [
     "tests/test_trace_core.py::test_core_is_fn_0_has_no_name_and_is_never_listed[core-v1]",
     "tests/test_trace_core.py::test_core_is_fn_0_has_no_name_and_is_never_listed[full]",
-    "tests/test_virtual_bench_rules_ops_lines.py::test_c39_list_from_beyond_the_matches_gives_the_total_and_count_0",
+    "tests/test_virtual_bench_rules_ops_lines.py::test_list_from_beyond_the_matches_gives_the_total_and_count_0",
     "tests/test_settings.py::test_describe_lists_the_items_and_their_choices"
    ],
    "mutants": [],
@@ -645,7 +645,7 @@
    "verify": [
     "tests/test_trace_core.py::test_fn_0_op_space[core-v1]",
     "tests/test_trace_core.py::test_fn_0_op_space[full]",
-    "tests/test_virtual_bench_rules_ops_lines.py::test_c21_an_op_fn_0_does_not_define_is_unknown_operation_not_session_required",
+    "tests/test_virtual_bench_rules_ops_lines.py::test_an_op_fn_0_does_not_define_is_unknown_operation_not_session_required",
     "tests/test_settings.py::test_the_lock_column"
    ],
    "mutants": [],
@@ -655,7 +655,7 @@
    "text": "| インターフェースの op | 0x01〜0x0F は共通操作専用（0x01 ",
    "verify": [
     "tests/test_trace_core.py::test_interface_op_space_keeps_0x01_0x0f_for_the_shared_ops",
-    "tests/test_virtual_bench_rules_ops_lines.py::test_c21_an_op_an_interface_does_not_define_is_unknown_operation"
+    "tests/test_virtual_bench_rules_ops_lines.py::test_an_op_an_interface_does_not_define_is_unknown_operation"
    ],
    "mutants": [],
    "note": "registry: below 0x10 only subscribe 0x01 / unsubscribe 0x02"
@@ -761,7 +761,7 @@
    "text": "- 既存の形と振る舞いの契約を保ち、任意の request TLV、respon",
    "verify": [
     "tests/test_trace_core.py::test_an_optional_op_is_known_by_ops_and_not_sent_when_absent",
-    "tests/test_virtual_bench_rules_ops_lines.py::test_c21_riscv_dm_ops_are_gated_on_the_ops_tag"
+    "tests/test_virtual_bench_rules_ops_lines.py::test_riscv_dm_ops_are_gated_on_the_ops_tag"
    ],
    "mutants": [],
    "note": "an optional op is used only when ops sets it; nothing sent otherwise"
@@ -1022,7 +1022,7 @@
    "verify": [
     "tests/test_trace_core.py::test_the_header_order_corr_fn_op_session[core-v1]",
     "tests/test_trace_core.py::test_the_header_order_corr_fn_op_session[full]",
-    "tests/test_virtual_bench_rules_ops_lines.py::test_c21_order_1_refusals_are_not_remembered_and_do_not_restart_the_lease",
+    "tests/test_virtual_bench_rules_ops_lines.py::test_order_1_refusals_are_not_remembered_and_do_not_restart_the_lease",
     "tests/test_trace_core.py::test_the_policy_check_comes_after_the_header_and_before_the_record_and_the_session",
     "tests/test_spec_vectors.py::test_core_policy_on_the_virtual_bench[bad corr precedes policy]",
     "tests/test_spec_vectors.py::test_core_policy_on_the_virtual_bench[unknown op precedes policy]"
@@ -1105,9 +1105,9 @@
    "verify": [
     "tests/test_trace_core.py::test_confirm_gives_this_transports_limits[core-v1]",
     "tests/test_trace_core.py::test_confirm_gives_this_transports_limits[full]",
-    "tests/test_virtual_bench_rules_ops_lines.py::test_c20_confirms_bounds_are_the_virtual_bench_s_too[63-4096-4]",
-    "tests/test_virtual_bench_rules_ops_lines.py::test_c20_confirms_bounds_are_the_virtual_bench_s_too[1024-1023-4]",
-    "tests/test_virtual_bench_rules_ops_lines.py::test_c20_confirms_bounds_are_the_virtual_bench_s_too[1024-4096-0]",
+    "tests/test_virtual_bench_rules_ops_lines.py::test_confirms_bounds_are_the_virtual_bench_s_too[63-4096-4]",
+    "tests/test_virtual_bench_rules_ops_lines.py::test_confirms_bounds_are_the_virtual_bench_s_too[1024-1023-4]",
+    "tests/test_virtual_bench_rules_ops_lines.py::test_confirms_bounds_are_the_virtual_bench_s_too[1024-4096-0]",
     "tests/test_trace_core.py::test_a_message_of_max_frame_bytes_is_taken_whatever_its_frame_wraps_around_it"
    ],
    "mutants": [],
@@ -1689,7 +1689,7 @@
    "verify": [
     "tests/test_trace_core.py::test_list_from_first_past_total_is_total_and_count_0[core-v1]",
     "tests/test_trace_core.py::test_list_from_first_past_total_is_total_and_count_0[full]",
-    "tests/test_virtual_bench_rules_ops_lines.py::test_c39_list_from_beyond_the_matches_gives_the_total_and_count_0",
+    "tests/test_virtual_bench_rules_ops_lines.py::test_list_from_beyond_the_matches_gives_the_total_and_count_0",
     "tests/test_review6_core_late.py::test_the_core_checker_takes_tlvs_after_the_list_entries"
    ],
    "mutants": [],
@@ -1896,7 +1896,7 @@
    "text": "| 0x49 | transport | index(u8)、kind(u8)、",
    "verify": [
     "tests/test_trace_core.py::test_one_transport_entry_per_transport_with_its_kind_and_interface",
-    "tests/test_virtual_bench_rules_ops_lines.py::test_c41_a_uart_bridge_and_tcp_name_no_usb_interface"
+    "tests/test_virtual_bench_rules_ops_lines.py::test_a_uart_bridge_and_tcp_name_no_usb_interface"
    ],
    "mutants": [],
    "note": "index kind interface, one per transport; UART bridge / TCP 0xFF"
@@ -1913,8 +1913,8 @@
    "text": "| 0x4D | max_op_ms | u32。probe が1つの要求自身の",
    "verify": [
     "tests/test_trace_core.py::test_max_op_ms_is_required_and_in_range",
-    "tests/test_virtual_bench_rules_ops_lines.py::test_c47_max_op_ms_outside_1_to_600000_is_not_a_probe[0]",
-    "tests/test_virtual_bench_rules_ops_lines.py::test_c47_max_op_ms_outside_1_to_600000_is_not_a_probe[600001]",
+    "tests/test_virtual_bench_rules_ops_lines.py::test_max_op_ms_outside_1_to_600000_is_not_a_probe[0]",
+    "tests/test_virtual_bench_rules_ops_lines.py::test_max_op_ms_outside_1_to_600000_is_not_a_probe[600001]",
     "tests/test_trace_core.py::test_the_host_uses_the_first_copy_of_a_describe_tag_that_does_not_repeat"
    ],
    "mutants": [],
@@ -1967,7 +1967,7 @@
    "verify": [
     "tests/test_trace_core.py::test_clock_gives_the_boot_id_of_confirm_and_open_and_the_uptime[core-v1]",
     "tests/test_trace_core.py::test_clock_gives_the_boot_id_of_confirm_and_open_and_the_uptime[full]",
-    "tests/test_virtual_bench_rules_ops_lines.py::test_c31_a_reboot_starts_the_clock_again_and_clock_says_so",
+    "tests/test_virtual_bench_rules_ops_lines.py::test_a_reboot_starts_the_clock_again_and_clock_says_so",
     "tests/test_trace_core.py::test_the_hosts_clock_waits_as_long_as_any_quick_core_op"
    ],
    "mutants": [
@@ -1990,7 +1990,7 @@
    "verify": [
     "tests/test_trace_core.py::test_clock_gives_the_boot_id_of_confirm_and_open_and_the_uptime[core-v1]",
     "tests/test_trace_core.py::test_clock_gives_the_boot_id_of_confirm_and_open_and_the_uptime[full]",
-    "tests/test_virtual_bench_rules_ops_lines.py::test_c31_the_clock_has_the_resolution_it_is_given_and_never_goes_back"
+    "tests/test_virtual_bench_rules_ops_lines.py::test_the_clock_has_the_resolution_it_is_given_and_never_goes_back"
    ],
    "mutants": [
     "tests/test_trace_core.py::test_clock_is_read_at_the_request_mutant"
@@ -2166,7 +2166,7 @@
    "text": "| 再起動 | 無効（boot_id が変わる） | 無効 | 無効 |",
    "verify": [
     "tests/test_trace_core.py::test_a_reboot_invalidates_everything",
-    "tests/test_virtual_bench_rules_ops_lines.py::test_c19_after_a_reboot_with_a_repeated_boot_id_the_old_session_is_gone",
+    "tests/test_virtual_bench_rules_ops_lines.py::test_after_a_reboot_with_a_repeated_boot_id_the_old_session_is_gone",
     "tests/test_trace_core.py::test_a_reboot_drops_the_subscriptions_and_the_resend_state"
    ],
    "mutants": [],

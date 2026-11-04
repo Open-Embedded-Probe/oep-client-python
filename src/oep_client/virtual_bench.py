@@ -748,56 +748,27 @@ def with_i2c_pullups(probe: VirtualProbe) -> VirtualProbe:
     return _again(probe, [decl(o) if o.name == "oep.fixture.i2c-target" else o for o in probe.offered])
 
 
-EXTERNAL_TCP_PORT = 7891              # with_capture_options' external data paths (capture §3.9): a TCP port and a UDP one
-EXTERNAL_UDP_PORT = 7892
-NAMED_FORMAT = "org.example.virtual-bench.counter"   # its named format: format 4's bytes under a name of its own
-
-
-def capture_option_decls(analog: bool, channels: list[int]) -> tuple[bytes, ...]:
-    """The optional capture declarations of capture §1 (format 0xFF, format_names), §3.8 (front end and external clock)
-    and §3.9 (external data paths) as with_capture_options adds them; `channels` the track's pins (the logic's
-    threshold group)."""
-    d = (_ANAD if analog else _CAPD)
-    ext = reg.FIXTURE_LOGIC.enum["external_kind"]
-    out = (catalog.text(d["format_names"], NAMED_FORMAT),
-           catalog.tlv(d["external_data"], struct.pack("<BBI", ext["tcp"], 0b11, 4_000) + struct.pack("<H", EXTERNAL_TCP_PORT)),
-           catalog.tlv(d["external_data"], struct.pack("<BBI", ext["udp"], 0b01, 1_000) + struct.pack("<H", EXTERNAL_UDP_PORT)))
-    if not analog:
-        # one threshold group for every channel: 0-3300 mV in 50 mV steps, presets 1650 (3.3 V CMOS) and 1400 (TTL),
-        # a hysteresis up to 200 mV in 50 mV steps; a glitch filter 10 ns - 10 us in 10 ns steps; an external clock up to
-        # 50 MHz on either or both edges, with a qualifier
-        presets = (1650, 1400)
-        return out + (
-            catalog.tlv(_CAPD["threshold"], struct.pack("<BiiIII", 0, 0, 3300, 50, 200, 50)
-                        + struct.pack(f"<B{len(presets)}i", len(presets), *presets)
-                        + struct.pack(f"<B{len(channels)}H", len(channels), *channels)),
-            catalog.tlv(_CAPD["glitch_filter"], struct.pack("<BIII", 0, 10, 10_000, 10)),
+def capture_option_decls(analog: bool) -> tuple[bytes, ...]:
+    """The optional capture declarations of capture §3.8 (glitch filter and external clock, logic only) as
+    with_capture_options adds them."""
+    if analog:
+        return ()
+    # a glitch filter 10 ns - 10 us in 10 ns steps (group 0, every channel); an external clock up to 50 MHz on either or
+    # both edges, with a qualifier
+    return (catalog.tlv(_CAPD["glitch_filter"], struct.pack("<BIII", 0, 10, 10_000, 10)),
             catalog.tlv(_CAPD["external_clock"], struct.pack("<IBB", 50_000_000, 0b111, 1)))
-    out += tuple(catalog.tlv(_ANAD["coupling"], bytes([fe, 0b111])) for fe in range(4))   # DC, AC, GND
-    out += tuple(catalog.tlv(_ANAD["offset"], struct.pack("<BiiI", fe, -1000, 1000, 10)) for fe in range(4))
-    out += tuple(catalog.tlv(_ANAD["bandwidth"], struct.pack("<BB3I", fe, 3, 0, 20_000, 2_000)) for fe in range(4))
-    out += tuple(catalog.tlv(_ANAD["impedance"], struct.pack("<BII", fe, 1_000_000, 0xFFFFFFFF)) for fe in range(4))
-    # 8 / 12 bits at the ADC's full rate, 16 bits at a quarter of it; hardware averaging 2, 4, 16
-    return out + (catalog.tlv(_ANAD["resolution"], struct.pack("<BBIBIBI", 3, 8, 83_333, 12, 83_333, 16, 20_833)),
-                  catalog.tlv(_ANAD["oversample"], struct.pack("<B3H", 3, 2, 4, 16)))
 
 
 def with_capture_options(probe: VirtualProbe) -> VirtualProbe:
-    """The profile with every optional capture feature on its logic and analog tracks: named formats (format 0xFF),
-    format 3 and the external clock, threshold and glitch filter (logic), coupling, offset, bandwidth, impedance,
-    resolution and oversample (analog), the external data paths (TCP, UDP), and a capture-group trigger source with every
-    condition, UART, trigger_out and the trig_in / trig_out roles. VIRTUAL BENCH ONLY (no profile's probe has them
-    all)."""
+    """The profile with every optional capture feature on its logic track: format 3 and the external clock, and the
+    glitch filter; and a capture-group trigger source with every condition, UART, trigger_out and the trig_in / trig_out
+    roles. VIRTUAL BENCH ONLY (no profile's probe has them all)."""
     def decl(o: Offered) -> Offered:
-        if o.name not in ("oep.fixture.logic", "oep.fixture.analog"):
+        if o.name != "oep.fixture.logic":
             return o
-        analog = o.name == "oep.fixture.analog"
-        d = _ANAD if analog else _CAPD
-        more = (_FMT["named"],) + (() if analog else (_FMT["state_timed"],))
-        pins = sorted({ch for t in o.tlvs if t[0] == catalog.ROLE_CHANNELS
-                       for ch in catalog.bitmap_to_channels(struct.unpack_from("<H", t, 4)[0], t[6:])})
-        kept = tuple(catalog.tlv(d["formats"], t[3:] + bytes(more)) if t[0] == d["formats"] else t for t in o.tlvs)
-        return _with(o, kept + capture_option_decls(analog, pins))
+        kept = tuple(catalog.tlv(_CAPD["formats"], t[3:] + bytes([_FMT["state_timed"]])) if t[0] == _CAPD["formats"]
+                     else t for t in o.tlvs)
+        return _with(o, kept + capture_option_decls(False))
 
     def group(o: Offered, pins: list[int]) -> Offered:
         """Its trigger source with every condition, UART, trigger_out, and the trig_in / trig_out roles (§4.4)."""

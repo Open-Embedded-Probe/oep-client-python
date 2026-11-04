@@ -25,13 +25,13 @@ encoderは文脈の方針に従ってbit7を付け、長さu16 little-endian、�
 | swio attach | reset | — | debug §3 |
 | swd scan | max_speed、targetsel | — | core §2.3、debug §1、§5 |
 | swd attach | targetsel、reset | — | debug §3、§5 |
-| logic configure / query（2文脈） | format、format_name、data_path、carriage、trigger_opts、threshold、clock、glitch_filter | mode、rate、samples、segments、trigger、pretrigger、block_max、overflow | capture §3.3、§3.8 |
-| analog configure / query（2文脈） | format、format_name、data_path、carriage、trigger_opts、coupling、offset、bandwidth、resolution、oversample | 上記の基本設定、block_max、overflow、frontend | capture §3.3、§3.8 |
+| logic configure / query（2文脈） | format、carriage、trigger_opts、clock、glitch_filter | mode、rate、samples、segments、trigger、pretrigger、block_max | capture §3.3、§3.8 |
+| analog configure / query（2文脈） | format、carriage、trigger_opts | 上記の基本設定、block_max、frontend | capture §3.3、§3.8 |
 | plan_apply | role_assignment | — | core §2.3、plan §2.1 |
 | uart configure | format | — | fixture §2、Host方針 |
 
 capture §3.3 の表の TLV は、対象の probe がどれも実装するので critical を付けない。表が「critical で送る」とするもの（format、
-format_name、data_path、carriage、trigger_opts）と、§3.8 の前段の TLV（どれも任意）は critical で送る。format と data_path は 0 では
+carriage、trigger_opts）と、§3.8 の TLV（グリッチフィルタと外部クロック、どれも任意）は critical で送る。format は 0 では
 critical が要らないが、この方針は値によらず付ける（表の TLV は付いていても probe が同じに扱う、core §2.3）。
 
 core §2.3は「scanのmax_speed」「attachのreset」をcriticalにする例として挙げる。

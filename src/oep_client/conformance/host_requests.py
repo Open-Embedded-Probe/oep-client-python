@@ -14,9 +14,9 @@ REVIEWED = {
     'interfaces/oep-if-fixture.ja.md': '53c81882c1789f4e5dd055977066ebd1dedc6c282d772218e85a402a1ba65d39',
     'docs/oep-core.ja.md': 'fc2f5e9e239a45b46b8b1e52431070574b115f0771d958291e5f3618637d608e',
     'interfaces/oep-if-debug.ja.md': '58843357aae5afd31082b068c76c754cbd047446fe4b0aa77b5c22cbedf1f3f8',
-    'interfaces/oep-if-capture.ja.md': '4f340bc846e95268da1728ad1673bc9a9c539fe302325fe3af86a60ffc42f7ff',
+    'interfaces/oep-if-capture.ja.md': '9bab21bc5e8cdf069448dea059af459b6d7a46757554ca7aee4196b04e1dccd6',
 }
-REVIEWED_REGISTRY_SHA256='278114efc9235b4c6026cd66e11ed558e0ac5afd789011973f6293ae1abffb9c'
+REVIEWED_REGISTRY_SHA256='2781599356499997907127362dd92c02453f71ffd9c7767ad68b1969359ccbd9'
 
 
 def reviewed_identity(spec):
@@ -77,24 +77,19 @@ def policy():
                      ('oep.wire.' + wire, 'attach', b'\x00' + pins + b'\x40\x42\x0f\x00', attach)])
     for name in ('logic', 'analog'):
         # capture §3.3: the table's TLVs are implemented by every target probe, so they go without the critical bit -
-        # but for those the table says to send critical (format, format_name, data_path, carriage, trigger_opts);
-        # §3.8: every front-end TLV is optional and critical.
+        # but for those the table says to send critical (format, carriage, trigger_opts);
+        # §3.8: the glitch filter and the external clock are optional and critical.
         tags = [('mode', b'\x02', False), ('rate', b'\xe8\x03\x00\x00', False),
                 ('samples', b'\x10\x00\x00\x00', False), ('segments', b'\x02\x00\x00\x00', False),
                 ('trigger', b'\x02\x00\x00\x00\x00\x00' if name == 'logic' else b'\x03\x01\xb8\x0b\x00\x00', False),
                 ('pretrigger', b'\x02\x00\x00\x00', False),
                 ('format', b'\x01', True), ('carriage', b'\x00\x01\x01\x00\x00\x00', True),
-                ('format_name', b'io.example.form', True), ('data_path', b'\x01\x00\x00', True),
                 ('trigger_opts', b'\x01\x01\x00\x00\x00\x00\x00', True),
-                ('block_max', b'\x00\x01\x00\x00', False), ('overflow', b'\x01', False)]
+                ('block_max', b'\x00\x01\x00\x00', False)]
         if name == 'logic':
-            tags.extend([('threshold', b'\x00\xdc\x05\x00\x00\x00\x00\x00\x00', True),
-                         ('clock', b'\x00\x00\xff\x00', True), ('glitch_filter', b'\x00\x64\x00\x00\x00', True)])
+            tags.extend([('clock', b'\x00\x00\xff\x00', True), ('glitch_filter', b'\x00\x64\x00\x00\x00', True)])
         else:
-            tags.extend([('frontend', b'\x01\x00', False), ('frontend', b'\x03\x01', False),
-                         ('coupling', b'\x01\x00', True), ('offset', b'\x01\x00\x00\x00\x00', True),
-                         ('bandwidth', b'\x01\x40\x42\x0f\x00', True), ('resolution', b'\x0c', True),
-                         ('oversample', b'\x04\x00', True)])
+            tags.extend([('frontend', b'\x01\x00', False), ('frontend', b'\x03\x01', False)])
         for op in ('configure', 'query'):
             rows.append(('oep.fixture.' + name, op, b'', list(tags)))
     # Requested assignments cannot be silently ignored.

@@ -707,7 +707,6 @@ class Endpoint(FixtureDrive):
             self.targets[(fn, first)] = VirtualTarget()
         self.target = next(iter(self.targets.values()), VirtualTarget())
         self.inner = {o.fn: dict(o.inner) for o in probe.offered}   # what each fn keeps to itself (not declared)
-        self.external_paths: dict[int, virtual_bench_capture.ExternalPath] = {}   # capture §3.9, by kind (TEST HOOK: read)
         self.captures: dict[int, virtual_bench_capture.VirtualCapture] = {
             fn: self._new_capture(fn) for fn, name in self.names.items()
             if name in ("oep.fixture.logic", "oep.fixture.analog")}
@@ -931,16 +930,7 @@ class Endpoint(FixtureDrive):
 
     def _new_capture(self, fn: int) -> virtual_bench_capture.VirtualCapture:
         cap = self._capture_from(self.decl[fn], self.inner[fn])
-        cap.fn, cap.paths = fn, self.external_paths
         return cap
-
-    def external_disconnect(self, kind: int) -> None:
-        """TEST HOOK: the host's end of external data path `kind` (capture §3.9) has gone: what it carries stops."""
-        path = self.external_paths.setdefault(kind, virtual_bench_capture.ExternalPath(kind))
-        path.connected = False
-        for fn, cap in self.captures.items():
-            if cap.path is not None and cap.path[0] == kind:
-                self._events(fn, cap.disconnected())
 
     @staticmethod
     def _capture_from(decl: list[tuple[int, bytes]], inner: dict) -> virtual_bench_capture.VirtualCapture:
@@ -963,7 +953,7 @@ class Endpoint(FixtureDrive):
             elif tag == d["trigger"]:                              # types(u32) max_pretrigger(u32) opts(u8)
                 types = struct.unpack_from("<I", v)[0]
                 max_pre, opts = struct.unpack_from("<IB", v, 4)
-            elif tag == d["trigger_records"]:                      # u16 (§3.10)
+            elif tag == d["trigger_records"]:                      # u16 (§3.9)
                 records = struct.unpack("<H", v)[0]
             elif tag == d["formats"]:                              # u8 list (§3.5)
                 formats = set(v)
@@ -1128,7 +1118,7 @@ class Endpoint(FixtureDrive):
                 cap.release(generation, serial, self.uptime_ms())
                 return m.COMPLETED, m.SUCCESS, b""
             if op == O["triggers"]:
-                generation, first = t.take("II")                   # generation from_serial (§3.10)
+                generation, first = t.take("II")                   # generation from_serial (§3.9)
                 t.tail()
                 return m.COMPLETED, m.SUCCESS, cap.trigger_list(generation, first, budget)
             if op == virtual_bench_capture.ANA.op["calibration"] and cap.analog:

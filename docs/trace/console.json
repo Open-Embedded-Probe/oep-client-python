@@ -282,7 +282,7 @@
    "note": "only a fn with marks records marks (none: no marks / mark ops, from 3 unsupported); dmseq sync and de-duplication always"
   },
   "console:2:6": {
-   "text": "| 0x40 | reset | 1 ndmreset。契機は線とデバッグ §4",
+   "text": "| 0x40 | reset | 1 ndmreset。契機は debug §4",
    "verify": [
     "tests/test_trace_console.py::test_a_reset_op_marks_reset_detail_1_once_and_no_restart_for_it",
     "tests/test_conformance_reset.py::test_optional_reset_contracts_pass"

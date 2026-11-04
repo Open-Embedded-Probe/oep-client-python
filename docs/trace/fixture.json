@@ -1,7 +1,7 @@
 {
  "spec_commit": "320c626",
  "units": {
-  "fixture:pre:1": {
+  "fixture:0:1": {
    "text": "| `oep.fixture.gpio` | 1 | ピンを駆動し、読む | 1",
    "verify": [
     "tests/test_trace_fixture.py::test_names_revisions_and_plan_roles[oep.fixture.gpio-roles0-4]"
@@ -9,7 +9,7 @@
    "mutants": [],
    "note": "revision 1, the role numbers of the table are taken by plan_apply and the next one is unsupported (0x90)"
   },
-  "fixture:pre:2": {
+  "fixture:0:2": {
    "text": "| `oep.fixture.uart` | 1 | UART の送受信 | 1",
    "verify": [
     "tests/test_trace_fixture.py::test_names_revisions_and_plan_roles[oep.fixture.uart-roles1-5]"
@@ -17,7 +17,7 @@
    "mutants": [],
    "note": "revision 1, the role numbers of the table are taken by plan_apply and the next one is unsupported (0x90)"
   },
-  "fixture:pre:3": {
+  "fixture:0:3": {
    "text": "| `oep.fixture.i2c-target` | 1 | I2C の t",
    "verify": [
     "tests/test_trace_fixture.py::test_names_revisions_and_plan_roles[oep.fixture.i2c-target-roles2-8]"
@@ -25,7 +25,7 @@
    "mutants": [],
    "note": "revision 1, the role numbers of the table are taken by plan_apply and the next one is unsupported (0x90)"
   },
-  "fixture:pre:4": {
+  "fixture:0:4": {
    "text": "| `oep.fixture.spi-target` | 1 | SPI の t",
    "verify": [
     "tests/test_trace_fixture.py::test_names_revisions_and_plan_roles[oep.fixture.spi-target-roles3-9]"
@@ -33,7 +33,7 @@
    "mutants": [],
    "note": "revision 1, the role numbers of the table are taken by plan_apply and the next one is unsupported (0x90)"
   },
-  "fixture:pre:5": {
+  "fixture:0:5": {
    "text": "| `oep.fixture.i2c-controller` | 1 | I2C",
    "verify": [
     "tests/test_trace_fixture_drive.py::test_names_revisions_and_roles[oep.fixture.i2c-controller-roles0]",
@@ -45,7 +45,7 @@
    "mutants": [],
    "note": ""
   },
-  "fixture:pre:6": {
+  "fixture:0:6": {
    "text": "| `oep.fixture.spi-controller` | 1 | SPI",
    "verify": [
     "tests/test_trace_fixture_drive.py::test_names_revisions_and_roles[oep.fixture.i2c-controller-roles0]",
@@ -57,7 +57,7 @@
    "mutants": [],
    "note": ""
   },
-  "fixture:pre:7": {
+  "fixture:0:7": {
    "text": "| `oep.fixture.pwm` | 1 | 周波数とデューティを指定した",
    "verify": [
     "tests/test_trace_fixture_drive.py::test_names_revisions_and_roles[oep.fixture.i2c-controller-roles0]",
@@ -69,7 +69,7 @@
    "mutants": [],
    "note": ""
   },
-  "fixture:pre:8": {
+  "fixture:0:8": {
    "text": "| `oep.fixture.counter` | 1 | 決めた時間のうちにエ",
    "verify": [
     "tests/test_trace_fixture_drive.py::test_names_revisions_and_roles[oep.fixture.i2c-controller-roles0]",
@@ -81,7 +81,7 @@
    "mutants": [],
    "note": ""
   },
-  "fixture:pre:9": {
+  "fixture:0:9": {
    "text": "| `oep.fixture.dac` | 1 | アナログの値を出す（DUT ",
    "verify": [
     "tests/test_trace_fixture_drive.py::test_names_revisions_and_roles[oep.fixture.i2c-controller-roles0]",

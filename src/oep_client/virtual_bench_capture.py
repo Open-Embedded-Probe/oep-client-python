@@ -31,28 +31,20 @@ triggers only) and has a generation of its own, by the same rules (§4.1), in it
 events. Segment serials wrap (core §2.6); segments pages by common §1.3.
 
 Data formats (§1): 0, 1 (logic blocks), 2 (analog blocks), 4 (test counter), and where declared 3 (timed states on an
-external clock, ticks of TIMEBASE_HZ) and named formats (format 0xFF: its one name is format 4's bytes). The optional
-features of §3.8 and §3.9 exist only where the describe declares them (virtual_bench.with_capture_options):
+external clock, ticks of TIMEBASE_HZ). The optional features of §3.8 exist only where the describe declares them
+(virtual_bench.with_capture_options):
 
-- threshold, bandwidth: the values in use are answered; the virtual waveforms are levels and ADC values, not voltages,
-  so they do not change. The glitch filter does: a level counts once it has held the filter's samples, for the data and
-  the trigger alike (one group holds every channel).
+- glitch filter: a level counts once it has held the filter's samples, for the data and the trigger alike (group 0
+  holds every channel).
 - external clock: the clock's role is no sample channel; the samples are a counter of its edges (rising at (n+1)/f,
   falling at (n+1/2)/f, both every 1/(2f) from start; f the configured rate, or the TEST HOOK `clock_hz`); a qualifier
   keeps the edges its channel's level allows.
-- coupling: AC leaves the waves as they are (they have no DC); GND gives 0 V. offset moves the scale's zero (the
-  waveform is defined in ADC values). resolution and oversample set b: the 12-bit waves shifted to the bits, and
-  averaging 4^k to 1 adds k bits.
-- external paths (TCP, UDP): the mark, then the bytes as they are taken (mux 1: in chunks of the fn; UDP: packets with
-  their header, the mark a packet of its own at position 0); no data notifications, read refused; a path that goes
-  (TEST HOOK Endpoint.external_disconnect) stops its tracks in error.
 """
 
 from __future__ import annotations
 
 import bisect
 import math
-import re
 import struct
 from dataclasses import dataclass, field
 from fractions import Fraction
@@ -77,7 +69,7 @@ WRONG_STATE = m.tlv(CAUSE, bytes([reg.CORE.enum["unavailable_cause"]["wrong_stat
 LIMIT = m.tlv(CAUSE, bytes([reg.CORE.enum["unavailable_cause"]["limit"]]))
 DATA_GENERATION, SEGMENT_INFO = CAP.tlv["data"]["generation"], CAP.tlv["data"]["segment_info"]
 LAST_GENERATION = 0xFFFFFFFF
-# the configure TLVs every track handles (§3.3); the optional ones (format_name, §3.8, §3.9) only where its describe
+# the configure TLVs every track handles (§3.3); the optional ones (§3.8) only where its describe
 # declares them (VirtualCapture.option_tags) - elsewhere unknown: ignored plain, refused critical (core §2.3)
 IMPLEMENTED = tuple(TLV[k] for k in ("mode", "rate", "samples", "segments", "trigger", "pretrigger", "trigger_opts",
                                      "format", "carriage", "block_max"))
@@ -99,10 +91,7 @@ BLOCKS_A_TICK = 1 << 14                # streaming: the most samples one tick ma
 
 TIMEBASE_HZ = 100_000_000             # its own: format 3's delta tick (the answer's timebase, §3.8)
 STATE_CHUNK = 256                      # its own: format 3 streams in pieces of this many samples
-UDP_DATA = 1400 - 16                   # its own: a UDP packet's data after the 16-byte header (§3.9)
 ESCAPE = 0xFFFFFFFF                    # format 3: a delta that only moves time on (§3.8)
-NAME = re.compile(r"[a-z0-9.-]{1,64}")  # a named format's name (§1)
-GND = 2                                # coupling kind GND (§3.8's table: 0 DC, 1 AC, 2 GND; no registry enum)
 NO_ROLE = 0xFF                         # clock's qualifier_role: none (§3.8)
 LOGIC_D, ANALOG_D = CAP.tlv["describe"], ANA.tlv["describe"]
 LOGIC_T, ANALOG_T = CAP.tlv["configure"], ANA.tlv["configure"]
@@ -111,67 +100,29 @@ LOGIC_A = CAP.tlv["configure_answer"]
 
 @dataclass
 class Options:
-    """The optional capture features a describe declares (§1 named formats, §3.8 front end and external clock, §3.9
-    external data paths); a probe without a declaration does not have the feature, and its configure TLV is unknown
-    to it (ignored plain, refused critical, core §2.3)."""
-    names: tuple[str, ...] = ()
-    thresholds: dict[int, tuple] = field(default_factory=dict)    # group -> (min, max, step, hyst_max, hyst_step, presets)
+    """The optional capture features a describe declares (§3.8 glitch filter and external clock); a probe without a
+    declaration does not have the feature, and its configure TLV is unknown to it (ignored plain, refused critical,
+    core §2.3)."""
     glitch: dict[int, tuple[int, int, int]] = field(default_factory=dict)   # group -> (min_ns, max_ns, step_ns)
     clock: tuple[int, int, int] | None = None                    # external_clock: max_hz, edges, qualifier
-    coupling: dict[int, int] = field(default_factory=dict)       # frontend -> kinds
-    offset: dict[int, tuple[int, int, int]] = field(default_factory=dict)   # frontend -> (min_mv, max_mv, step_mv)
-    bandwidth: dict[int, tuple[int, ...]] = field(default_factory=dict)     # frontend -> the limits (0 none)
-    resolution: dict[int, int] = field(default_factory=dict)     # bits -> max_rate_hz
-    oversample: tuple[int, ...] = ()
-    external: dict[int, tuple[int, int, bytes]] = field(default_factory=dict)   # kind -> (muxes, capacity_kbps, value)
 
 
 def options_of(decl: list[tuple[int, bytes]], analog: bool) -> Options:
     """The optional features in a capture fn's describe TLVs."""
     d, o = ANALOG_D if analog else LOGIC_D, Options()
     for tag, v in decl:
-        if tag == d.get("format_names"):
-            o.names += (v.decode("ascii"),)
-        elif tag == d.get("external_data"):
-            kind, muxes, kbps = struct.unpack_from("<BBI", v)
-            o.external[kind] = (muxes, kbps, v[6:])
-        elif not analog and tag == d["threshold"]:
-            group, lo, hi, step, hmax, hstep = struct.unpack_from("<BiiIII", v)
-            n = v[21]
-            o.thresholds[group] = (lo, hi, step, hmax, hstep, struct.unpack_from(f"<{n}i", v, 22))
-        elif not analog and tag == d["glitch_filter"]:
+        if not analog and tag == d["glitch_filter"]:
             group, lo, hi, step = struct.unpack("<BIII", v)
             o.glitch[group] = (lo, hi, step)
         elif not analog and tag == d["external_clock"]:
             o.clock = struct.unpack("<IBB", v)
-        elif analog and tag == d["coupling"]:
-            o.coupling[v[0]] = v[1]
-        elif analog and tag == d["offset"]:
-            fe, lo, hi, step = struct.unpack("<BiiI", v)
-            o.offset[fe] = (lo, hi, step)
-        elif analog and tag == d["bandwidth"]:
-            o.bandwidth[v[0]] = struct.unpack_from(f"<{v[1]}I", v, 2)
-        elif analog and tag == d["resolution"]:
-            o.resolution = {v[1 + 5 * k]: struct.unpack_from("<I", v, 2 + 5 * k)[0] for k in range(v[0])}
-        elif analog and tag == d["oversample"]:
-            o.oversample = struct.unpack_from(f"<{v[0]}H", v, 1)
     return o
 
 
-def nearest_step(want: int, lo: int, hi: int, step: int, presets=()) -> int:
-    """The value nearest `want` among lo + k step (lo .. hi; none when step is 0) and the presets (§3.8)."""
-    candidates = list(presets)
-    if step:
-        k = max(0, min((hi - lo) // step, round((want - lo) / step)))
-        candidates.append(lo + k * step)
-    return min(candidates, key=lambda v: (abs(v - want), v))
-
-
-class ExternalPath:
-    """One external data path (§3.9) as the virtual bench gives it out: TCP's bytes as they arrive, or UDP's packets;
-    `connected` False once the host's end has gone (TEST HOOK: Endpoint.external_disconnect)."""
-    def __init__(self, kind: int):
-        self.kind, self.stream, self.packets, self.connected = kind, bytearray(), [], True
+def nearest_step(want: int, lo: int, hi: int, step: int) -> int:
+    """The value nearest `want` among lo + k step (lo .. hi; §3.8)."""
+    k = max(0, min((hi - lo) // step, round((want - lo) / step))) if step else 0
+    return lo + k * step
 
 
 class Reject(Exception):
@@ -367,7 +318,7 @@ class VirtualCapture:
     skews: tuple[int, ...] | None = None   # its own: analog skew_ns by the order's place (None: the channels in turn)
     diagnostics: bool = True           # analog: frontend_used and reference in the configure answer (optional, §3.3)
     opts: int = 0                      # describe trigger: opts (bit 0 arm 0, bit 1 rearm 1, bit 2 when 1, bit 3 hysteresis)
-    records_max: int = 0               # describe trigger_records: the trigger records it keeps (§3.10)
+    records_max: int = 0               # describe trigger_records: the trigger records it keeps (§3.9)
     arm: int = 1                       # trigger_opts (§3.3): arm 1 looks once the pretrigger is there
     rearm: int = 0                     # 1: every segment / event its own trigger (§2.1)
     when: int = 0                      # level: 0 false -> true, 1 true at arming too
@@ -389,38 +340,25 @@ class VirtualCapture:
     logic_roles: tuple[int, ...] = ()   # logic: the planned roles, channel k the k-th
     waves: dict = field(default_factory=dict)   # logic: role -> wave(i, rate) instead of the counter's bit (logic_wave)
     options: Options = field(default_factory=Options)   # the optional features its describe declares
-    fn: int = 0                                         # its fn (the external path's mark and chunks name it)
-    format_name: str = ""                               # format 0xFF: the name in use
-    thresholds: dict[int, tuple[int, int]] = field(default_factory=dict)   # group -> (mv, hysteresis_mv) in use
     glitch_ns: dict[int, int] = field(default_factory=dict)                # group -> ns in use
     clock: tuple[int, int, int, int] | None = None     # external clock: (role, edge, qualifier channel or None, level)
     clock_hz: Fraction | None = None                    # TEST HOOK: the clock that comes (None: the rate configured)
     edge_rate: Fraction = Fraction(0)                   # external clock: the edges a second it samples on
     phase_ns: Fraction = Fraction(0)                    # external clock: from start to edge 0
-    coupling: dict[int, int] = field(default_factory=dict)    # role -> kind in use (absent: DC)
-    offset_mv: dict[int, int] = field(default_factory=dict)   # role -> mV in use
-    bandwidth: dict[int, int] = field(default_factory=dict)   # role -> hz in use
-    bits: int = BITS                                    # analog: the converter's bits (resolution)
-    ratio: int = 1                                      # analog: hardware averaging (oversample)
-    path: tuple[int, int] | None = None                 # data_path 1: (kind, mux)
-    paths: dict[int, ExternalPath] = field(default_factory=dict)   # the probe's external paths, by kind (the endpoint's)
-    ext_sent: int = 0                                   # data_path 1: the stream bytes given to the path
 
     @property
     def analog(self) -> bool:
         return bool(self.frontends)
 
     def option_tags(self) -> set[int]:
-        """The configure TLVs of the optional features its describe declares (§3.8, §3.9, named formats)."""
+        """The configure TLVs of the optional features its describe declares (§3.8)."""
         T, o = (ANALOG_T if self.analog else LOGIC_T), self.options
-        have = {"format_name": o.names, "data_path": o.external, "overflow": o.external, "threshold": o.thresholds,
-                "glitch_filter": o.glitch, "clock": o.clock, "coupling": o.coupling, "offset": o.offset,
-                "bandwidth": o.bandwidth, "resolution": o.resolution, "oversample": o.oversample}
+        have = {"glitch_filter": o.glitch, "clock": o.clock}
         return {T[k] for k, v in have.items() if v and k in T}
 
     def repeating(self) -> set[int]:
         T = ANALOG_T if self.analog else LOGIC_T
-        return {T[k] for k in ("threshold", "glitch_filter", "coupling", "offset", "bandwidth") if k in T}
+        return {T[k] for k in ("glitch_filter",) if k in T}
 
     @property
     def start_offset_ns(self) -> int:
@@ -447,18 +385,14 @@ class VirtualCapture:
                           (TLV["trigger"], 6), (TLV["pretrigger"], 4), (TLV["trigger_opts"], 7)):
             t.fixed(got, tag, size)
         T, o = (ANALOG_T if self.analog else LOGIC_T), self.options
-        # the optional TLVs it has (§3.8, §3.9): the same form rules; a repeating one (per group / role) twice for one
-        # group / role is malformed, as the frontend (§3.3)
-        for which, size in (("threshold", 9), ("glitch_filter", 5), ("clock", 4), ("coupling", 2), ("offset", 5),
-                           ("bandwidth", 5), ("resolution", 1), ("oversample", 2), ("data_path", 3), ("overflow", 1)):
+        # the optional TLVs it has (§3.8): the same form rules; the glitch filter twice for one group is malformed,
+        # as the frontend (§3.3)
+        for which, size in (("glitch_filter", 5), ("clock", 4)):
             if which in T:
                 t.fixed(got, T[which], size)
-        for which in ("threshold", "glitch_filter", "coupling", "offset", "bandwidth"):
-            keys = [v[0] for _, v in self._copies(t, T.get(which))]
-            if len(set(keys)) != len(keys):
-                raise Reject(m.MALFORMED)
-        if any(not NAME.fullmatch(v.decode("latin-1")) for _, v in self._copies(t, T["format_name"])):
-            raise Reject(m.MALFORMED)                              # 1-64 bytes of a-z 0-9 - . (§1)
+        keys = [v[0] for _, v in self._copies(t, T.get("glitch_filter"))]
+        if len(set(keys)) != len(keys):
+            raise Reject(m.MALFORMED)
         if TLV["rate"] not in got or TLV["mode"] not in got:
             raise Reject(m.MALFORMED)                              # mode and rate are required (§3.3)
         mode = got[TLV["mode"]][0]
@@ -499,17 +433,7 @@ class VirtualCapture:
         lo_hz, hi_hz = (1, o.clock[0]) if clock else (self.min_hz, self.max_hz)
         if not lo_hz <= asked <= hi_hz:
             raise t.refuse(TLV["rate"])                            # out of the declared range (§3.3)
-        bits, ratio = BITS, 1                                      # analog resolution and oversample (§3.8)
-        if self.analog and T["resolution"] in got:
-            bits = got[T["resolution"]][0]
-            if bits not in o.resolution:
-                raise t.refuse(T["resolution"])
-        if self.analog and T["oversample"] in got:
-            ratio = struct.unpack("<H", got[T["oversample"]])[0]
-            if ratio != 1 and ratio not in o.oversample:
-                raise t.refuse(T["oversample"])
-        b = bits + (ratio.bit_length() - 1) // 2                   # averaging 4 to 1 adds a bit (its own)
-        full = (1 << b) - 1
+        full = (1 << BITS) - 1
         if trigger is not None and trigger[0] == TRIGGER["linked"] and self.linked:
             trigger = (TRIGGER["linked"], 0, 0)                    # role and value not used (§3.3)
         elif trigger is not None:
@@ -563,41 +487,17 @@ class VirtualCapture:
                 or len({c[0] for c in carriage}) != len(carriage)
                 or carriage and fmt not in BLOCK_FORMATS):
             raise Reject(m.MALFORMED)
-        name = got.get(T["format_name"])
-        if fmt == FORMAT["named"] and name is None:
-            raise Reject(m.MALFORMED)                              # a named format is its name (§1)
-        if name is not None and fmt != FORMAT["named"]:
-            raise t.refuse(T["format_name"])                       # format 0xFF's only (§3.3)
         if fmt != FORMAT["packed"] and (fmt not in self.formats or fmt == FORMAT["logic_blocks"] and self.analog
                                         or fmt == FORMAT["analog_blocks"] and not self.analog
                                         or fmt == FORMAT["state_timed"] and (self.analog or clock is None)):
             raise t.refuse(TLV["format"])                          # not declared, or not this track's kind (format 3:
                                                                    # the external clock's, §3.8)
-        if fmt == FORMAT["named"] and name.decode("ascii") not in o.names:
-            raise t.refuse(T["format_name"])
         for role, kind, d, raw_tag in carriage:
             known = (kind & ~self.carriage_kinds == 0) if self.analog else bool(self.carriage_kinds >> kind & 1)
             if not known or d > 1 and not self.carriage_d[0] <= d <= self.carriage_d[1]:
                 raise Reject(m.UNSUPPORTED, bytes([raw_tag]))
         block_max = struct.unpack("<I", got[TLV["block_max"]])[0] if TLV["block_max"] in got else BLOCK_TOP
-        path, overflow = None, 0                                   # §3.9: path mux kind; overflow with path 1 only
-        if T["data_path"] in got:
-            way, mux, kind = got[T["data_path"]]
-            if way > 1 or way and (kind not in o.external or mux > 1 or not o.external[kind][0] >> mux & 1):
-                raise t.refuse(T["data_path"])
-            path = (kind, mux) if way else None
-        if T["overflow"] in got:
-            overflow = got[T["overflow"]][0]
-            if path is None or overflow > 1:
-                raise t.refuse(T["overflow"])
-        thresholds, glitch = {}, {}
-        for raw, v in self._copies(t, T.get("threshold")):        # group mv hysteresis_mv (§3.8)
-            group, mv, hyst = struct.unpack("<BiI", v)
-            d = o.thresholds.get(group)
-            if d is None or not d[0] <= mv <= d[1] or hyst > d[3]:
-                raise Reject(m.UNSUPPORTED, bytes([raw]))
-            thresholds[group] = (nearest_step(mv, d[0], d[1], d[2], d[5]),
-                                 nearest_step(hyst, 0, d[3], d[4], () if d[4] else (hyst,)) if hyst else 0)
+        glitch = {}
         for raw, v in self._copies(t, T.get("glitch_filter")):    # group ns (0: none)
             group, ns = struct.unpack("<BI", v)
             d = o.glitch.get(group)
@@ -619,8 +519,7 @@ class VirtualCapture:
             raise wrong_state()                                    # a role not in the fn's plan: cause 6 (§3.3)
         if trigger is not None and trigger[0] != TRIGGER["linked"] and not self.analog:   # logic channel k: the k-th
             trigger = (trigger[0], role_ids.index(trigger[1]), trigger[2])
-        adc = min(self.max_hz, o.resolution.get(bits, self.max_hz))   # its conversions: shared by the channels, and the
-        top = Fraction(adc, channels * ratio) if self.analog else self.max_hz   # averaging takes `ratio` of them a value
+        top = Fraction(self.max_hz, channels) if self.analog else self.max_hz   # its conversions: shared by the channels
         if clock is not None:
             rate = Fraction(asked)                                 # the clock decides; kept as asked (§3.8)
         elif self.exact:
@@ -653,7 +552,7 @@ class VirtualCapture:
                 if role not in role_ids or fe not in self.frontends:
                     raise Reject(m.UNSUPPORTED, bytes([tag]))      # the frontend's tag as received (core §2.3)
                 chosen[role] = fe
-            width = (2 if b <= 16 else 4) * channels
+            width = 2 * channels
         else:
             width = min((w for w in self.widths if w >= channels), default=None)
             if width is None:
@@ -686,59 +585,15 @@ class VirtualCapture:
                 raise t.refuse(TLV["block_max"] if block_max < unit else carriage[0][3] & 0x7F)
         if pre > self.max_pretrigger or (mode != MODE["streaming"] and pre >= samples):
             raise t.refuse(TLV["pretrigger"])                      # past max_pretrigger, or not below samples (§3.3)
-        coupling, offset, bandwidth = {}, {}, {}
-        for which, into in (("coupling", coupling), ("offset", offset), ("bandwidth", bandwidth)):
-            for raw, v in self._copies(t, T.get(which)):            # role and its value, by the role's frontend (§3.8)
-                role = v[0]
-                if role not in role_ids:
-                    raise wrong_state()                            # a role not in the fn's plan: cause 6
-                fe = chosen[role]
-                if which == "coupling":
-                    if v[1] > GND or not o.coupling.get(fe, 0) >> v[1] & 1:
-                        raise Reject(m.UNSUPPORTED, bytes([raw]))
-                    into[role] = v[1]
-                elif which == "offset":
-                    mv, d = struct.unpack_from("<i", v, 1)[0], o.offset.get(fe)
-                    if d is None or not d[0] <= mv <= d[1]:
-                        raise Reject(m.UNSUPPORTED, bytes([raw]))
-                    into[role] = nearest_step(mv, *d)
-                else:
-                    hz, limits = struct.unpack_from("<I", v, 1)[0], o.bandwidth.get(fe, ())
-                    if not limits or not hz and 0 not in limits:
-                        raise Reject(m.UNSUPPORTED, bytes([raw]))
-                    wide = 1 << 40                                 # 0: no limit, past every other
-                    into[role] = min(limits, key=lambda c: abs((c or wide) - (hz or wide)))
-        if path is not None and not overflow:                      # overflow 0: the worst bandwidth fits (§3.9)
-            if self._worst_bytes_s(fmt, rate, width, role_ids, carried, block, clock, b) > o.external[path[0]][1] * 1000:
-                raise t.refuse(T["data_path"])
         return {"mode": mode, "rate": rate, "samples": samples, "segments": segs, "trigger": trigger,
                 "pretrigger": pre, "width": width, "channels": channels, "roles": role_ids, "frontends": chosen,
                 "opts": (arm, rearm, when, hysteresis), "format": fmt, "carriages": carried, "block": block,
-                "name": name.decode("ascii") if name is not None else "", "thresholds": thresholds, "glitch": glitch,
-                "clock": clock, "coupling": coupling, "offset": offset, "bandwidth": bandwidth, "bits": bits,
-                "ratio": ratio, "b": b, "path": path,
-                "asked": {k for k in ("resolution", "oversample") if T.get(k) in got}}
+                "glitch": glitch, "clock": clock}
 
     @staticmethod
     def _copies(t, tag: int | None) -> list[tuple[int, bytes]]:
         """Every copy of a known TLV (the tag as received, the value)."""
         return [] if tag is None else [(raw, v) for raw, v in t.repeated if raw & 0x7F == tag]
-
-    def _worst_bytes_s(self, fmt: int, rate: Fraction, width: int, roles: list[int], carried: dict, block: int,
-                       clock, b: int) -> Fraction:
-        """The most bytes a second this configuration gives out (§1.3 / §1.4 / §3.8's worst bandwidth)."""
-        if fmt == FORMAT["state_timed"]:
-            return rate * (2 if clock[1] == 2 else 1) * (4 + -(-width // 8))
-        if fmt == FORMAT["logic_blocks"]:
-            ev = [d for _, d in carried.values()]
-            raw = width
-            most = 2 * -(-len(ev) // 8) + 4 + block * raw // 8 + sum(min(block // 8, block // d * 4) for d in ev)
-            return rate * Fraction(most, block)
-        if fmt == FORMAT["analog_blocks"]:
-            per = sum(len(analog_part([0] * block, *carried.get(k, (ACARRIAGE["packed"], 1)), b))
-                      for k in roles)
-            return rate * Fraction(per, block)
-        return rate * width if self.analog else rate * Fraction(width, 8)
 
     def apply(self, s: dict) -> None:
         self.mode, self.rate, self.samples, self.segments_max = s["mode"], s["rate"], s["samples"], s["segments"]
@@ -748,9 +603,7 @@ class VirtualCapture:
         self.format, self.carriages, self.block = s["format"], s["carriages"], s["block"]
         if self.format == FORMAT["state_timed"]:
             self.block = STATE_CHUNK                               # its own pieces (no block in format 3)
-        self.format_name, self.thresholds, self.glitch_ns = s["name"], s["thresholds"], s["glitch"]
-        self.coupling, self.offset_mv, self.bandwidth = s["coupling"], s["offset"], s["bandwidth"]
-        self.bits, self.ratio, self.path, self.clock = s["bits"], s["ratio"], s["path"], s["clock"]
+        self.glitch_ns, self.clock = s["glitch"], s["clock"]
         if self.clock is not None:                                 # it samples on the clock's edges (§3.8)
             f = self.clock_hz or self.rate
             self.edge_rate = f * (2 if self.clock[1] == 2 else 1)
@@ -767,7 +620,7 @@ class VirtualCapture:
         num, den = (0, 1) if s["clock"] is not None else (s["rate"].numerator, s["rate"].denominator)
         out = tlv(ANSWER["actual_rate"], struct.pack("<II", num, den))   # 0 / 1: the clock's, no time (§3.8)
         if self.analog:
-            out += tlv(ANSWER["layout"], bytes([16 if s["b"] <= 16 else 32, 0, s["b"], c]) + bytes(s["roles"]))
+            out += tlv(ANSWER["layout"], bytes([16, 0, BITS, c]) + bytes(s["roles"]))
         elif s["format"] == FORMAT["logic_blocks"]:                # w = C = R, the raw channels (§1.3)
             out += tlv(ANSWER["layout"], bytes([s["width"], s["width"]]) + bytes(range(s["width"])))
         else:
@@ -776,24 +629,10 @@ class VirtualCapture:
             out += tlv(ANSWER["format"], bytes([s["format"]]))
         if s["format"] in BLOCK_FORMATS:
             out += tlv(ANSWER["block"], struct.pack("<I", s["block"]))
-        if s["format"] == FORMAT["named"]:
-            out += tlv(ANSWER["format_name"], s["name"].encode("ascii"))
         if s["format"] == FORMAT["state_timed"]:
             out += tlv(LOGIC_A["timebase"], struct.pack("<II", TIMEBASE_HZ, 1))
-        for group, (mv, hyst) in sorted(s["thresholds"].items()):  # the values in use (§3.8)
-            out += tlv(LOGIC_A["threshold_used"], struct.pack("<BiI", group, mv, hyst))
-        for group, ns in sorted(s["glitch"].items()):
+        for group, ns in sorted(s["glitch"].items()):             # the value in use (§3.8)
             out += tlv(LOGIC_A["glitch_used"], struct.pack("<BI", group, ns))
-        for role, kind in sorted(s["coupling"].items()):
-            out += tlv(ANSWER["coupling_used"], bytes([role, kind]))
-        for role, mv in sorted(s["offset"].items()):
-            out += tlv(ANSWER["offset_used"], struct.pack("<Bi", role, mv))
-        for role, hz in sorted(s["bandwidth"].items()):
-            out += tlv(ANSWER["bandwidth_used"], struct.pack("<BI", role, hz))
-        if "resolution" in s["asked"]:
-            out += tlv(ANSWER["resolution_used"], bytes([s["bits"]]))
-        if "oversample" in s["asked"]:
-            out += tlv(ANSWER["oversample_used"], struct.pack("<H", s["ratio"]))
         if s["mode"] == MODE["streaming"]:                         # what it holds unsent: the bench's own (§3.3)
             out += tlv(ANSWER["stream_buffer"], struct.pack("<I", STREAM_BUFFER_BYTES))
         if s["mode"] != MODE["streaming"]:                         # the rows of §3.3: actual_samples in modes 1 / 2,
@@ -802,9 +641,8 @@ class VirtualCapture:
             out += tlv(ANSWER["actual_segments"], struct.pack("<I", s["segments"]))
         if self.analog:                                            # scale for every role; skew 0 left out (§3.3)
             for ordinal, k in enumerate(s["roles"]):
-                scale = self._scale_nv(s["frontends"][k], s["b"])
-                zero = self._zero(s["offset"].get(k, 0), scale)    # the offset is in the 1st-order formula (§3.8)
-                out += tlv(ANSWER["scale"], struct.pack("<Bii", k, zero, scale))   # signed (§3.3)
+                scale = self._scale_nv(s["frontends"][k], BITS)
+                out += tlv(ANSWER["scale"], struct.pack("<Bii", k, 0, scale))   # signed (§3.3)
             for ordinal, k in enumerate(s["roles"]):
                 skew = self._skew(ordinal, s["rate"], c)
                 if skew:
@@ -818,11 +656,6 @@ class VirtualCapture:
     def _scale_nv(self, frontend: int, b: int) -> int:
         lo, hi = self.frontends[frontend]
         return (hi - lo) * 1_000_000 // ((1 << b) - 1)
-
-    @staticmethod
-    def _zero(offset_mv: int, scale_nv: int) -> int:
-        """The value of 0 V at the pin with `offset_mv` taken off the input: voltage = (value - zero) x scale_nv."""
-        return round(Fraction(-offset_mv * 1_000_000, scale_nv))
 
     def _skew(self, ordinal: int, rate: Fraction, channels: int) -> int:
         """skew_ns of the order's place `ordinal`: its own list, else one ADC taking the channels in turn."""
@@ -860,7 +693,7 @@ class VirtualCapture:
     def _pack(self, first: int, n: int, contiguous: bool = False) -> bytes:
         """The stream of samples first .. first + n - 1 of the track. Format 4: the byte at stream position k is
         k & 0xFF, as many as format 0's (§1); format 1: the blocks, `contiguous` with the sample before (§1.3)."""
-        if self.format in (FORMAT["test_counter"], FORMAT["named"]):   # its named format: format 4's bytes
+        if self.format == FORMAT["test_counter"]:
             at = self.base + len(self.data)
             return bytes((at + j) & 0xFF for j in range(self.bytes_of(n)))
         if self.format in PIECES:
@@ -919,22 +752,15 @@ class VirtualCapture:
             r = min(self.block, n - b)
             for k in self.analog_roles:
                 kind, d = self.carriages.get(k, (ACARRIAGE["packed"], 1))
-                out += analog_part([self.value(k, first + b + i) for i in range(r)], kind, d,
-                                   self.bits + (self.ratio.bit_length() - 1) // 2)
+                out += analog_part([self.value(k, first + b + i) for i in range(r)], kind, d, BITS)
         return bytes(out)
 
     def value(self, k: int, i: int) -> int:
-        """Channel k's value at sample i as it is given out: analog in the configured b bits (resolution, oversample,
-        GND coupling); logic after the glitch filter, on the external clock's edges counted."""
+        """Channel k's value at sample i as it is given out: analog its 12-bit value; logic after the glitch filter, on
+        the external clock's edges counted."""
         if self.analog:
-            b = self.bits + (self.ratio.bit_length() - 1) // 2
-            if self.coupling.get(k) == GND:                        # the input grounded: 0 V at the pin
-                zero = self._zero(self.offset_mv.get(k, 0), self._scale_nv(self.frontend_of[k], b))
-                return max(0, min((1 << b) - 1, zero))
-            v = analog_value(k, i)
-            v = v << (self.bits - BITS) if self.bits >= BITS else v >> (BITS - self.bits)
-            return v << (b - self.bits)                            # averaging the same value: the bits it adds
-        ns = max(self.glitch_ns.values(), default=0)               # the bench's one group holds every channel
+            return analog_value(k, i)
+        ns = max(self.glitch_ns.values(), default=0)               # group 0 holds every channel
         n = -(-ns * self.rate // 1_000_000_000) if ns else 0
         return self._filtered(k, i, int(n)) if n > 1 else self._level(k, i)
 
@@ -1063,11 +889,8 @@ class VirtualCapture:
         self.t0_ns = (group_ns if group_ns is not None else now_ms * 1_000_000) + self.start_offset_ns
         # The fixture measures the reference synchronously at start, before the
         # first channel sample's start offset. A measured value must not carry
-        # that future channel timestamp (capture §3.8).
+        # that future channel timestamp (capture §3.7).
         self.vrefint_ns = now_ms * 1_000_000 if self.analog else NO_TIME
-        self.ext_sent = 0
-        if self.path is not None:                                  # the generation's mark first (§3.9)
-            self._emit(b"OEPX" + struct.pack("<IHB5x", self.generation, self.fn, self.format), None)
         events = []
         if waiting:
             self.state = STATE["waiting"]
@@ -1085,7 +908,7 @@ class VirtualCapture:
         """start's refusals, before anything changes (§3.2, §0); `fn`: the track's, named in a group's refusal."""
         if self.state in (STATE["unconfigured"], STATE["waiting"], STATE["capturing"], STATE["paused"]):
             raise wrong_state(fn)
-        if self.mode == MODE["streaming"] and not subscribed and self.path is None:
+        if self.mode == MODE["streaming"] and not subscribed:
             raise wrong_state(fn)                                  # the data goes as notifications (§3.4)
         if self.trigger is not None and self.trigger[0] == TRIGGER["linked"] and self.group is None:
             raise wrong_state(fn)                                  # linked, not bound to a trigger source (§3.3)
@@ -1094,7 +917,7 @@ class VirtualCapture:
 
     def _triggered(self, sample: int, when: int, requested: int) -> list[bytes]:
         """Retain available prehistory; trigger_index is relative to this segment, not acquisition start. With rearm 1
-        a record too (§3.10); streaming's later triggers cut nothing (§2.1)."""
+        a record too (§3.9); streaming's later triggers cut nothing (§2.1)."""
         period = -(-1_000_000_000 // self.rate)
         uncertainty = max(self.uncertainty_ns, int(period))
         record = NONE
@@ -1138,7 +961,7 @@ class VirtualCapture:
         self.trigger_false_seen, self.trigger_ready = False, True
 
     def trigger_list(self, generation: int, first: int, budget: int) -> bytes:
-        """triggers (§3.10): more(u8) count(u8) count x record(serial sample(u64) trigger_ns(u64) uncertainty_ns),
+        """triggers (§3.9): more(u8) count(u8) count x record(serial sample(u64) trigger_ns(u64) uncertainty_ns),
         paged by serial as segments are (common §1.3)."""
         self.check_generation(generation)
         at = m.serial_page_start([r[0] for r in self.records], self.record_next, first)
@@ -1160,11 +983,6 @@ class VirtualCapture:
         return self._triggered(sample, when, requested)
 
     def tick(self, now_ms: int) -> list[bytes]:
-        events = self._tick(now_ms)
-        self._forward()
-        return events
-
-    def _tick(self, now_ms: int) -> list[bytes]:
         """Time passes: repeat's segments, streaming's bytes. -> events."""
         events = self.poll_trigger(now_ms) if self.group is None else []
         if self.state != STATE["capturing"]:
@@ -1268,9 +1086,7 @@ class VirtualCapture:
 
     def stop(self, now_ms: int | None = None) -> list[bytes]:
         """Stop acquisition, committing the samples already taken in a short segment."""
-        events = self._stop(now_ms)
-        self._forward()                                            # an external path gets the rest (§3.9)
-        return events
+        return self._stop(now_ms)
 
     def _stop(self, now_ms: int | None = None) -> list[bytes]:
         events = self.tick(now_ms) if now_ms is not None else []
@@ -1351,46 +1167,6 @@ class VirtualCapture:
             out += m.tlv(CAP.tlv["status_answer"]["error"], bytes([self.error]))   # why (§3.2)
         return out
 
-    def _forward(self) -> None:
-        """data_path 1 (§3.9): the bytes taken so far go out on the external path as they come; write_pos stays the
-        bytes given to it (the mark not counted)."""
-        if self.path is None:
-            return
-        end = self.base + len(self.data)
-        at = max(self.ext_sent, self.base)
-        if at < end:
-            self._emit(bytes(self.data[at - self.base:]), at)
-        self.ext_sent = end
-
-    def _emit(self, data: bytes, position: int | None) -> None:
-        """Bytes onto the external path: TCP as they are (mux 1: in chunks fn(u16) len(u16) data); UDP in packets of
-        position(u64) generation(u32) fn(u16) reserved(u16) and up to 1384 bytes. `position` None: the mark (UDP: a
-        packet of its own at position 0)."""
-        kind, mux = self.path
-        sink = self.paths.setdefault(kind, ExternalPath(kind))
-        if not sink.connected:
-            return
-        if kind == CAP.enum["external_kind"]["udp"]:
-            at = position or 0
-            for k in range(0, max(len(data), 1), UDP_DATA):
-                piece = data[k:k + UDP_DATA]
-                sink.packets.append(struct.pack("<QIHH", at + (k if position is not None else 0), self.generation,
-                                                self.fn, 0) + piece)
-            return
-        if mux == CAP.enum["external_mux"]["chunks"]:
-            for k in range(0, len(data), 0xFFFF):
-                piece = data[k:k + 0xFFFF]
-                sink.stream += struct.pack("<HH", self.fn, len(piece)) + piece
-            return
-        sink.stream += data
-
-    def disconnected(self) -> list[bytes]:
-        """Its external path has gone (§3.9): a capture running stops in error (state 6, stopped reason 2)."""
-        if self.state not in (STATE["waiting"], STATE["capturing"], STATE["paused"]):
-            return []
-        self.state, self.error = STATE["error"], CAP.enum["error"]["peripheral"]
-        return [self.stopped_event(STOPPED["error"], self.error)]
-
     def check_generation(self, generation: int) -> None:
         if generation != self.generation:
             raise wrong_state()                                    # another start's bytes (§3.2)
@@ -1399,8 +1175,6 @@ class VirtualCapture:
         """position(u64) flags(u8: more, gap) len(u16) data (§3.2): from write_pos on, nothing (gap 0) at write_pos; a
         position re-used or pushed on goes to the next readable one with gap - write_pos with gap when none is left."""
         self.check_generation(generation)
-        if self.path is not None:
-            raise wrong_state()                                    # its data goes the external path (§3.9)
         flags, end = 0, self.base + len(self.data)
         if position >= end:
             return struct.pack("<QBH", end, 0, 0)
@@ -1440,7 +1214,7 @@ class VirtualCapture:
 
     def unsent(self) -> int:
         """Streaming: the bytes captured and not pushed yet (what a subscription's min_bytes counts, core §10.3)."""
-        if self.mode != MODE["streaming"] or self.path is not None:
+        if self.mode != MODE["streaming"]:
             return 0
         return max(0, self.base + len(self.data) - self.sent)
 
@@ -1479,8 +1253,8 @@ class VirtualCapture:
         """Streaming: the bytes not pushed yet, as data frames (core §10.2: position(u64) len(u16) data), each within
         one segment and with the TLVs every streaming frame carries (§3.4): generation, and segment_info - the segment's
         position, its samples taken so far, start_ns and start_uncertainty_ns."""
-        if self.mode != MODE["streaming"] or self.path is not None:
-            return []                                              # data_path 1: no data notifications (§3.9)
+        if self.mode != MODE["streaming"]:
+            return []
         out = []
         end = self.base + len(self.data)
         tail = m.tlv(DATA_GENERATION, struct.pack("<I", self.generation))

@@ -1,6 +1,21 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Removed: capture's optional features no probe implemented, as oep-spec 3b6dbbc drops them. `configure` no longer
+  takes `format_name`, and its `options` take only `glitch_filter` (group 0) and `clock`; `Config.format_name` and the
+  `threshold_used`, `coupling_used`, `offset_used`, `bandwidth_used`, `resolution_used` and `oversample_used` entries of
+  `Config.used` are gone. The virtual bench no longer offers the external data paths (`Endpoint.external_disconnect`,
+  `virtual_bench.EXTERNAL_TCP_PORT` / `EXTERNAL_UDP_PORT`), the named format (`NAMED_FORMAT`) or the analog front-end
+  settings; `with_capture_options` adds format 3, the external clock and the glitch filter to the logic track. The spec
+  snapshot follows 3b6dbbc, the trace's capture rows follow the spec's sections (§0, §3.8, trigger records at §3.9), and
+  the host-request checker's reviewed pins move with it.
+- (JA) 削除: oep-spec 3b6dbbc に合わせ、どの probe も持たなかった capture の任意の機能を外した。`configure` は `format_name` を
+  取らず、`options` は `glitch_filter`（群 0）と `clock` だけを取る。`Config.format_name` と、`Config.used` の `threshold_used`、
+  `coupling_used`、`offset_used`、`bandwidth_used`、`resolution_used`、`oversample_used` は無くなった。仮想ベンチは、データの外部の
+  経路（`Endpoint.external_disconnect`、`virtual_bench.EXTERNAL_TCP_PORT` / `EXTERNAL_UDP_PORT`）、名前付きの形式（`NAMED_FORMAT`）、
+  アナログの前段の設定を出さない。`with_capture_options` は、ロジックのトラックに形式 3、外部クロック、グリッチフィルタを足す。仕様の
+  写しは 3b6dbbc に合わせ、対応表の capture の行は仕様の節（§0、§3.8、トリガの記録は §3.9）に合わせ、host の要求の検査器の
+  固定もそれに移した。
 - (EN) Tests: the spec snapshot (vectors, registry, the documents' digests) follows oep-spec b8d63c6, and the conformance
   checkers' reviewed pins move with it: the core, capture and fixture changes since are wording only (a §0 heading, the
   state table's stopped 2, the critical-bit sentence, no product names). The core checker passes on an ESP32-P4 probe.

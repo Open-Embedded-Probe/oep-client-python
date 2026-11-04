@@ -4,8 +4,7 @@ import struct
 from .. import registry
 
 # The request TLVs this example sends critical, by name (core §2.3: ones that must not be ignored; capture §3.3 / §3.8)
-_CAPTURE_CRITICAL = {'format', 'format_name', 'data_path', 'carriage', 'trigger_opts', 'threshold', 'clock',
-                     'glitch_filter', 'coupling', 'offset', 'bandwidth', 'resolution', 'oversample'}
+_CAPTURE_CRITICAL = {'format', 'carriage', 'trigger_opts', 'clock', 'glitch_filter'}
 _POLICY = {
     'scan': {'max_speed', 'idle_clock', 'targetsel'},
     'attach': {'reset', 'idle_clock', 'targetsel'},

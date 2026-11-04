@@ -782,7 +782,7 @@ def test_capture_analog_trigger(run: record.Run):
 def test_capture_repeat_rearm(run: record.Run):
     """oep-if-capture §2.1 repeat with rearm 1 on a probe that declares it: the gpio fixture drives a free channel the
     logic watches (it only listens), a rising edge per segment - each segment starts at its own trigger (index = the
-    pretrigger, the line low before it and high at it; flags bit3, bit0 after the first), a record each (§3.10), the
+    pretrigger, the line low before it and high at it; flags bit3, bit0 after the first), a record each (§3.9), the
     slots full -> state 5, release -> the next segment armed again."""
     hst = run.take()
     if not _listed(hst, capture.LogicCapture.NAME):

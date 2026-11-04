@@ -51,12 +51,9 @@ MODE, RATE, SAMPLES, SEGMENTS, TRIGGER, PRETRIGGER, TRIGGER_OPTS, FORMAT, CARRIA
     _CAP.tlv["configure"][k] for k in ("mode", "rate", "samples", "segments", "trigger", "pretrigger", "trigger_opts",
                                        "format", "carriage", "block_max"))
 ANSWER_FORMAT, ANSWER_BLOCK = _CAP.tlv["configure_answer"]["format"], _CAP.tlv["configure_answer"]["block"]
-ANSWER_FORMAT_NAME = _CAP.tlv["configure_answer"]["format_name"]
-# §3.8 / §3.9, optional (a probe declares them in its describe): configure TLVs by name, sent critical
+# §3.8, optional (a probe declares them in its describe): configure TLVs by name, sent critical
 OPTION_TLV = {**_CAP.tlv["configure"], **_ANA.tlv["configure"]}
-LOGIC_USED = {k: _CAP.tlv["configure_answer"][k] for k in ("threshold_used", "glitch_used", "timebase")}
-ANALOG_USED = {k: _ANA.tlv["configure_answer"][k] for k in ("coupling_used", "offset_used", "bandwidth_used",
-                                                            "resolution_used", "oversample_used")}
+LOGIC_USED = {k: _CAP.tlv["configure_answer"][k] for k in ("glitch_used", "timebase")}
 NO_QUALIFIER = 0xFF                                        # clock: qualifier_role none (§3.8)
 STREAM_BUFFER = _CAP.tlv["configure_answer"]["stream_buffer"]
 JUDGE_LATENCY = _CAP.tlv["configure_answer"]["judge_latency_ns"]
@@ -180,7 +177,6 @@ class Config:
     raw_roles: list[int] = field(default_factory=list)         # format 1: the raw channels' roles (as asked)
     event_d: dict[int, int] = field(default_factory=dict)      # format 1: events role -> D (as asked)
     carriage: dict[int, tuple[int, int]] = field(default_factory=dict)   # format 2: role -> (kind, D) (as asked)
-    format_name: str | None = None                             # format 0xFF: the named format in use
     timebase: Fraction | None = None                           # format 3: the delta's tick rate (Hz)
     external_clock: bool = False                               # sampled on a clock line (actual_rate 0 / 1, §3.8)
     used: dict[str, dict[int, int] | int] = field(default_factory=dict)   # §3.8's *_used: name -> group/role -> value
@@ -322,7 +318,7 @@ class Event:
     serial: int | None = None
     trigger_index: int | None = None
     trigger_ns: int | None = None
-    record: int | None = None                # triggered: the trigger record's serial (None: no record, §3.10)
+    record: int | None = None                # triggered: the trigger record's serial (None: no record, §3.9)
     sample: int | None = None                # triggered: the original sample from the generation's start
     uncertainty_ns: int | None = None        # triggered: trigger_ns's +-ns
     trigger_fn: int | None = None            # a group's triggered: the track that judged it (0: force, timer)
@@ -368,7 +364,7 @@ def unpack_event(frame: bytes, group: bool = False) -> Event:
 
 
 NO_RECORD = 0xFFFFFFFF
-TRIGGER_RECORD_BYTES = 24                  # serial u32, sample u64, trigger_ns u64, uncertainty_ns u32 (§3.10)
+TRIGGER_RECORD_BYTES = 24                  # serial u32, sample u64, trigger_ns u64, uncertainty_ns u32 (§3.9)
 
 
 CAPTURE_DROPS = "io.github.open-embedded-probe.capture-drops"
@@ -422,7 +418,7 @@ class CaptureDrops:
 @dataclass(frozen=True)
 class TriggerOpts:
     """configure's trigger_opts (§3.3): `arm` 1 looks once the pretrigger is there (0: at once, a short segment);
-    `rearm` 1 a trigger for every segment (streaming: a record for every event, §2.1, §3.10); `when` 1 a level
+    `rearm` 1 a trigger for every segment (streaming: a record for every event, §2.1, §3.9); `when` 1 a level
     already true at arming counts; `hysteresis` (analog cross, in ADC values) back that far before the next crossing.
     The defaults are every probe's; the others as describe's trigger opts says."""
     arm: int = 1
@@ -433,7 +429,7 @@ class TriggerOpts:
 
 @dataclass(frozen=True)
 class TriggerRecord:
-    """A trigger record (§3.10): serial (from 0 in the generation), the original sample from the generation's start,
+    """A trigger record (§3.9): serial (from 0 in the generation), the original sample from the generation's start,
     trigger_ns and its uncertainty."""
     serial: int
     sample: int
@@ -452,23 +448,18 @@ def take_events(link, fn: int) -> list[bytes]:
 
 
 def _options(options: dict) -> bytes:
-    """§3.8 / §3.9's configure TLVs, critical but overflow (configure's `options`)."""
-    forms = {"threshold": "<iI", "glitch_filter": "<I", "coupling": "<B", "offset": "<i", "bandwidth": "<I"}
+    """§3.8's configure TLVs, critical (configure's `options`)."""
     out = b""
     for name, value in options.items():
-        tag = OPTION_TLV[name] | (0 if name == "overflow" else CRITICAL)   # overflow: §3.3's table, as block_max
-        if name in forms:                                  # per group / role
-            for key, v in sorted(value.items()):
-                out += m.tlv(tag, bytes([key]) + struct.pack(forms[name], *(v if isinstance(v, tuple) else (v,))))
+        tag = OPTION_TLV[name] | CRITICAL
+        if name == "glitch_filter":                        # per group (group 0 only, §3.8)
+            for group, ns in sorted(value.items()):
+                out += m.tlv(tag, bytes([group]) + struct.pack("<I", ns))
         elif name == "clock":
             role, edge, qualifier, level = value
             out += m.tlv(tag, bytes([role, edge, NO_QUALIFIER if qualifier is None else qualifier, level]))
-        elif name == "oversample":
-            out += m.tlv(tag, struct.pack("<H", value))
-        elif name == "data_path":
-            out += m.tlv(tag, bytes(value))
-        else:                                              # resolution, overflow: u8
-            out += m.tlv(tag, bytes([value]))
+        else:
+            raise ValueError(f"capture configure: no option {name!r} (oep-if-capture §3.8)")
     return out
 
 
@@ -514,27 +505,12 @@ def _config(payload: bytes, analog: bool) -> Config:
             c.skew_ns[role] = ns
         elif tag == FRONTEND_USED and analog and len(v) == 2:
             c.frontend[v[0]] = v[1]
-        elif tag == ANSWER_FORMAT_NAME:
-            c.format_name = c.format_name or v.decode("ascii", "replace")
         elif not analog and tag == LOGIC_USED["timebase"] and len(v) == 8:
             num, den = struct.unpack("<II", v)
             c.timebase = Fraction(num, den) if den else None
-        elif not analog and tag == LOGIC_USED["threshold_used"] and len(v) == 9:
-            group, mv, hyst = struct.unpack("<BiI", v)
-            c.used.setdefault("threshold_used", {})[group] = (mv, hyst)
         elif not analog and tag == LOGIC_USED["glitch_used"] and len(v) == 5:
             group, ns = struct.unpack("<BI", v)
             c.used.setdefault("glitch_used", {})[group] = ns
-        elif analog and tag in (ANALOG_USED["coupling_used"], ANALOG_USED["offset_used"], ANALOG_USED["bandwidth_used"]):
-            name = next(k for k, t in ANALOG_USED.items() if t == tag)
-            form = {"coupling_used": "<BB", "offset_used": "<Bi", "bandwidth_used": "<BI"}[name]
-            if len(v) == struct.calcsize(form):
-                role, value = struct.unpack(form, v)
-                c.used.setdefault(name, {})[role] = value
-        elif analog and tag == ANALOG_USED["resolution_used"] and len(v) == 1:
-            c.used["resolution_used"] = v[0]
-        elif analog and tag == ANALOG_USED["oversample_used"] and len(v) == 2:
-            c.used["oversample_used"] = struct.unpack("<H", v)[0]
         elif tag == REFERENCE and analog and len(v) == 6:
             source, mv, how = struct.unpack("<BIB", v)
             # how: nominal False, measured True; an unknown value is shown as it is, not as nominal (core §2.4)
@@ -566,7 +542,7 @@ class LogicCapture(Interface):
                   frontends: dict[int, int] | None = None, trigger_opts: TriggerOpts | None = None,
                   data_format: int = 0, events: dict[int, int] | None = None, roles: list[int] | None = None,
                   block_max: int | None = None, carriage: dict[int, tuple[int, int]] | None = None,
-                  format_name: str | None = None, options: dict | None = None) -> Config:
+                  options: dict | None = None) -> Config:
         """-> the probe's actual values. A value the probe cannot honour is refused: host.Unsupported, .tag = the TLV as
         sent (§3.3). The TLVs go without the critical bit (§3.3). Read Config.samples / .segments: the probe rounds
         samples down.
@@ -575,13 +551,11 @@ class LogicCapture(Interface):
         carried as events (the others raw), `roles` the plan's roles (to name the raw channels), `block_max` the
         longest block (§3.3's table: without the critical bit). Format 2 (analog blocks, §1.4): `carriage` role ->
         (kind, D), kind a bit set of capture_blocks.PACKED / MINMAX / SUM (the roles not named packed). Format 4 (test
-        counter) needs nothing else. Format 0xFF: `format_name`. The others go critical.
+        counter) needs nothing else. The others go critical.
 
-        `options` (§3.8 / §3.9, critical; a probe without one refuses it): "threshold" group -> (mv, hysteresis_mv),
-        "glitch_filter" group -> ns, "clock" (role, edge, qualifier role or None, qualifier level), "coupling" role ->
-        kind, "offset" role -> mV, "bandwidth" role -> Hz, "resolution" bits, "oversample" ratio, "data_path" (path,
-        mux, kind), "overflow" 0 / 1 (plain: §3.3's table). The answer's values in use: Config.used, by the answer TLV's
-        name.
+        `options` (§3.8, critical; a probe without one refuses it): "glitch_filter" group -> ns (group 0 only),
+        "clock" (role, edge, qualifier role or None, qualifier level). The answer's values in use: Config.used, by the
+        answer TLV's name.
 
         §3.3's contract is checked before anything is sent (ValueError): `samples` is needed in one-shot and repeat
         and not taken in streaming, `segments` is repeat's only, `pretrigger` needs a trigger (type other than 0) - a
@@ -617,10 +591,6 @@ class LogicCapture(Interface):
             body += tlv(FRONTEND, bytes([role, fe]))
         if data_format:                                      # critical: a probe without it refuses (§3.3)
             body += m.tlv(FORMAT | CRITICAL, bytes([data_format]))
-        if (data_format == DATA_FORMAT["named"]) != (format_name is not None):
-            raise ValueError("capture configure: format 0xFF goes with its format_name, and only it (oep-if-capture §3.3)")
-        if format_name is not None:
-            body += m.tlv(OPTION_TLV["format_name"] | CRITICAL, format_name.encode("ascii"))
         body += _options(options or {})
         if data_format == DATA_FORMAT["logic_blocks"] and roles is None:
             raise ValueError("capture configure: format 1 needs the plan's roles (to name the raw channels)")
@@ -806,7 +776,7 @@ class LogicCapture(Interface):
         return out, bool(more)
 
     def triggers_page(self, from_serial: int = 0, generation: int | None = None) -> tuple[list[TriggerRecord], bool]:
-        """One answer's trigger records (§3.10) from `from_serial` on, paged as segments are. -> (records, more)."""
+        """One answer's trigger records (§3.9) from `from_serial` on, paged as segments are. -> (records, more)."""
         payload = struct.pack("<II", self._generation(generation), from_serial)
         rd = m.Reader(self._call(self.TRIGGERS, payload, locked=False).payload)
         more, count = rd.take("BB")

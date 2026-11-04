@@ -1,4 +1,4 @@
-"""Capture §1 data formats 1 (logic blocks) and 4 (test counter), §3.3 trigger_opts, §3.10 trigger records - through the
+"""Capture §1 data formats 1 (logic blocks) and 4 (test counter), §3.3 trigger_opts, §3.9 trigger records - through the
 virtual bench and the client, end to end."""
 import struct
 
@@ -81,10 +81,10 @@ def test_format_1_contract():
     assert e.value.result.detail == m.MALFORMED
     with pytest.raises(h.Unsupported):                      # L can't be a multiple of 8 and 3 within 16
         lc.configure(rate=1000, samples=64, data_format=LOGIC_BLOCKS, events={3: 3}, roles=roles, block_max=16)
-    with pytest.raises(h.Unsupported):                      # a critical TLV it does not have (threshold, §3.8)
+    with pytest.raises(h.Unsupported):                      # a critical TLV it does not know (core §2.3)
         lc._call(lc.CONFIGURE, m.tlv(c.MODE, bytes([c.ONE_SHOT])) + m.tlv(c.RATE, struct.pack("<I", 1000))
                  + m.tlv(c.SAMPLES, struct.pack("<I", 64))
-                 + m.tlv(c._CAP.tlv["configure"]["threshold"] | c.CRITICAL, struct.pack("<BiI", 0, 1650, 0)))
+                 + m.tlv((max(c._CAP.tlv["configure"].values()) + 1) | c.CRITICAL, bytes(1)))
 
 
 @pytest.mark.parametrize("mode", [c.ONE_SHOT, c.STREAMING])
