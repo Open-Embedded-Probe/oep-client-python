@@ -1,6 +1,15 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Added: `python -m oep_client.conformance.release_hw` checks electrically that a released pin goes back to its idle
+  state whatever released it (core §8, §9, §6.4): the channel's idle is set to pull-up / pull-down, fixture gpio drives the
+  line the other way, and a CH32 target's GPIO input, read over the probe's debug wire, must read the drive and then the
+  pull after plan_release, end, another id's force and the lease running out. All eight pass on an ESP32-P4 probe with a
+  CH32X035.
+- (JA) 追加: `python -m oep_client.conformance.release_hw` は、どの道で解いても解いたピンが空きの状態に戻ることを電気的に確かめる
+  （core §8、§9、§6.4）: channel の idle を pull-up / pull-down にし、fixture gpio で逆に駆動し、プローブの debug の線で読む CH32 の
+  target の GPIO の入力が、駆動を読み、plan_release、end、別の id の force、lease の期限切れの後にプルを読む。ESP32-P4 のプローブと
+  CH32X035 で 8 つとも通る。
 - (EN) Added: `python -m oep_client.conformance.notify_hw` checks subscriptions and notifications on a real probe
   (core §10, §9, §6.4; transports §3) with a logic capture streaming on one channel the user names: subscribe needs the
   lock, unsubscribe with none succeeds, seq from 0 one by one with positions back to back, answers first while it
