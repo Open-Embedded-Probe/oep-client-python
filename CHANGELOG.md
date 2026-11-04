@@ -1,6 +1,17 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Added: `python -m oep_client.conformance.usb_hw` runs the raw bulk / HID checks on a real probe, named by
+  VID:PID and its serial number (the unit id), under the shared lock; it checks the USB descriptors too (serial = unit
+  id, one OEP vendor interface with one bulk pair, one OEP HID with one report ID, MS OS 2.0 WINUSB as a SHOULD). New
+  check CORE-USB-IN-END: answers framed to exactly one and two IN packets (oep.probe.link's source) must arrive without
+  more data after them (transports §1, the probe's last transfer ended). On ESP32-P4 and P4X probes every bulk and HID
+  check passes.
+- (JA) 追加: `python -m oep_client.conformance.usb_hw` は、VID:PID と serial number（unit id）で名指した実機に、共通のロックを取って、
+  bulk / HID の生の検査を回す。USB の descriptor も確かめる（serial が unit id、OEP の vendor interface が 1 つで bulk が 1 組、OEP の HID が
+  1 つで report ID が 1 つ、MS OS 2.0 の WINUSB は SHOULD）。新しい検査 CORE-USB-IN-END: 枠がちょうど IN packet 1 個分と 2 個分の答え
+  （oep.probe.link の source）が、続く data なしで届くこと（transports §1、probe の最後の転送の終わり）。ESP32-P4 と P4X のプローブで、
+  bulk と HID の検査はすべて通る。
 - (EN) Docs: the rule-by-rule trace (docs/trace) names the tests as they are now (the subject-named modules, no review
   rounds or item numbers; the later-copy tests as the refusal tests that replaced them), and core §2.3's rows follow the
   spec's split of the twice-sent tag into requests (malformed) and answers (the first is used). tools/check_trace.py

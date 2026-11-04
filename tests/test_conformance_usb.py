@@ -10,6 +10,7 @@ from oep_client.conformance.serial import WireError
 from oep_client.conformance.usb import UsbWire, frame
 from oep_client.conformance.usb_cases import run
 from oep_client.virtual_bench_usb import Usb
+from spec_names import SPEC
 from test_conformance import REG
 
 
@@ -134,12 +135,14 @@ def test_current_virtual_core_passes_usb_contracts(monkeypatch, kind, report_id,
     check.usb_wire = inspector
     report = check.run()
     assert report['status'] == 'passed', [(r['id'], r.get('error')) for r in report['checks'] if r['status'] == 'failed']
-    assert len(report['checks']) == (55 if kind == 'bulk' else 60)
+    assert len(report['checks']) == (56 if kind == 'bulk' else 60)   # bulk: CORE-USB-IN-END too (not applicable here)
     assert report['framing_backend'] == 'independent USB ' + kind
     assert not report['full_conformance'] and check.session is None
     assert ep.current_core.holder is None
     not_applicable = [r['id'] for r in report['checks'] if r['status'] == 'not_applicable']
-    assert not_applicable == (['CORE-HID-REPORT-ID'] if kind == 'hid' and report_id == 0 else [])
+    # bulk: core-v1 lists no oep.probe.link (no answer of a chosen length) and its max_frame is 64
+    assert not_applicable == (['CORE-HID-REPORT-ID'] if kind == 'hid' and report_id == 0 else
+                              ['CORE-USB-IN-END'] if kind == 'bulk' else [])
 
 
 @pytest.mark.parametrize('fault', ['clip_count', 'padding', 'ignore_set_report', 'keep_partial', 'accept_oversize'])
@@ -297,3 +300,70 @@ def test_software_model_cli_passes_explicit_settings_to_reserved_runner(monkeypa
     assert calls[0]['spec'] == '/explicit/spec' and calls[0]['out'] == '/explicit/new.json'
     assert calls[0]['lock'] == '/explicit/virtual.lock'
     assert 'no physical USB' in calls[0]['adapter']
+
+
+class SourceProbe:
+    """A bulk IN like a real device's: a read gets one transfer, ended by a short packet or a zero-length packet.
+    It answers oep.probe.link's source (byte k = k & 0xFF); `ends` False: an answer of whole packets is not ended,
+    so the host's read never completes (a probe breaking transports §1's bundling)."""
+    def __init__(self, clock, packet, ends=True):
+        self.clock, self.packet, self.ends = clock, packet, ends
+        self.transfers = deque()
+
+    def write(self, data, method='out'):
+        message = bytes(data[2:])
+        if message:
+            n = int.from_bytes(message[10:14], 'little')   # after role corr fn op session (core §4.1)
+            answer = b'\x02' + message[1:3] + b'\x01\0' + n.to_bytes(2, 'little') + bytes(k & 0xFF for k in range(n))
+            framed = len(answer).to_bytes(2, 'little') + answer
+            if len(framed) % self.packet or self.ends:
+                self.transfers.append(framed)
+                if not len(framed) % self.packet:
+                    self.transfers.append(b'')       # the ZLP that ends it
+        return len(data)
+
+    def read(self, timeout):
+        if self.transfers:
+            return self.transfers.popleft()
+        self.clock.sleep(timeout)
+        return None
+
+    def close(self):
+        pass
+
+
+def source_check(clock, probe):
+    check = Checks(None, {**copy.deepcopy(REG), 'interface': SPEC['interface']}, 'unit')
+    check.max_frame = 4096
+    check.observed['interfaces'] = [{'fn': 3, 'name': 'oep.probe.link', 'revision': 1, 'instance': 0}]
+    check.usb_wire = UsbWire(probe, 'bulk', out_packet_size=512, in_packet_size=512, clock=clock, sleep=clock.sleep)
+    check.send = check.usb_wire.send
+    check.usb_wire.max_frame = check.max_frame           # as confirm sets it
+    return check
+
+
+def test_in_end_takes_answers_of_whole_packets_that_are_ended():
+    clock = Clock()
+    check = source_check(clock, SourceProbe(clock, 512))
+    run(check, 'in-end')
+    assert not check.abort
+
+
+def test_in_end_fails_a_probe_that_leaves_a_whole_packet_transfer_open():
+    clock = Clock()
+    check = source_check(clock, SourceProbe(clock, 512, ends=False))
+    with pytest.raises(Exception, match='did not arrive: its transfer not ended'):
+        run(check, 'in-end')
+
+
+def test_in_end_needs_the_link_and_the_packet_size():
+    from oep_client.conformance import NotApplicable
+    clock = Clock()
+    check = source_check(clock, SourceProbe(clock, 512))
+    check.observed['interfaces'] = []
+    with pytest.raises(NotApplicable, match='oep.probe.link'):
+        run(check, 'in-end')
+    check = source_check(clock, SourceProbe(clock, 512))
+    check.usb_wire.in_packet_size = None
+    with pytest.raises(NotApplicable, match='packet size'):
+        run(check, 'in-end')

@@ -16,7 +16,8 @@ def frame(message):
 
 class UsbWire:
     def __init__(self, backend, kind, *, input_size=None, output_size=None, report_id=0,
-                 out_packet_size=None, timeout=3, settle=0.03, clock=time.monotonic, sleep=time.sleep):
+                 out_packet_size=None, in_packet_size=None, timeout=3, settle=0.03, clock=time.monotonic,
+                 sleep=time.sleep):
         if kind not in ('bulk', 'hid'):
             raise ValueError('raw USB kind must be bulk or hid')
         if type(report_id) is not int or not 0 <= report_id <= 255:
@@ -29,7 +30,8 @@ class UsbWire:
             raise ValueError('explicit bulk OUT packet size required')
         self.backend, self.kind = backend, kind
         self.input_size, self.output_size, self.report_id = input_size, output_size, report_id
-        self.out_packet_size, self.timeout, self.settle = out_packet_size, timeout, settle
+        self.out_packet_size, self.in_packet_size = out_packet_size, in_packet_size   # IN: the probe's (None: unknown)
+        self.timeout, self.settle = timeout, settle
         self.clock, self.sleep = clock, sleep
         self.max_frame, self.last_exchange = 64, {}
         self.op_wait_s = 1.0   # the request's processing bound: core_quick_op_max_ms until max_op_ms is read (core §4.4)
@@ -120,12 +122,14 @@ class UsbWire:
 
 
 def inspect(factory, *, kind, unit, spec, out, lock, adapter, input_size=None, output_size=None,
-            report_id=0, out_packet_size=None):
+            report_id=0, out_packet_size=None, in_packet_size=None, shape_from_backend=False):
     """Reserve new evidence and lock equipment before opening the supplied raw adapter.
 
 The factory is responsible for explicitly selecting the raw endpoint and declaring
 its shape. No USB enumeration, retry, interface choice or transport fallback is
-provided here. The current virtual software adapter is one such implementation.
+provided here. With `shape_from_backend`, the backend reads its shape from the
+device once open (conformance.usb_hw) and gives it as `backend.shape` (the keyword
+arguments above), and its descriptor checks as `backend.descriptors`.
 """
     from datetime import datetime, timezone
     import json
@@ -144,14 +148,25 @@ provided here. The current virtual software adapter is one such implementation.
     with Path(out).open('x') as artifact:
         try:
             with equipment_lock(lock):
-                wire = UsbWire(None, kind, input_size=input_size, output_size=output_size,
-                               report_id=report_id, out_packet_size=out_packet_size)
+                shape = dict(input_size=input_size, output_size=output_size, report_id=report_id,
+                             out_packet_size=out_packet_size, in_packet_size=in_packet_size)
+                wire = None if shape_from_backend else UsbWire(None, kind, **shape)   # a bad shape: no factory call
                 backend = factory()
-                wire.backend = backend
                 try:
+                    if wire is None:
+                        wire = UsbWire(None, kind, **{**shape, **backend.shape})
+                    wire.backend = backend
+                    report['usb_shape'] = dict(kind=kind, input_size=wire.input_size, output_size=wire.output_size,
+                                               report_id=wire.report_id, out_packet_size=wire.out_packet_size,
+                                               in_packet_size=wire.in_packet_size)
+                    descriptors = list(getattr(backend, 'descriptors', ()))
+                    if descriptors:
+                        report['usb_descriptors'] = descriptors
                     checks = Checks(wire.send, registry, unit)
                     checks.usb_wire = wire
                     report.update(checks.run())
+                    if any(d['status'] == 'failed' for d in descriptors):
+                        report['status'] = 'failed'
                 finally:
                     backend.close()
         except Exception as exc:

@@ -121,7 +121,7 @@ CHECKER_SOURCES = ('__init__.py', 'core_smoke.py', 'session_smoke.py', 'interfac
                    'port_speed.py', 'port_speed_sample.py', 'port_speed_lifecycle.py', 'port_speed_execution.py', 'port_speed_execution_sample.py',
                    'host_tlv.py', 'host_tlv_sample.py', 'host_core.py', 'core_fixed_fields.py', 'probe_input.py', 'probe_input_sample.py', 'refusal_order.py', 'refusal_order_sample.py', 'restart.py', 'restart_sample.py', 'host_wait.py', 'host_wait_sample.py', 'host_deadline.py', 'host_deadline_sample.py', 'host_resend.py', 'host_resend_sample.py', 'tcp_recovery.py', 'tcp_recovery_sample.py', 'host_core_sample.py', 'allocator.py', 'allocator_sample.py', 'discovery.py', 'clock.py', 'clock_sample.py',
                    'notification_sequence.py', 'notification_sequence_sample.py', 'notification_retention.py', 'notification_retention_sample.py', 'serial.py', 'tcp.py',
-                   'tcp_peers.py', 'usb.py', 'usb_cases.py',
+                   'tcp_peers.py', 'usb.py', 'usb_cases.py', 'usb_hw.py',
                    '../pytest_conformance.py', 'resources.py', 'resource_sample.py',
                    'subscriptions.py', 'subscription_sample.py',
                    'data.py', 'data_sample.py',
@@ -987,8 +987,8 @@ class Checks:
             for name, kind in RECONNECT_CASES:
                 self.check(name, 'transports §3; core §5.1/6.1/9', lambda kind=kind: self.reconnect(kind))
         if self.usb_wire is not None:
-            from .usb_cases import USB_CASES, HID_CASES, run
-            cases = USB_CASES + (HID_CASES if self.usb_wire.kind == 'hid' else ())
+            from .usb_cases import USB_CASES, BULK_CASES, HID_CASES, run
+            cases = USB_CASES + (HID_CASES if self.usb_wire.kind == 'hid' else BULK_CASES)
             for name, kind in cases:
                 self.check(name, 'transports §1/2/3; core §2.4', lambda kind=kind: run(self, kind))
         if self.tcp_peer_open is not None:

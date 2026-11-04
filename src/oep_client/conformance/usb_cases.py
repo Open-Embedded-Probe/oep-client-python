@@ -1,10 +1,11 @@
 """USB-specific stimuli against a raw adapter; usable by custom equipment runners."""
-from . import NotApplicable, require, tlvs
+from . import NotApplicable, Violation, require, tlvs
 from .serial import WireError
 from .usb import frame
 
 USB_CASES = tuple(('CORE-USB-' + name.upper(), name) for name in
                   ('split', 'coalesce', 'zero', 'short', 'role', 'truncated', 'oversized', 'boundary'))
+BULK_CASES = (('CORE-USB-IN-END', 'in-end'),)   # the probe's IN transfers end (transports §1, the USB bundling)
 HID_CASES = tuple(('CORE-HID-' + name.upper(), name) for name in
                   ('empty-report', 'padding', 'report-id', 'count', 'set-report'))
 
@@ -40,6 +41,9 @@ def run(check, kind):
         finally:
             check.send = saved
 
+    if kind == 'in-end':
+        in_end(check, wire, exchange)
+        return
     if kind == 'truncated':
         for cut in (1, 2, len(good) - 1):
             # The partial stream must produce nothing; its remainder is abandoned.
@@ -101,3 +105,38 @@ def run(check, kind):
     else:
         raise ValueError(kind)
     result(exchange(chunks, 1, **kwargs), req)
+
+
+def in_end(check, wire, exchange):
+    """A probe whose last bulk IN transfer is a multiple of wMaxPacketSize ends it (a zero-length packet, a length-0
+    frame, or the last byte split off, transports §1): answers framed to exactly 1 and 2 packets must arrive without
+    more data after them. oep.probe.link's source makes them (its length chosen); without it: not applicable."""
+    import struct
+    if not wire.in_packet_size:
+        raise NotApplicable('the IN packet size is not known')
+    link = next((e for e in check.observed.get('interfaces', []) if e['name'] == 'oep.probe.link'), None)
+    if link is None:
+        raise NotApplicable('oep.probe.link is not listed (no answer of a chosen length)')
+    spec = next(i for i in check.reg['interface'] if i['name'] == 'oep.probe.link')
+    source = next(o['code'] for o in spec['op'] if o['name'] == 'source')
+    head = 2 + 5 + 2                      # length(u16), the answer's header (core §4.2), len(u16)
+    for packets in (1, 2):
+        n = packets * wire.in_packet_size - head
+        if n + 7 > check.max_frame or n < 0:
+            raise NotApplicable(f'max_frame {check.max_frame} below an answer of {packets} IN packets')
+        req = check.request(source, struct.pack('<I', n), fn=link['fn'])
+        try:
+            replies = exchange([frame(req)], 1)
+        except TimeoutError as exc:
+            raise Violation(f'an answer of exactly {packets} IN packets did not arrive: its transfer not ended'
+                                 f' ({exc})') from exc
+        require(len(replies) == 1, 'one answer expected')
+        saved = check.send
+        try:
+            check.send = lambda _: replies[0]
+            payload = check.success(req)
+        finally:
+            check.send = saved
+        size = int.from_bytes(payload[:2], 'little')
+        require(size == n and payload[2:2 + n] == bytes(k & 0xFF for k in range(n)),
+                f'source of {n} bytes answered {size}')
