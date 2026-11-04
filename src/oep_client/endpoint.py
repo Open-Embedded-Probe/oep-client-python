@@ -1099,7 +1099,7 @@ class Endpoint(FixtureDrive):
                 self._events(fn, cap.start(self.uptime_ms(), subscribed=fn in self.subscribed))
                 if fn in self.capture_fail_start:                  # TEST HOOK: the start's initialisation failed
                     cap.state, cap.error = virtual_bench_capture.STATE["error"], virtual_bench_capture.CAP.enum["error"]["peripheral"]
-                    # state 6 always says stopped reason 3 with the error (capture §3.2 エラー)
+                    # state 6 always says stopped reason 2 with the error (capture §3.2 エラー)
                     self._events(fn, [cap.stopped_event(virtual_bench_capture.STOPPED["error"], cap.error)])
                     return m.COMPLETED, m.FAILED, struct.pack("<I", cap.generation)   # the same fixed form (§3.2)
                 return m.COMPLETED, m.SUCCESS, struct.pack("<I", cap.generation)
@@ -1143,8 +1143,8 @@ class Endpoint(FixtureDrive):
 
     def capture_overflow(self, fn: int, error: int = virtual_bench_capture.CAP.enum["error"]["storage"]) -> None:
         """TEST HOOK: capture `fn` drops data inside the segment it is taking (capture §2.2): what the clock captured up
-        to now is kept, that segment is not handed out, the track stops in error (state 6, stopped reason 3, `error`).
-        A bound track's group stops its other tracks and says stopped reason 3 too (capture §4.1)."""
+        to now is kept, that segment is not handed out, the track stops in error (state 6, stopped reason 2, `error`).
+        A bound track's group stops its other tracks and says stopped reason 2 too (capture §4.1)."""
         cap = self.captures[fn]
         self._capture_tick(fn)
         self._events(fn, cap.overflow(error))

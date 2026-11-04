@@ -362,7 +362,7 @@ class VirtualCapture:
     vrefint_ns: int = NO_TIME
     generation: int = 0                # +1 at every start (§3.2); 0 before the first
     flags: int = 0                     # status flags (dropped, slipped), reset at start
-    error: int = 0                     # state 6's reason (status TLV error, stopped reason 3)
+    error: int = 0                     # state 6's reason (status TLV error, stopped reason 2)
     exact: bool = False                # its own: any rate in rate_range (else max_hz / a whole number)
     skews: tuple[int, ...] | None = None   # its own: analog skew_ns by the order's place (None: the channels in turn)
     diagnostics: bool = True           # analog: frontend_used and reference in the configure answer (optional, §3.3)
@@ -1318,7 +1318,7 @@ class VirtualCapture:
         """TEST HOOK: the probe dropped data inside the segment it is taking (§2.2: a capture queue or ring overflow,
         error 2; a DMA / peripheral failure, error 1). That segment is never handed out - no record, no segment event,
         its bytes neither read nor streamed (this bench adds a segment whole, so its bytes were never kept; write_pos
-        stays at its start) - and the track stops in error: state 6, status flags bit0, stopped reason 3. -> events."""
+        stays at its start) - and the track stops in error: state 6, status flags bit0, stopped reason 2. -> events."""
         if self.state not in (STATE["waiting"], STATE["capturing"], STATE["paused"]):
             return []
         if self.mode == MODE["streaming"]:                         # its bytes ran on: write_pos back to the start of
@@ -1608,7 +1608,7 @@ class VirtualGroup:
                 failed = caps[fn]
                 failed.state, failed.error = STATE["error"], CAP.enum["error"]["peripheral"]
                 per += [(started, caps[started].stop(now_ms)) for started in self.tracks[:k]]
-                # state 6 always says stopped reason 3 (§3.2 エラー), and the group in 6 too (§4.1, §4.2)
+                # state 6 always says stopped reason 2 (§3.2 エラー), and the group in 6 too (§4.1, §4.2)
                 per.append((fn, [failed.stopped_event(STOPPED["error"], failed.error)]))
                 return per, [self.stopped_event(STOPPED["error"], failed.error)], True
             per.append((fn, caps[fn].start(now_ms, self.start_ns, subscribed=subscribed(fn),

@@ -60,7 +60,7 @@ Lines on stdin are commands, read between requests (the serving never waits for 
                         either is answered no_resource. stderr says "virtual_bench_serve: lost connection(s) ..."
   capture-overflow FN [ERROR]
                         capture FN drops data inside the segment it is taking (capture §2.2, Endpoint.capture_overflow):
-                        that segment is not handed out and the track stops in error - state 6, stopped reason 3, error
+                        that segment is not handed out and the track stops in error - state 6, stopped reason 2, error
                         ERROR (default 2, storage; 1 for a DMA / peripheral failure)
 A line that is no command is ignored with a message on stderr.
 
