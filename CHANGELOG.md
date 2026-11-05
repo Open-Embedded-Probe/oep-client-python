@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 0.0.48
 - (EN) Fixed: a stream's segments join bit by bit, so a stream is one part unless data was lost. A segment whose
   samples did not fill whole bytes of each line (the ESP32-P4's 65332 samples of 2 lines at 5 and 10 MS/s) started a new
   part every time: 300 to 550 parts, none lost. A format 1 segment whose samples are not a multiple of every D still
