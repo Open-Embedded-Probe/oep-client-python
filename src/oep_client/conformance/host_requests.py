@@ -11,7 +11,7 @@ from . import require, spec_identity
 
 REVIEWED = {
     'interfaces/oep-if-plan.ja.md': 'da8bd60af53499573c07bc33dbd8c4df93eb61a93b91dc57907f26620ae36bbf',
-    'interfaces/oep-if-fixture.ja.md': '79509f186977391795585f36b6fb2f8746c557b1c94405eb5001536dfddd9536',
+    'interfaces/oep-if-fixture.ja.md': '777a972349a14d1efa6e4575d3118b4e0566b81a6f22320401d529e4dca585f1',
     'docs/oep-core.ja.md': '0408d232e728bb9692ab1c24cefa1fdbf109c35aeebd378034d86c0f4d19789a',
     'interfaces/oep-if-debug.ja.md': '1f490ab984c5820b29acfee923b9400849a3d0011c9ed6bb7144397d8dd29d38',
     'interfaces/oep-if-capture.ja.md': '786bf349dfe322cee7b0d13e9d250cee2d0778bef3590ae751b2e87b11bb2fd3',
