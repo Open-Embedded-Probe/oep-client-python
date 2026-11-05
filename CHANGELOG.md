@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 0.0.47
 - (EN) Added: `acquire.Request(during=steps)` for a stream in place of `seconds`: it streams until `steps(wait)`
   returns, `wait(seconds)` collecting while it waits, so a script marks sections and sends ops or console commands on
   the same session (no second thread or session) while one long capture runs. A loss with on_loss "stop" raises
