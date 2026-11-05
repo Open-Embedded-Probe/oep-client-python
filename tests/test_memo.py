@@ -74,7 +74,7 @@ def probe(monkeypatch):
     fake = FakeProbe()
     monkeypatch.setattr(core, "find", lambda hst, name, revision=None: 7)
     monkeypatch.setattr(core, "describe", lambda hst, fn=0: [(TLV["max_object"], struct.pack("<I", 2048)),
-                                                              (TLV["max_objects"], struct.pack("<I", 64))])
+                                                              (TLV["max_objects"], struct.pack("<H", 64))])
     return fake
 
 

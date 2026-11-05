@@ -1,6 +1,11 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Changed (oep-spec 4d28f24): `SpiController.transfer` and `Pwm.set` read the answer's count n(u8) first, and the
+  virtual bench sends it; the memo's max_objects is read as u16. Registry, documents and vectors synced; the checkers'
+  pins moved after a review (none checks the rules changed).
+- (JA) 変更（oep-spec 4d28f24）: `SpiController.transfer` と `Pwm.set` は応答の頭の件数 n(u8) を読み、仮想のベンチもそれを送る。メモ欄の
+  max_objects は u16 で読む。registry、文書、ベクタを同期した。適合の検査の固定は見直して合わせた（変えた規則を確かめる検査は無い）。
 
 ## 0.0.45
 - (EN) Added: `oep_client.memo` for `oep.probe.memo` (oep-if-memo): list (paged, by prefix), read and write in parts at the

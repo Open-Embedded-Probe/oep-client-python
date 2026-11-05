@@ -305,7 +305,7 @@ class FixtureDrive:
             if nanos // 1_000_000 > MAX_OP_MS:
                 raise unsupported_fixed()
             up = lambda ns: -(-ns // step) * step                  # noqa: E731  the nearest step at or above
-            out = b""
+            out = bytes([n])                                       # n first (core §2.3)
             for k, (gap, setup, hold, tx) in enumerate(items):
                 wire = bytes(reverse_bits(b) for b in tx) if st.bit_order else tx      # the order on MOSI (§4)
                 miso = self.spi_device[fn](st.mode, wire)[:len(tx)] if tx else b""
@@ -336,7 +336,7 @@ class FixtureDrive:
                 raise unsupported_fixed()
             if any(r not in planned for r in roles):
                 raise unavailable("wrong_state")
-            out = b""
+            out = bytes([n])                                       # n first (core §2.3)
             for role, hz, duty in rows:
                 if hz == 0:
                     made = (0, 1, 0)                               # stopped: the line driven low

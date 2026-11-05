@@ -129,7 +129,7 @@ KNOWN: dict[str, Known] = {
     "oep.probe.link": Known("the link test (source, sink) and, when its ops offer it, port_speed on a UART bridge"),
     "oep.probe.memo": Known("the memo area: named objects the host keeps on the probe (list, read, write, delete)",
                             tags=_d("oep.probe.memo", ("max_object", "max object bytes", _u32),
-                                    ("max_objects", "max objects", _u32))),
+                                    ("max_objects", "max objects", _u16))),
     "oep.probe.plan": Known("the plan: which channel each role of an interface uses (plan_apply, plan_release)",
                             tags=_d("oep.probe.plan", ("plan_roles", "plan roles", _u32))),
     "oep.probe.restart": Known("the probe restarts itself, answering first",

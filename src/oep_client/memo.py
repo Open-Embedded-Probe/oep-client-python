@@ -51,7 +51,7 @@ class Memo:
         self.fn = core.find(hst, _R.name) if fn is None else fn
         found = dict(core.describe(hst, self.fn))
         self.max_object = struct.unpack("<I", found[_R.tlv["describe"]["max_object"]])[0]
-        self.max_objects = struct.unpack("<I", found[_R.tlv["describe"]["max_objects"]])[0]
+        self.max_objects = struct.unpack("<H", found[_R.tlv["describe"]["max_objects"]])[0]
 
     def _frame(self) -> int:
         return getattr(self.h.link, "max_frame", reg.MIN_MAX_FRAME)

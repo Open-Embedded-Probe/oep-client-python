@@ -559,8 +559,11 @@ class SpiController(_TargetDeclarations, Interface):
 
     def transfer(self, items: list[SpiItem]) -> list[SpiDone]:
         rd = m.Reader(self._call(self.TRANSFER, self.transfer_body(items)).payload)
+        n = rd.u8()                                        # the answer's count (core §2.3)
+        if n != len(items):
+            raise m.ProtocolError(f"spi-controller transfer: {n} answered for {len(items)} asked")
         done = []
-        for _ in items:
+        for _ in range(n):
             gap, setup, hold = rd.take("III")
             done.append(SpiDone(gap_ns=gap, setup_ns=setup, hold_ns=hold, rx=rd.counted("H")))
         rd.tail()
@@ -631,7 +634,10 @@ class Pwm(_TargetDeclarations, Interface):
         """(role, hz, duty) each, in order -> what the probe made of each."""
         body = struct.pack("<B", len(outputs)) + b"".join(struct.pack("<BIH", r, hz, d) for r, hz, d in outputs)
         rd = m.Reader(self._call(self.SET, body).payload)
-        made = self._outputs(rd, len(outputs))
+        n = rd.u8()                                        # the answer's count (core §2.3)
+        if n != len(outputs):
+            raise m.ProtocolError(f"pwm set: {n} answered for {len(outputs)} asked")
+        made = self._outputs(rd, n)
         rd.tail()
         return made
 
