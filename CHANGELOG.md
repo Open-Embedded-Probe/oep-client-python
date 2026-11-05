@@ -1,6 +1,12 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Fixed (0.0.48): a format 1 stream put together on disk failed with a KeyError (a segment's position): the loop
+  joining a segment's lines bit by bit reused the name of the loop over the segments, so the next segment taken was the
+  wrong one. A format 1 stream on disk is tested now.
+- (JA) 修正（0.0.48）: ディスクで組み立てる format 1 の stream が KeyError（区画の位置）で落ちていた。区画の線を 1 bit ずつ
+  つなぐループが、区画を回すループと同じ変数名を使っていて、次に取る区画を取り違えていた。ディスクで組み立てる format 1 の
+  stream の試験を足した。
 
 ## 0.0.48
 - (EN) Fixed: a stream's segments join bit by bit, so a stream is one part unless data was lost. A segment whose

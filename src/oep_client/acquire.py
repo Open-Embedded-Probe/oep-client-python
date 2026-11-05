@@ -1660,9 +1660,9 @@ class _Spool:
             self._open(p, x)
             data = bytes(self.pending[p - self.at:nxt - self.at])
             cols = _segment_columns(self.cap, data, samples, len(self.names), self.cfg)
-            for j, (col, f, ev) in enumerate(zip(cols, self.cur["files"], self.cur["events"])):
+            for c, (col, f, ev) in enumerate(zip(cols, self.cur["files"], self.cur["events"])):
                 if isinstance(col, bytes):           # joined bit by bit: a segment need not end on a whole byte
-                    self.cur["carry"][j] = _write_bits(f, self.cur["carry"][j], col, samples)
+                    self.cur["carry"][c] = _write_bits(f, self.cur["carry"][c], col, samples)
                 else:
                     ev[0].append(col[0] + self.cur["samples"] // col[4])
                     ev[1].append(col[1])

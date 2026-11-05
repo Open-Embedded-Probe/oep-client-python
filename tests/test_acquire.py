@@ -115,6 +115,15 @@ def test_during_is_for_a_stream_in_place_of_seconds():
             acquire.Request([("A", "GPIO10")], 1_000_000, 100, during=lambda wait: None, **kw)
 
 
+def test_a_format_1_stream_on_disk(probe, tmp_path):
+    """Streamed in format 1, raw and changes lines, put together on disk as it comes: every segment joined in order."""
+    for resolution in ({"B": 1}, {"A": 4, "B": 1}):
+        req = acquire.Request([("A", "GPIO10"), ("B", "GPIO11")], 1_000_000, 0, mode="stream", seconds=0.3,
+                              resolution=resolution, spool_dir=str(tmp_path))
+        res = acquire.capture_at(probe(), req)
+        assert res.complete and len(res.parts) == 1, resolution
+
+
 def test_format_1_lines_as_their_changes(probe):
     req = acquire.Request([("A", "GPIO10"), ("B", "GPIO11")], 20_000_000, 1000, resolution={"B": 1})
     res = acquire.capture_at(probe(), req)
