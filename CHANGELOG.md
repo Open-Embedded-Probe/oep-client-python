@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 0.0.46
 - (EN) Changed (oep-spec 4d28f24): `SpiController.transfer` and `Pwm.set` read the answer's count n(u8) first, and the
   virtual bench sends it; the memo's max_objects is read as u16. Registry, documents and vectors synced; the checkers'
   pins moved after a review (none checks the rules changed).
