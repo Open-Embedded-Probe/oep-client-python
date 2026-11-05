@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 0.0.49
 - (EN) Changed (virtual bench): a stream follows the probe's clock as a real probe's does. Logic samples are made at once
   with numpy (a second of 1 MS/s on 2 lines: format 0 0.04 s instead of 4.6 s, format 1 about 0.2 to 0.3 s), sample by
   sample only where a track needs it (the glitch filter, the external clock, analog, a test's own value()). The samples
