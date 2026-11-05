@@ -1,6 +1,14 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Fixed: a stream's segments join bit by bit, so a stream is one part unless data was lost. A segment whose
+  samples did not fill whole bytes of each line (the ESP32-P4's 65332 samples of 2 lines at 5 and 10 MS/s) started a new
+  part every time: 300 to 550 parts, none lost. A format 1 segment whose samples are not a multiple of every D still
+  starts a new part (its ticks restart, capture §1.3).
+- (JA) 修正: stream の区画を 1 bit ずつつなぐ。欠損がなければ、stream は 1 つの部分になる。線ごとに標本がバイトの切れ目で
+  終わらない区画（ESP32-P4 の 2 本の線の 65332 標本、5 MS/s と 10 MS/s）では、そのたびに新しい部分を始めていて、欠損なしで
+  300〜550 の部分に分かれていた。format 1 で標本数がどの D の倍数でもない区画は、今までどおり新しい部分を始める
+  （その刻みが始め直しになるため、capture §1.3）。
 
 ## 0.0.47
 - (EN) Added: `acquire.Request(during=steps)` for a stream in place of `seconds`: it streams until `steps(wait)`

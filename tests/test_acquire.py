@@ -165,3 +165,43 @@ def test_lines_are_named_by_channel_name_or_label(probe):
         acquire.capture_at(probe(), acquire.Request([("A", "10")], 20_000_000, 100))     # a number is not a name
     with pytest.raises(ValueError, match="no channel carries that label"):
         acquire.capture_at(probe(), acquire.Request([("A", "x035.nrst")], 20_000_000, 100))
+
+
+def test_stream_segments_join_bit_by_bit(tmp_path):
+    """A stream's segments need not end on a whole byte of each line (2 lines in 2-bit samples, 65332 samples a
+    segment on the P4): they join into one part, bit by bit - parts are cut only where data was lost."""
+    import random
+    import types
+    from oep_client.capture import SegmentInfo
+    rnd = random.Random(1)
+    n_seg, per = 3, 12                                  # 12 samples: 3 bytes of the stream, 1.5 bytes a line
+    a = [rnd.randrange(2) for _ in range(n_seg * per)]
+    b = [rnd.randrange(2) for _ in range(n_seg * per)]
+    data = bytearray()
+    for i in range(0, len(a), 4):                       # sample i: bits 2i (A) and 2i + 1 (B) of the stream
+        v = 0
+        for j in range(4):
+            v |= (a[i + j] | b[i + j] << 1) << (2 * j)
+        data.append(v)
+    segs = {k * 3: SegmentInfo(k * 3, per, 1_000_000 + k * per * 200, 50) for k in range(n_seg)}
+    got = types.SimpleNamespace(data=data, segments=segs, gaps=[], start=0)
+    cfg = types.SimpleNamespace(rate=5_000_000, width=2, positions=None, event_d={})
+    req = acquire.Request([("A", "x"), ("B", "y")], 5_000_000, 0, mode="stream", seconds=1)
+    parts, lost = acquire._stream_parts(None, cfg, got, ["A", "B"], [10, 11], req)
+    assert not lost and len(parts) == 1
+    got_a, got_b = (list(levels(c)) for c in parts[0].channels)
+    assert got_a == a and got_b == b
+
+
+def test_bits_written_across_bytes(tmp_path):
+    import io
+    rnd = __import__("random").Random(2)
+    want, f, carry = [], io.BytesIO(), None
+    for n in (5, 12, 3, 16, 7):
+        bits = [rnd.randrange(2) for _ in range(n)]
+        want += bits
+        col = bytes(sum(bits[i + j] << j for j in range(min(8, n - i))) for i in range(0, n, 8))
+        carry = acquire._write_bits(f, carry, col, n)
+    acquire._flush_bits(f, carry)
+    out = np.unpackbits(np.frombuffer(f.getvalue(), np.uint8), bitorder="little")[: len(want)]
+    assert list(out) == want and len(f.getvalue()) == (len(want) + 7) // 8

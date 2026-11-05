@@ -1655,14 +1655,14 @@ class _Spool:
             p, nxt = ready[k][0], ready[j][1]
             x = self.segs[p]
             samples = sum(self.segs.pop(q).samples for q, _ in ready[k:j + 1])
-            if self.cur is not None and (self.cur["samples"] % 8 or any(self.cur["samples"] % d for d in self.ds)):
+            if self.cur is not None and any(self.cur["samples"] % d for d in self.ds):
                 self._close(follows=True)      # a grid restart (format 1) is not a loss: the next part follows on
             self._open(p, x)
             data = bytes(self.pending[p - self.at:nxt - self.at])
             cols = _segment_columns(self.cap, data, samples, len(self.names), self.cfg)
-            for col, f, ev in zip(cols, self.cur["files"], self.cur["events"]):
-                if isinstance(col, bytes):
-                    f.write(col[:(samples + 7) // 8])
+            for j, (col, f, ev) in enumerate(zip(cols, self.cur["files"], self.cur["events"])):
+                if isinstance(col, bytes):           # joined bit by bit: a segment need not end on a whole byte
+                    self.cur["carry"][j] = _write_bits(f, self.cur["carry"][j], col, samples)
                 else:
                     ev[0].append(col[0] + self.cur["samples"] // col[4])
                     ev[1].append(col[1])
@@ -1693,7 +1693,7 @@ class _Spool:
         k = len(self.parts)
         files = [open(os.path.join(self.dir, f"p{k}-{j}.bits"), "wb") for j in range(len(self.names))]
         self.cur = {"tick0": tick0, "meta": _seg_meta(seg) if seg is not None else {}, "samples": 0, "files": files,
-                    "events": [[[], [], [], None] for _ in self.names]}
+                    "events": [[[], [], [], None] for _ in self.names], "carry": [None] * len(self.names)}
         self._follows = False
 
     _last_samples, _last_end, _follows = 0, None, False
@@ -1705,6 +1705,7 @@ class _Spool:
         cur, n = self.cur, self.cur["samples"]
         chans = []
         for role, (name, ch, f, ev) in enumerate(zip(self.names, self.ids, cur["files"], cur["events"])):
+            _flush_bits(f, cur["carry"][role])
             f.close()
             d = self.cfg.event_d.get(role) if self.blocks else None
             if d is not None:
@@ -1791,7 +1792,7 @@ def _stream_parts(cap, cfg, got, names, ids, req: Request) -> tuple[list, list]:
                 chans = from_interleaved(data, names, cfg.width, cfg.positions, samples)
             else:
                 chans = _from_blocks(cap, data, names, samples, cfg)
-            restart = acc is not None and (acc_samples % 8 or any(acc_samples % d for d in ds))
+            restart = acc is not None and any(acc_samples % d for d in ds)
             if acc is None or restart:           # a grid restart (format 1) is not a loss: the next part follows on
                 if acc is not None:
                     parts.append(_part(_built(acc, acc_samples, ids), acc_meta, tick0))
@@ -1865,10 +1866,41 @@ def _samples_at_once(run, names, ids, cfg, samples: int) -> list:
             for name, ch, bits in zip(names, ids, packed)]
 
 
+def _write_bits(f, carry, col: bytes, samples: int):
+    """Append `samples` bits of `col` (sample i at bit i % 8 of byte i // 8) to file `f` after the `carry` bits not
+    yet written (None: none): whole bytes go to the file, the bits left over (fewer than 8) come back as the carry."""
+    if carry is None and samples % 8 == 0:
+        f.write(col[:samples // 8])
+        return None
+    import numpy as np
+    bits = np.unpackbits(np.frombuffer(col, np.uint8, (samples + 7) // 8), bitorder="little")[:samples]
+    if carry is not None:
+        bits = np.concatenate([carry, bits])
+    whole = len(bits) // 8 * 8
+    f.write(np.packbits(bits[:whole], bitorder="little").tobytes())
+    return bits[whole:] if whole < len(bits) else None
+
+
+def _flush_bits(f, carry) -> None:
+    """The last carry of _write_bits: its bits in one byte, the rest 0."""
+    if carry is not None and len(carry):
+        import numpy as np
+        f.write(np.packbits(carry, bitorder="little").tobytes())
+
+
+def _join_bits(pieces) -> bytes:
+    """Pieces (bits, n) joined bit by bit: n need not be a multiple of 8."""
+    if all(n % 8 == 0 for _, n in pieces[:-1]):
+        return b"".join(b[:(n + 7) // 8] for b, n in pieces)
+    import numpy as np
+    return np.packbits(np.concatenate([np.unpackbits(np.frombuffer(b, np.uint8, (n + 7) // 8), bitorder="little")[:n]
+                                       for b, n in pieces]), bitorder="little").tobytes()
+
+
 class _Acc:
-    """One channel of a part being joined from its segments (bits: whole bytes, the part's samples so far a multiple
-    of 8; events: quanta offset by the samples so far, a multiple of D). A segment that follows on carries the level
-    before it as its start (§1.3), so its changes join the part's as they are."""
+    """One channel of a part being joined from its segments (bits: joined bit by bit; events: quanta offset by the
+    samples so far, a multiple of D). A segment that follows on carries the level before it as its start (§1.3), so
+    its changes join the part's as they are."""
     def __init__(self, c):
         self.first, self.pieces = c, []
         self.start = getattr(c, "start_level", None)
@@ -1894,8 +1926,7 @@ def _built(acc: list, samples: int, ids) -> list:
                 ct += c_
             out.append(changes(c.name, ks, lv, ct, -(-samples // c.step), c.step, 0, a.start, pin=ch))
         else:
-            out.append(Bits(c.name, b"".join(b for b, _ in a.pieces)[:(samples + 7) // 8], samples, 1, 0,
-                                          {"pin": ch}))
+            out.append(Bits(c.name, _join_bits(a.pieces)[:(samples + 7) // 8], samples, 1, 0, {"pin": ch}))
     return out
 
 
