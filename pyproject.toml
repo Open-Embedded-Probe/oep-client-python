@@ -42,7 +42,7 @@ packages = ["src/oep_client"]
 only-include = ["src/oep_client", "tests", "docs", "udev", "README.md", "README.ja.md", "CHANGELOG.md", "LICENSE", "pyproject.toml"]
 
 [dependency-groups]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "pytest-xdist>=3"]
 
 [tool.pytest.ini_options]
 markers = ["hw: needs a probe board (OEP_HW_BOARDS=<board-identify ids>); skipped otherwise (tests/hw/README.md)",

@@ -1,6 +1,9 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) CI and the release run the tests four at a time by file (pytest-xdist, a dev dependency): most tests wait on real
+  timeouts, so the run drops from about 6 minutes to about 2.
+- (JA) CI とリリースは、試験をファイルごとに並べて流す（pytest-xdist、開発用の依存）。多くの試験は実際の時間切れを待つので、約 6 分が約 2 分になる。
 
 ## 0.0.46
 - (EN) Changed (oep-spec 4d28f24): `SpiController.transfer` and `Pwm.set` read the answer's count n(u8) first, and the

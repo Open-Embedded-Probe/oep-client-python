@@ -23,7 +23,7 @@ jobs:
         uses: astral-sh/setup-uv@v6
 
       - name: Run tests
-        run: uv run --locked pytest tests
+        run: uv run --locked pytest tests -n auto --dist loadfile   # files run side by side; most tests wait on real timeouts
 
       - name: Verify explicit virtual equipment contract
         id: equipment

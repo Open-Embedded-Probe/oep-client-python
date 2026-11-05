@@ -36,7 +36,7 @@ jobs:
         run: uv run python tools/prepare_release.py --version "${{ github.event.inputs.version }}"
 
       - name: Run tests
-        run: uv run --locked pytest tests
+        run: uv run --locked pytest tests -n auto --dist loadfile   # files run side by side; most tests wait on real timeouts
 
       - name: Verify explicit virtual equipment contract
         id: equipment
