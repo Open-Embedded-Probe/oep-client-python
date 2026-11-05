@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.0.50
+- (EN) No user-facing changes recorded.
+- (JA) ユーザー向け変更の記録はありません。
+
 ## 0.0.49
 - (EN) Changed (virtual bench): a stream follows the probe's clock as a real probe's does. Logic samples are made at once
   with numpy (a second of 1 MS/s on 2 lines: format 0 0.04 s instead of 4.6 s, format 1 about 0.2 to 0.3 s), sample by
