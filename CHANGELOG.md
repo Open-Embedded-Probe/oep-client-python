@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 0.0.45
 - (EN) Added: `oep_client.memo` for `oep.probe.memo` (oep-if-memo): list (paged, by prefix), read and write in parts at the
   route's max_frame, delete; a read whose data does not match its crc raises MemoTorn. `oep dump` names the interface and
   its max_object / max_objects. Registry and documents synced from oep-spec 2cd20aa (the memo interface; MUSTs that only
