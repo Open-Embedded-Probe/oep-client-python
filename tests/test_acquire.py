@@ -86,6 +86,35 @@ def test_a_stream_is_put_together_on_a_timeline(probe, tmp_path):
     assert n > 0 and all(isinstance(c, acquire.Bits) for p in res.parts for c in p.channels)
 
 
+def test_a_stream_runs_while_the_caller_works_on_the_same_session(probe, tmp_path):
+    hst = link.open_host(probe())
+    try:
+        core.take(hst, 30_000, owner="test")
+        seen = []
+
+        def steps(wait):                                   # sections: a request on the session, then collect meanwhile
+            for _ in range(3):
+                seen.append(hst.clock_best(2).uptime_ns)
+                wait(0.1)
+        req = acquire.Request([("A", "GPIO10")], 1_000_000, 0, mode="stream", during=steps, spool_dir=str(tmp_path))
+        res = acquire.capture(hst, req)
+        assert res.complete and res.parts and len(seen) == 3 and seen == sorted(seen)
+        assert sum(p.channels[0].n for p in res.parts) > 0
+        with pytest.raises(RuntimeError):                  # the caller's own failure stops the stream and comes out
+            acquire.capture(hst, acquire.Request([("A", "GPIO10")], 1_000_000, 0, mode="stream",
+                                                 during=lambda wait: (wait(0.05), (_ for _ in ()).throw(RuntimeError()))))
+        assert acquire.capture(hst, acquire.Request([("A", "GPIO10")], 1_000_000, 0, mode="stream", seconds=0.1)).complete
+    finally:
+        hst.end()
+        hst.link.close()
+
+
+def test_during_is_for_a_stream_in_place_of_seconds():
+    for kw in ({"mode": "oneshot"}, {"mode": "stream", "seconds": 1.0}):
+        with pytest.raises(ValueError):
+            acquire.Request([("A", "GPIO10")], 1_000_000, 100, during=lambda wait: None, **kw)
+
+
 def test_format_1_lines_as_their_changes(probe):
     req = acquire.Request([("A", "GPIO10"), ("B", "GPIO11")], 20_000_000, 1000, resolution={"B": 1})
     res = acquire.capture_at(probe(), req)
@@ -128,10 +157,10 @@ def test_probe_clock_against_the_host():
 
 
 def test_lines_are_named_by_channel_name_or_label(probe):
-    src = probe("--label", "13=bus.sda")
-    res = acquire.capture_at(src, acquire.Request([("D", "bus.SDA"), ("E", "gpio11")], 20_000_000, 100))
-    assert [c.acquisition["pin"] for c in res.channels] == [13, 11]          # the label's channel; names any case
-    assert res.meta["probe_channels"] == {"D": 13, "E": 11}
+    src = probe("--label", "13=bus.sda", "--label", "12=bus@PB9")
+    res = acquire.capture_at(src, acquire.Request([("D", "bus.SDA"), ("E", "gpio11"), ("F", "BUS@pb9")], 20_000_000, 100))
+    assert [c.acquisition["pin"] for c in res.channels] == [13, 11, 12]      # by role, by name, by the target pin (S@P)
+    assert res.meta["probe_channels"] == {"D": 13, "E": 11, "F": 12}
     with pytest.raises(ValueError, match="no channel of that name"):
         acquire.capture_at(probe(), acquire.Request([("A", "10")], 20_000_000, 100))     # a number is not a name
     with pytest.raises(ValueError, match="no channel carries that label"):

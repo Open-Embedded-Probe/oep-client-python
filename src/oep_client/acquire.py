@@ -11,13 +11,24 @@ probe's facts out.
 
 Logic channels go to oep.fixture.logic, analog ones to oep.fixture.analog; with both, oep.fixture.capture-group
 starts them together, a trigger on either track as the group's trigger source (capture §4.4). A line is named as a
-script keeps it - the probe's channel name (fn 0's channel_name, core §7.5) or a port's line label (S.N, host guide
-§5.3) - and looked up on the session (a channel number holds for one boot only); a track's channels are its plan roles
+script keeps it - the probe's channel name (fn 0's channel_name, core §7.5) or a port's line label (host guide §5.3:
+S.N by its role, S@P by the target pin) - and looked up on the session (a channel number holds for one boot only); a track's channels are its plan roles
 0..C-1 in the order given. The plans are released afterwards.
 
 Modes: "oneshot" (the probe's memory), "repeat" (`segments` acquisitions read and released as they come: with a
 trigger one part each, layout "segments"; without, a timeline), "stream" (for `seconds`, sent as taken,
 put together on disk while it runs: a timeline, cut where data was lost).
+
+A stream can run while the script does its steps on the same session (marking sections, sending console commands):
+`during=steps` in place of `seconds` streams until steps(wait) returns, `wait(seconds)` collecting while it waits.
+Steps should call wait often (the probe holds only its stream buffer meanwhile); a loss with on_loss "stop" raises
+StreamStopped out of wait, and the stream ends there.
+
+    def steps(wait):
+        for duty in (64, 128):
+            with rec.section(2, f"duty={duty}"):
+                console.write(f"PWM {duty}\n".encode()); wait(0.5)
+    res = acquire.capture(hst, acquire.Request(chans, 1_000_000, 0, mode="stream", during=steps))
 
 Times: tick 0 of a part is its first logic sample, `start_ns` on the probe's clock; an analog channel starts at
 t0_ticks = (its segment's start_ns - that) plus its skew_ns, in ticks. These are the probe's estimates; each track's
@@ -37,13 +48,14 @@ import array
 import math
 import struct
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from fractions import Fraction
 from pathlib import Path
 
 from . import registry as _reg
 
-__all__ = ["Analog", "Bits", "Changes", "OnDisk", "Part", "Request", "Result", "capture", "capture_at"]
+__all__ = ["Analog", "Bits", "Changes", "OnDisk", "Part", "Request", "Result", "StreamStopped", "capture", "capture_at"]
 
 TRIGGERS = ("high", "low", "rise", "fall", "both")
 ANALOG_TRIGGERS = ("high", "low", "rise", "fall")
@@ -52,7 +64,8 @@ ANALOG_TRIGGERS = ("high", "low", "rise", "fall")
 @dataclass
 class Request:
     channels: list[tuple[str, str]]          # logic: (name to record, the line): the probe's channel name (fn 0's
-                                             # channel_name, GPIO47) or a port's line label (S.N, x035.swdio), in order
+                                             # channel_name, GPIO47) or a port's line label (S.N, x035.swdio; S@P,
+                                             # x035@pb9), in order
     rate: int                                # logic samples per second asked for (the probe may answer another)
     samples: int
     trigger: tuple | None = None             # (logic channel, one of TRIGGERS) or (analog channel, rise / fall / high /
@@ -69,6 +82,8 @@ class Request:
     segments: int | None = None              # repeat: how many acquisitions
     on_loss: str = "stop"                    # stream: "stop" at the first loss, or "continue" to the end
     spool_dir: str | None = None             # stream: where its channels are put together on disk while it runs
+    during: Callable[[Callable[[float], None]], None] | None = None   # stream: instead of `seconds`, runs until this
+                                             # returns - called with wait(seconds), which collects while it waits
 
     def __post_init__(self):
         names = [n for n, _ in self.channels] + [n for n, *_ in self.analog]
@@ -92,8 +107,10 @@ class Request:
                 raise ValueError("repeat: logic channels only")
         elif self.segments is not None:
             raise ValueError("segments is for repeat only")
-        if self.mode == "stream" and not (self.seconds and self.seconds > 0):
-            raise ValueError("a stream needs seconds (how long)")
+        if self.during is not None and (self.mode != "stream" or self.seconds is not None):
+            raise ValueError("during is for a stream, in place of seconds")
+        if self.mode == "stream" and self.during is None and not (self.seconds and self.seconds > 0):
+            raise ValueError("a stream needs seconds (how long) or during")
         if self.arm not in ("pretrigger", "now"):
             raise ValueError(f"arm {self.arm!r}: pretrigger or now")
         logic = {n for n, _ in self.channels}
@@ -567,7 +584,8 @@ def _describe(core, hst, fn: int) -> list[tuple[int, bytes]]:
 
 def _channels(core, hst, lines: list[str]) -> list[int]:
     """The probe's channel numbers (valid for this boot) of lines named as kept in scripts: a channel name (fn 0's
-    channel_name, core §7.5; GPIO47) or a port's line label (S.N, host guide §5.3; x035.swdio). ASCII case aside."""
+    channel_name, core §7.5; GPIO47) or a port's line label (host guide §5.3: S.N by its role, x035.swdio; S@P by the target pin, x035@pb9). ASCII
+    case aside."""
     if not lines:
         return []
     from . import registry, settings
@@ -581,11 +599,13 @@ def _channels(core, hst, lines: list[str]) -> list[int]:
     labels = None
     out = []
     for line in lines:
-        port_line = settings.port_line(line)
-        if port_line is not None:
+        label = settings.parse_label(line)
+        if label is not None:
             if labels is None:
                 labels = settings.labels(hst)
-            ch = settings.line_from_labels(labels, port_line[1], port_line[0])
+            port, role, pin = label
+            ch = (settings.line_from_labels(labels, role, port) if role
+                  else settings.pin_from_labels(labels, pin, port))
             if ch is None:
                 raise ValueError(f"{line}: no channel carries that label (host guide §5.3)")
         else:
@@ -1133,6 +1153,35 @@ STREAM_MAX_DELAY_MS = 20  # ... or after this long. With (0, 0) the P4X sent eac
                           # quiet lines) as a transfer of its own, 2000 a second, and dropped 35 % it could not send
 
 
+class StreamStopped(Exception):
+    """Raised by a stream's `wait` (Request.during) when data was lost and on_loss is "stop": the stream stops there."""
+
+
+def _drive(req: Request, poll, lost) -> None:
+    """Collect a started stream: for req.seconds, or while req.during(wait) runs - its `wait(seconds)` collecting
+    meanwhile. poll(seconds) takes what comes, lost() says whether anything was lost; with on_loss "stop" a loss ends
+    it (a StreamStopped out of wait, caught here)."""
+    import time
+
+    def wait(seconds: float) -> None:
+        deadline = time.monotonic() + seconds
+        while True:
+            now = time.monotonic()
+            if now >= deadline:
+                return
+            poll(min(STREAM_POLL_S, deadline - now))
+            if req.on_loss == "stop" and lost():
+                raise StreamStopped("data was lost while streaming")
+
+    try:
+        if req.during is None:
+            wait(req.seconds)
+        else:
+            req.during(wait)
+    except StreamStopped:
+        pass
+
+
 def _collect_group(group, tracks, link, req: Request, oc, spool=None):
     """_collect for a group's streaming tracks (capture §4.1: each subscribed, started at once): -> ({fn: Received},
     seconds). The first track's Received goes to the spool as it comes; a loss in any track stops it with "stop"."""
@@ -1141,20 +1190,22 @@ def _collect_group(group, tracks, link, req: Request, oc, spool=None):
         t.subscribe(STREAM_MIN_BYTES, STREAM_MAX_DELAY_MS)
     group.start(tracks)
     t_read = time.monotonic()
-    deadline, got = t_read + req.seconds, {t.fn: oc.Received() for t in tracks}
+    got = {t.fn: oc.Received() for t in tracks}
     lead = tracks[0].fn
-    while True:
-        now = time.monotonic()
-        if now >= deadline:
-            break
-        got = group.stream(link, tracks, seconds=min(STREAM_POLL_S, deadline - now), into=got)
+
+    def poll(seconds):
+        group.stream(link, tracks, seconds=seconds, into=got)
         if spool is not None:
             spool.take(got[lead])
-        lost = (spool is not None and spool.lost) or any(
+
+    def lost():
+        return (spool is not None and spool.lost) or any(
             g.gaps or (g.start or 0) > 0 for fn, g in got.items() if spool is None or fn != lead)
-        if req.on_loss == "stop" and lost:
-            break
-    group.stop()
+
+    try:
+        _drive(req, poll, lost)
+    finally:
+        group.stop()                             # also when the caller's `during` raised: the probe is left stopped
     got = group.finish(link, tracks, got)
     return got, time.monotonic() - t_read
 
@@ -1182,25 +1233,26 @@ def _analog_runs(an, acfg, got) -> tuple[list, list]:
 
 
 def _collect(track, link, req: Request, oc, spool=None):
-    """Subscribe, start, collect for req.seconds, stop and collect the rest -> (Received, seconds). A loss stops it
-    at once with on_loss "stop"."""
+    """Subscribe, start, collect for req.seconds (or while req.during runs), stop and collect the rest -> (Received,
+    seconds). A loss stops it at once with on_loss "stop"."""
     import time
     track.subscribe(STREAM_MIN_BYTES, STREAM_MAX_DELAY_MS)   # batched: a capture wants bandwidth, not a frame per block
     track.start()
     t_read = time.monotonic()
-    deadline, got = t_read + req.seconds, oc.Received()
-    while True:                                  # stream() renews the lease across calls on the same Received
-        now = time.monotonic()
-        if now >= deadline:
-            break
-        got = track.stream(link, seconds=min(STREAM_POLL_S, deadline - now), into=got)
+    got = oc.Received()
+
+    def poll(seconds):                           # stream() renews the lease across calls on the same Received
+        track.stream(link, seconds=seconds, into=got)
         if spool is not None:                    # put together as it comes: memory holds a poll's worth, not the stream
             spool.take(got)
-            if req.on_loss == "stop" and spool.lost:
-                break
-        elif req.on_loss == "stop" and (got.gaps or (got.start or 0) > 0):
-            break
-    track.stop()
+
+    def lost():
+        return spool.lost if spool is not None else bool(got.gaps or (got.start or 0) > 0)
+
+    try:
+        _drive(req, poll, lost)
+    finally:
+        track.stop()
     got = track.finish(link, got)
     return got, time.monotonic() - t_read
 

@@ -1,6 +1,18 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Added: `acquire.Request(during=steps)` for a stream in place of `seconds`: it streams until `steps(wait)`
+  returns, `wait(seconds)` collecting while it waits, so a script marks sections and sends ops or console commands on
+  the same session (no second thread or session) while one long capture runs. A loss with on_loss "stop" raises
+  `acquire.StreamStopped` out of `wait`; the stream ends there. An exception of the steps stops the capture and comes out.
+- (JA) 追加: stream の `acquire.Request(during=steps)`（`seconds` の代わり）。`steps(wait)` が戻るまで取り込み、
+  `wait(秒)` の間に受け取る。1 本の長い取り込みの間に、同じセッションで区間の見出しを書き、op やコンソールの命令を送れる
+  （別のスレッドもセッションも要らない）。on_loss "stop" で欠損があると、`wait` から `acquire.StreamStopped` が出て、
+  そこで取り込みを終える。steps の例外は、取り込みを止めてから外に出る。
+- (EN) Added: acquire's channels take a port's line by the target pin, `S@P` (host guide §5.3; `x035@pb9`), besides
+  `S.N` and the probe's channel names.
+- (JA) 追加: acquire のチャネルに、口の線を相手のピンで指す `S@P`（host ガイド §5.3、`x035@pb9`）も使える。`S.N` と
+  プローブのチャネル名に加えて。
 - (EN) CI and the release run the tests four at a time by file (pytest-xdist, a dev dependency): most tests wait on real
   timeouts, so the run drops from about 6 minutes to about 2.
 - (JA) CI とリリースは、試験をファイルごとに並べて流す（pytest-xdist、開発用の依存）。多くの試験は実際の時間切れを待つので、約 6 分が約 2 分になる。
