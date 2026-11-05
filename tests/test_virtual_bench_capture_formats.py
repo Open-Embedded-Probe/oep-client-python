@@ -297,10 +297,10 @@ def test_streaming_answer_says_its_stream_buffer():
     assert lc.configure(rate=10_000_000, samples=100).stream_buffer is None    # one-shot: not said
 
 
-def test_format_0_streaming_makes_a_tick_at_most_and_stop_answers():
-    """Streaming format 0: a tick makes at most BLOCKS_A_TICK samples, so a bench far behind a fast rate still answers
-    (the stream runs late) - catching up on all the time passed at once answered stop after 12.8 s (wireskein: 1 MHz x
-    2 lines)."""
+def test_format_0_streaming_catches_up_over_ticks_and_stop_makes_every_sample():
+    """Streaming format 0: a tick makes a bounded number of samples (a_tick), so a bench behind a fast rate still
+    answers and catches up over ticks; stop makes every sample up to the stop (a probe sends what its stream buffer
+    holds) - before, the stream ran late and ended before the stop (wireskein: a section past its end on a busy host)."""
     from oep_client import virtual_bench_capture as vbc
     ep, hst, lc, clock = bench()
     planned(hst, lc, 2)
@@ -310,10 +310,28 @@ def test_format_0_streaming_makes_a_tick_at_most_and_stop_answers():
     cap = ep.captures[lc.fn]
     clock.t += 2_000                                           # 2 s (within the lease): two million samples due
     cap.tick(clock.t)
-    assert cap.produced == vbc.BLOCKS_A_TICK
+    assert cap.produced == cap.a_tick() < 2_000_000
     lc.stop()
-    assert cap.produced <= 4 * vbc.BLOCKS_A_TICK < 2_000_000   # a tick or a few (the requests tick too), not 2 s
+    assert cap.produced == 2_000_000                           # all of them, at the stop
     assert lc.status().state == c.STATE["configured"]
+
+
+def test_streaming_behind_more_than_its_buffer_stops_in_error(monkeypatch):
+    """Behind by more than its stream buffer holds, the track stops in error as a probe whose buffer overflowed: never a
+    stream that silently ran late."""
+    from oep_client import virtual_bench_capture as vbc
+    monkeypatch.setattr(vbc, "STREAM_BUFFER_BYTES", 1 << 12)  # 16384 samples of 2 lines: 16 ms at 1 MS/s
+    ep, hst, lc, clock = bench()
+    planned(hst, lc, 2)
+    lc.configure(rate=1_000_000, mode=c.STREAMING)
+    lc.subscribe(16384, 20)
+    lc.start()
+    cap = ep.captures[lc.fn]
+    assert cap.held_most() == 16384
+    clock.t += 30                                              # more than the buffer's time, in one go
+    cap.tick(clock.t)
+    st = lc.status()
+    assert st.state == c.STATE["error"]
 
 
 def test_format_1_with_every_channel_events_has_w_and_c_0():

@@ -1,6 +1,22 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Changed (virtual bench): a stream follows the probe's clock as a real probe's does. Logic samples are made at once
+  with numpy (a second of 1 MS/s on 2 lines: format 0 0.04 s instead of 4.6 s, format 1 about 0.2 to 0.3 s), sample by
+  sample only where a track needs it (the glitch filter, the external clock, analog, a test's own value()). The samples
+  the clock has taken and the bench has not made yet count as held in its stream buffer: a tick makes a bounded number
+  and catches up over ticks; stop makes every sample up to the stop; behind by more than the stream buffer holds, the
+  track stops in error as a probe whose buffer overflowed (state 6, error storage). Before, on a busy host the stream ran
+  late and ended before the stop: a heading placed by the probe's clock fell past its end (4 cores with 8 busy
+  processes, during=steps at 1 MS/s on 2 lines: 8 of 8 by 0.5 to 1.1 s; now 0 of 8, none lost).
+- (JA) 変更（仮想ベンチ）: stream は、実機と同じくプローブの時計に従う。ロジックの標本は numpy でまとめて作る（2 本・
+  1 MS/s の 1 秒分が、format 0 で 4.6 s から 0.04 s、format 1 で約 0.2〜0.3 s）。1 標本ずつ作るのは、そうしか作れない track
+  だけ（グリッチフィルタ、外部クロック、アナログ、試験が差し替えた value()）。時計が取ったのにまだ作っていない標本は、
+  ストリーム用のバッファに持っている分とみなす。tick は上限つきで作り、何回かで追いつく。stop は止めた時刻までの標本を
+  全部作る。遅れがストリーム用のバッファを超えたら、バッファのあふれた実機と同じく track を error で止める（state 6、
+  error storage）。これまでは、混んだ host で stream が遅れたまま止めた時刻より前で終わり、プローブの時計で置いた見出しが
+  その後になった（4 コアに 8 本の空回り、during=steps で 2 本・1 MS/s: 8 回中 8 回、0.5〜1.1 s。直した後は 8 回中 0 回、
+  欠損なし）。
 - (EN) Fixed (0.0.48): a format 1 stream put together on disk failed with a KeyError (a segment's position): the loop
   joining a segment's lines bit by bit reused the name of the loop over the segments, so the next segment taken was the
   wrong one. A format 1 stream on disk is tested now.

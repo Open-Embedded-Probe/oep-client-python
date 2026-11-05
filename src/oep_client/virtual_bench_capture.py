@@ -82,11 +82,11 @@ BITS = 12                              # the analog value's b (layout)
 BLOCK_TOP = 4096                       # its own: the longest block L it makes (§1.3)
 STREAM_BUFFER_BYTES = 1 << 20          # its own: what a stream holds unsent, said in the answer (stream_buffer, §3.3)
 UNKNOWN_END = 1 << 62                  # streaming format 1: a segment dropped whole whose end is not taken yet
-BLOCKS_A_TICK = 1 << 14                # streaming: the most samples one tick makes - Python makes far below a fast rate,
-                                       # and catching up on all the time passed fell further behind every tick until the
-                                       # bench answered nothing (wireskein: format 1 at 2 MHz x 4 lines; format 0 at 1 MHz
-                                       # x 2 lines, stop answered after 12.8 s): it makes what it can and the stream runs
-                                       # late instead
+FAST_A_TICK = 1 << 17                  # streaming: the most one tick makes when numpy makes them at once (a_tick)
+BLOCKS_A_TICK = 1 << 14                # streaming: the most samples one tick makes sample by sample - catching up on all
+                                       # the time passed at once fell further behind every tick until the bench answered
+                                       # nothing (wireskein: format 1 at 2 MHz x 4 lines; format 0 at 1 MHz x 2 lines,
+                                       # stop answered after 12.8 s): it catches up over ticks (held_most)
 
 
 TIMEBASE_HZ = 100_000_000             # its own: format 3's delta tick (the answer's timebase, §3.8)
@@ -206,6 +206,38 @@ def logic_block(raw: list[list[int]], events: list[list[int]], ds: list[int], be
     return fallback + start + struct.pack("<I", len(ev)) + body + b"".join(ev)
 
 
+def logic_block_np(np, raw: list, events: list, ds: list[int], before: list[int], L: int) -> bytes:
+    """logic_block with each channel's levels a numpy array: the same bytes, made at once."""
+    r = len((raw + events)[0])
+    E = len(events)
+    fb, ev = [], []
+    for e, lv in enumerate(events):
+        d = ds[e]
+        q = -(-r // d)
+        prev = np.concatenate([np.array([before[e]], np.uint8), lv[:-1]])
+        changed = np.zeros(q * d, np.int64)
+        changed[:r] = lv != prev
+        counts = changed.reshape(q, d).sum(axis=1)
+        last = lv[np.minimum((np.arange(q) + 1) * d, r) - 1].astype(np.int64)
+        t = np.nonzero(counts)[0]
+        rec = np.zeros(len(t), dtype=[("t", "<u2"), ("e", "u1"), ("v", "u1")])
+        rec["t"], rec["e"], rec["v"] = t, e, (last[t] << 7) | np.minimum(counts[t], 127)
+        if len(t) * 4 > L // 8:
+            fb.append(e)
+        else:
+            ev.append(rec.tobytes())
+    nb = (E + 7) // 8
+    fallback = sum(1 << e for e in fb).to_bytes(nb, "little")
+    start = sum(before[e] << e for e in range(E)).to_bytes(nb, "little")
+    cols = raw + [events[e] for e in fb]
+    body = b""
+    if cols:
+        bits = np.stack(cols, axis=1).astype(np.uint8)
+        body = np.packbits(bits.reshape(-1), bitorder="little").tobytes()
+    n_ev = sum(len(x) // 4 for x in ev)
+    return fallback + start + struct.pack("<I", n_ev) + body + b"".join(ev)
+
+
 def analog_part(values: list[int], kind: int, d: int, b: int) -> bytes:
     """One channel's part of a format 2 block (§1.4): packed the r values of b bits; else for every interval of d
     (the last one partial) min and max (b bits each) and / or the sum (b + ceil(log2 d) bits), in that order - bits by
@@ -230,6 +262,15 @@ def analog_part(values: list[int], kind: int, d: int, b: int) -> bytes:
     return acc.to_bytes((at + 7) // 8, "little")
 
 
+class _wave:
+    """A logic wave: wave(i, rate) for one sample, wave.many(np, samples, rate) for an array of them (numpy)."""
+    def __init__(self, one, many):
+        self.one, self.many = one, many
+
+    def __call__(self, i, rate):
+        return self.one(i, rate)
+
+
 def logic_wave(spec: str):
     """A logic channel's waveform instead of the counter's bit: `counter`; `quiet[:LEVEL]` (never changes, default
     high); `square:PERIOD` (samples); `uart:BAUD[:TEXT]` - 8N1 characters of TEXT (default "OEP\\n") one after another
@@ -239,10 +280,10 @@ def logic_wave(spec: str):
         return None
     if kind == "quiet":
         level = int(args[0]) if args else 1
-        return lambda i, rate: level
+        return _wave(lambda i, rate: level, lambda np, i, rate: np.full(len(i), level, np.uint8))
     if kind == "square":
         half = max(1, int(args[0]) // 2)
-        return lambda i, rate: (i // half) & 1
+        return _wave(lambda i, rate: (i // half) & 1, lambda np, i, rate: ((i // half) & 1).astype(np.uint8))
     if kind == "uart":
         baud = int(args[0])
         text = (args[1] if len(args) > 1 else "OEP\n").encode()
@@ -255,7 +296,14 @@ def logic_wave(spec: str):
             if at <= 8:
                 return text[char % len(text)] >> (at - 1) & 1      # LSB first
             return 1                                               # stop, idle
-        return uart
+
+        def many(np, i, rate):                                     # the same, for an array of samples
+            r = Fraction(rate)                                     # the track's rate is exact: so is the bit time
+            bit = (i * (baud * r.denominator)) // r.numerator
+            char, at = np.divmod(bit, 20)
+            data = (np.frombuffer(text, np.uint8)[char % len(text)] >> np.clip(at - 1, 0, 7)) & 1
+            return np.where(at == 0, 0, np.where(at <= 8, data, 1)).astype(np.uint8)
+        return _wave(uart, many)
     raise ValueError(f"logic wave {spec!r}: counter, quiet[:LEVEL], square:PERIOD or uart:BAUD[:TEXT]")
 
 
@@ -702,7 +750,38 @@ class VirtualCapture:
             slot = "H" if self.width == 2 * self.channels else "I"
             return b"".join(struct.pack(f"<{self.channels}{slot}", *(self.value(k, first + i) for k in self.analog_roles))
                             for i in range(n))
+        levels = self._levels(first, n)
+        if levels is not None:                                     # numpy: the samples at once
+            import numpy as np
+            bits = np.zeros((n, self.width), np.uint8)
+            bits[:, :] = np.stack(levels[:self.width], axis=1)
+            return np.packbits(bits.reshape(-1), bitorder="little").tobytes()
         return pack_samples([sum(self.value(k, first + i) << k for k in range(self.width)) for i in range(n)], self.width)
+
+    def _levels(self, first: int, n: int):
+        """Logic channels 0 .. max(width, channels) - 1 at samples first .. first + n - 1 as numpy arrays, as value() gives them; None
+        where only value() can (numpy missing, the glitch filter, the external clock, a wave without its array form, a
+        value() a test put on the track).
+        Python made a sample a microsecond or more: a bench behind 1 MS/s on a busy host."""
+        ns = max(self.glitch_ns.values(), default=0)
+        if self.analog or self.clock is not None or n <= 0 or (ns and -(-ns * self.rate // 1_000_000_000) > 1) or \
+                "value" in vars(self):                             # a test's own value(): only it says
+            return None
+        try:
+            import numpy as np
+        except ImportError:
+            return None
+        i = np.arange(first, first + n, dtype=np.int64)
+        out = []
+        for k in range(max(self.width, self.channels)):            # format 1: the channels, its w apart (0 or less)
+            wave = self.waves.get(self.logic_roles[k]) if k < len(self.logic_roles) else None
+            if wave is None:
+                out.append(((i >> k) & 1).astype(np.uint8))
+            elif isinstance(wave, _wave):
+                out.append(wave.many(np, i, self.rate))
+            else:
+                return None
+        return out
 
     def _blocks(self, first: int, n: int, contiguous: bool, segment_start: bool = True) -> bytes:
         """A format 1 segment (§1.3): blocks of L from its sample 0; start_level the sample before when it is
@@ -715,10 +794,18 @@ class VirtualCapture:
         raw = [k for k in roles if self.carriages.get(k, (CARRIAGE["raw"], 1))[0] == CARRIAGE["raw"]]
         ev = [k for k in roles if k not in raw]
         ds = [self.carriages[k][1] for k in ev]
+        levels = self._levels(first, n)                            # numpy: the samples and the blocks at once
         out = bytearray()
         for b in range(0, n, self.block):
             r = min(self.block, n - b)
             at = first + b
+            if levels is not None:
+                before = [int(levels[k][b - 1]) if b else (self.value(k, at - 1) if contiguous else int(levels[k][0]))
+                          for k in ev]
+                import numpy as np
+                out += logic_block_np(np, [levels[k][b:b + r] for k in raw], [levels[k][b:b + r] for k in ev], ds,
+                                      before, self.block)
+                continue
             before = [self.value(k, at - 1) if (b or contiguous) else self.value(k, at) for k in ev]
             out += logic_block([[self.value(k, at + i) for i in range(r)] for k in raw],
                                [[self.value(k, at + i) for i in range(r)] for k in ev], ds, before, self.block)
@@ -1018,21 +1105,42 @@ class VirtualCapture:
                 if len(self.segs) >= self.segments_max:
                     self.state = STATE["paused"]
                     break
+        elif self.mode == MODE["streaming"] and due - self.produced > self.held_most():
+            events += self.overflow()                              # behind by more than its stream holds (below)
         elif self.mode == MODE["streaming"] and self.format in PIECES:
             self._stream_blocks(due, whole=True)
         elif self.mode == MODE["streaming"]:
-            per_byte = 1 if self.analog else 8 // math.gcd(self.width, 8)   # whole bytes only (§2.2)
-            n = min((due - self.produced) // per_byte * per_byte, BLOCKS_A_TICK)
-            if n > 0:
-                self.data += self._pack(self.produced, n)
-                self.produced += n
-                taken = self.produced - self.capture_begin
-                first = self.first_segment_samples or self.samples
-                complete = 0 if taken < first else 1 + (taken - first) // self.samples
-                self.serial_done = complete & 0xFFFFFFFF
-                done_samples = 0 if not complete else first + (complete - 1) * self.samples
-                self.stream_committed_bytes = self.bytes_of(done_samples)
+            self._stream_samples(due)
         return events
+
+    # Streaming follows the clock as a probe's does: sample i is the one taken at t0 + i / rate, and the samples the
+    # clock has taken that the bench has not made yet are as a probe's samples held unsent in its stream buffer. A tick
+    # makes a bounded number (the bench keeps answering), so it may be behind for a while and catch up; stop makes every
+    # sample up to the stop (a probe sends all it holds); behind by more than the stream buffer holds, the track stops
+    # in error as a probe whose buffer overflowed (state 6, error storage) - never a stream that silently ran late
+    # (a section placed by the probe's clock past the stream's end, wireskein on a busy host).
+    def held_most(self) -> int:
+        """The samples its stream buffer holds (stream_buffer, §3.3), at format 0's bytes a sample."""
+        return STREAM_BUFFER_BYTES // max(1, self.width) if self.analog else STREAM_BUFFER_BYTES * 8 // max(1, self.width)
+
+    def a_tick(self) -> int:
+        """The most samples one tick makes: more when numpy makes them at once (a sample a microsecond or more in
+        Python, about a hundredth of that at once)."""
+        return FAST_A_TICK if self._levels(self.produced, 1) is not None else BLOCKS_A_TICK
+
+    def _stream_samples(self, due: int, most: int | None = None) -> None:
+        """Format 0 streaming: the samples up to `due`, at most `most` (a_tick() by default), whole bytes only."""
+        per_byte = 1 if self.analog else 8 // math.gcd(self.width, 8)   # whole bytes only (§2.2)
+        n = min((due - self.produced) // per_byte * per_byte, self.a_tick() if most is None else most)
+        if n > 0:
+            self.data += self._pack(self.produced, n)
+            self.produced += n
+            taken = self.produced - self.capture_begin
+            first = self.first_segment_samples or self.samples
+            complete = 0 if taken < first else 1 + (taken - first) // self.samples
+            self.serial_done = complete & 0xFFFFFFFF
+            done_samples = 0 if not complete else first + (complete - 1) * self.samples
+            self.stream_committed_bytes = self.bytes_of(done_samples)
 
     def _stream_geometry(self, rel: int) -> tuple[int, int, int]:
         """Streaming: the segment holding sample `rel` (from the retained start) -> (its number, first sample, size)."""
@@ -1046,7 +1154,7 @@ class VirtualCapture:
         """Format 1 streaming: the blocks the clock has taken - each whole (a block counts its events first, §1.3), at
         most BLOCKS_A_TICK samples a call; `whole` False at stop: the block being taken ends there, short."""
         if whole:
-            due = min(due, self.produced + BLOCKS_A_TICK)
+            due = min(due, self.produced + self.a_tick())
         else:                                                      # stop: only the block begun, not all the time behind
             rel = self.produced - self.capture_begin
             _, at, size = self._stream_geometry(rel)
@@ -1104,6 +1212,18 @@ class VirtualCapture:
                 index = self.first_trigger_index if self.first_trigger_index < partial else NONE
                 segment = self._segment(partial, index, flags=FLAG["short"])
                 events.append(bytes([EVENT["segment"]]) + segment.pack())
+        if self.state == STATE["capturing"] and self.mode == MODE["streaming"] and now_ms is not None:
+            due = self.kept(int((now_ms - self.started_ms) * self.rate / 1000))   # every sample up to the stop: the
+            if due - self.produced > self.held_most():             # stream holds them (tick's rules, above)
+                return events + self.overflow()
+            while self.state == STATE["capturing"]:
+                before = self.produced
+                if self.format in PIECES:
+                    self._stream_blocks(due, whole=True)
+                else:
+                    self._stream_samples(due, most=due)
+                if self.produced == before:
+                    break
         if self.state == STATE["capturing"] and self.mode == MODE["streaming"] and self.format in PIECES:
             if now_ms is not None:                                 # the taken samples, a short last block
                 self._stream_blocks(self.kept(int((now_ms - self.started_ms) * self.rate / 1000)), whole=False)
