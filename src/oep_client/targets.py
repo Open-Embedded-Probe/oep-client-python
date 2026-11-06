@@ -53,7 +53,7 @@ class Family:
 
 
 V00X_OPTION = 0x1FFFF800            # word0 = RDPR, nRDPR, USER, nUSER (bytes, little-endian)
-V00X_RST_MODE = {0: "128 us", 1: "1 ms", 2: "12 ms"}   # USER bits[4:3]: the NRST ignore window; 3 = PD7 is a GPIO
+V00X_RST_MODE = {0: "128 us", 1: "1 ms", 2: "12 ms"}   # USER bits[4:3]: the NRST ignore window; 3 = the pin is a GPIO
 
 
 def v00x_nrst_from_word(word: int, pin: str = "PD7") -> NrstState:
@@ -73,6 +73,11 @@ def v00x_nrst_from_word(word: int, pin: str = "PD7") -> NrstState:
 def v00x_nrst(dm) -> NrstState:
     """Read (never write) the CH32V00x option word through a halted hart's riscv-dm."""
     return v00x_nrst_from_word(dm.read32(V00X_OPTION))
+
+
+def v00x_nrst_package(dm) -> NrstState:
+    """The CH32V002 / V004-V007's option word: the V003's layout, the reset pin the package's (not told by the ID)."""
+    return v00x_nrst_from_word(dm.read32(V00X_OPTION), "the package's reset pin")
 
 
 def x035_nrst(dm) -> NrstState:
@@ -102,10 +107,16 @@ def gpio_clock_bit(port: str) -> int:
 # The families met on the OEP benches. ids: the top 12 bits of the ESIG ID
 # name the series (CH32V003 0x003..., CH32X035 0x035...).
 FAMILIES: tuple[Family, ...] = (
-    Family("ch32v00x", "swio", ids=tuple((0xFFF00000, s << 20) for s in (0x002, 0x003, 0x004, 0x005, 0x006, 0x007)),
+    Family("ch32v00x", "swio", ids=((0xFFF00000, 0x00300000),),
            nrst=v00x_nrst, gpio_ports="ACD", gpio_pads=8, debug_pads=("PD1",), nrst_pad="PD7",
-           notes="NRST is PD7 and off as shipped (RST_MODE 11); the DM freezes DMSTATUS halt / running until "
-                 "havereset is acknowledged; a power cycle then attach(halt) stops at dpc 0 ~15 ms after power-on"),
+           notes="the CH32V003: NRST is PD7 and off as shipped (RST_MODE 11); the DM freezes DMSTATUS halt / running "
+                 "until havereset is acknowledged; a power cycle then attach(halt) stops at dpc 0 ~15 ms after power-on"),
+    Family("ch32v006", "swio", ids=tuple((0xFFF00000, s << 20) for s in (0x002, 0x004, 0x005, 0x006, 0x007)),
+           nrst=v00x_nrst_package, gpio_ports="ABCD", gpio_pads=8, debug_pads=("PD1",),
+           notes="the CH32V002 / V004 / V005 / V006 / V007 (one reference manual, CH32V00XRM): ports A-D; the reset pin "
+                 "is the package's (CH32V006DS0 note 5: PA7 on the K8U7, PC5 on the E8R and V005E6R6, PD7 on the rest) "
+                 "and the ID does not tell the package, so the reset line is found but its pad not named; RST_MODE as "
+                 "the V003's (11: off)"),
     Family("ch32x035", "rvswd", ids=((0xFFF00000, 0x03500000),), idle_clock="high", gpio_ports="ABC", gpio_pads=24,
            debug_pads=("PC18", "PC19"), nrst=x035_nrst, nrst_pad="PA21",
            bonded=(("PC16", "PC11"), ("PC17", "PC10")),   # datasheet note 4: one lead each except on F8U6 / D8U6

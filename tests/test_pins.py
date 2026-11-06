@@ -239,6 +239,9 @@ def test_ranges():
 def test_target_table():
     fam = targets.identify((1, V003_ID.to_bytes(4, "little")))
     assert fam.name == "ch32v00x" and fam.wire == "swio" and fam.reset_vector == 0
+    v006 = targets.identify((1, (0x00600620).to_bytes(4, "little")))   # a CH32V006K8U6 (v006evt), revision 2
+    assert v006.name == "ch32v006" and v006.gpio_ports == "ABCD" and not v006.nrst_pad   # the reset pin is the package's
+    assert "the package's reset pin" in targets.v00x_nrst_from_word(OPTION_ON, "the package's reset pin").detail
     assert targets.identify((1, (0x035E0601).to_bytes(4, "little"))).name == "ch32x035"
     assert targets.identify((1, (0x2080051C).to_bytes(4, "little"))).name == "ch32v20x"   # a CH32V208WBU6
     assert targets.identify((1, b"\x00\x00\x00\x11")) is None and targets.identify(None) is None

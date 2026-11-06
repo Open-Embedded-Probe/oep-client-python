@@ -1,6 +1,16 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) `oep pins`: the CH32V002 / V004 / V005 / V006 / V007 are a family of their own (`ch32v006`), apart from the
+  CH32V003 (`ch32v00x`): their map reads ports A-D (port B was never read), and their reset pin is not named - it is
+  the package's (CH32V006DS0 note 5: PA7 on the K8U7, PC5 on the E8R / V005E6R6, PD7 on the rest), which the ID does
+  not tell; the option bytes read as "NRST on the package's reset pin" (it said PD7).
+- (JA) `oep pins`: CH32V002 / V004 / V005 / V006 / V007 を CH32V003（`ch32v00x`）から分けたファミリー（`ch32v006`）にした。map は
+  ポート A〜D を読む（B を読んでいなかった）。リセットの端子は名指ししない。パッケージで決まり（CH32V006DS0 の注 5: K8U7 は PA7、
+  E8R / V005E6R6 は PC5、ほかは PD7）、ID からは分からないため。option bytes の表示は「NRST on the package's reset pin」
+  （PD7 と出していた）。
+
+## Unreleased
 
 ## 0.0.51
 - (EN) No user-facing changes recorded.
