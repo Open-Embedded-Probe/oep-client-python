@@ -84,7 +84,7 @@ _ESP32_V003_JIG = dict(label=35, disable=34, rates=(921600, 500000))
 # ESP32-P4: GPIO 24 / 25 are the USB-Serial/JTAG. The X035 jig (tests/benches/x035-p4.toml) wires 2 / 54 (RVSWD), 4-6,
 # 9-15, 46-50, 52, 53; the third P4 4, 5, 19, 21-23: none of these. 34-38 are the P4 straps, read only at a chip
 # reset, when the probe drives no pin: disable 34 is never driven, TX 37 only while planned.
-_P4 = dict(gpio=(32, 33), disable=34, uart=(36, 37), analog=17)
+_P4 = dict(gpio=(32, 33), disable=34, uart=(36, 39), analog=17)   # not 37 / 38: the P4 firmware's UART bridge (never offered)
 
 TABLE: dict[str, Board] = {b.id: b for b in (
     Board("esp32-pico-d4-50029191fe34", "esp32", "esp32", "esp32", f"{BY_ID}/esp32-pico-d4-50029191fe34",
