@@ -4,7 +4,7 @@ import struct
 
 import pytest
 
-from oep_client import decode, fixture as et, message as m
+from oep_client import fixture as et, message as m
 from test_target_parts import ScriptedHost, ok
 
 I2C, SPI = 11, 12
@@ -52,15 +52,3 @@ def test_spi_target_shapes():
     assert t.read_rx() == (0, 32, bytes.fromhex("a55a0f01")) and t.last_ns is None
     assert t.status().errors == 0x20000                                 # errors u32 (fixture §4)
     assert not hasattr(t, "reset")                                      # no reset op (fixture §4)
-
-
-def test_decode_i2c_reads_start_bytes_ack_and_stop():
-    # START, 0xA5 with ACK, STOP: SCL toggles, SDA changes while SCL is low
-    scl, sda = [1, 1], [1, 0]                      # START: SDA falls while SCL high
-    for bit in [1, 0, 1, 0, 0, 1, 0, 1, 0]:        # 0xA5, then ACK (0)
-        scl += [0, 0, 1, 1]
-        sda += [sda[-1], bit, bit, bit]
-    scl += [0, 1, 1]
-    sda += [0, 0, 1]                               # STOP: SDA rises while SCL high
-    trace = decode.decode_i2c(scl, sda)
-    assert trace.summary() == "S a5A P"

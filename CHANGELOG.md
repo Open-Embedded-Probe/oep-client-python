@@ -1,6 +1,11 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) `oep_client.decode` (`decode_i2c`) is gone: decoding what a capture holds is WireSkein's (`wireskein analyze` /
+  `decode`, `wireskein.runlog.i2c`), which also keeps what is known about each bus. Hand it the capture
+  (`wireskein.sources.oep.capture_of`).
+- (JA) `oep_client.decode`（`decode_i2c`）を無くした。キャプチャの中身の解読は WireSkein の役目で（`wireskein analyze` /
+  `decode`、`wireskein.runlog.i2c`）、バスごとの知見もそこにまとめる。キャプチャは `wireskein.sources.oep.capture_of` で渡す。
 - (EN) `oep pins`: the CH32V002 / V004 / V005 / V006 / V007 are a family of their own (`ch32v006`), apart from the
   CH32V003 (`ch32v00x`): their map reads ports A-D (port B was never read), and their reset pin is not named - it is
   the package's (CH32V006DS0 note 5: PA7 on the K8U7, PC5 on the E8R / V005E6R6, PD7 on the rest), which the ID does
@@ -9,8 +14,6 @@
   ポート A〜D を読む（B を読んでいなかった）。リセットの端子は名指ししない。パッケージで決まり（CH32V006DS0 の注 5: K8U7 は PA7、
   E8R / V005E6R6 は PC5、ほかは PD7）、ID からは分からないため。option bytes の表示は「NRST on the package's reset pin」
   （PD7 と出していた）。
-
-## Unreleased
 
 ## 0.0.51
 - (EN) No user-facing changes recorded.
