@@ -97,8 +97,9 @@ TABLE: dict[str, Board] = {b.id: b for b in (
           usbip_busid=os.environ.get("TEST_BENCH_CH32X035_USBIP_BUSID", "12-4"),
           notes="X035 jig (ESP32-P4, HS USB): the bench's; ask first", **_P4),
     Board("esp32-series-30eda0e343c6", "esp32p4", "esp32p4", "esp32p4", "oep://30eda0e343c6?via=usb", unit_id="30eda0e343c6",
-          usbip_busid="11-4", notes="second P4 (ESP32-P4, HS USB), the user's: free for dev-oep, nothing wired but its LED "
-                "(an older firmware's USB serial is 30eda0e343c6-hs)",
+          usbip_busid="11-4", notes="P4 (ESP32-P4, HS USB) with a WCH CH32V006K8U6 board on nearly every pin (port v006evt: "
+                "oep-bench's inventory): the table's channels are the V006's lines - give free ones (OEP_HW_GPIO and the rest) "
+                "or leave this board out",
           **_P4),
     Board("esp32-series-30eda0ea068b", "esp32p4-usj", "esp32p4", "esp32p4", "oep://30eda0ea068b?via=usb",
           unit_id="30eda0ea068b", flash_port=f"{BY_ID}/esp32-series-30eda0ea068b",
