@@ -886,7 +886,7 @@ class RiscvDm(Interface, BlockLength):
             return FALLBACK_MAX_OP_MS
 
     def reset(self) -> tuple[int, int]:
-        """Reset through ndmreset and let it run (success: the probe saw it running, flags bit0). The reset op never
+        """The target's system reset (peripherals too, oep-if-debug §4.3) and let it run (success: the probe saw it running, flags bit0). The reset op never
         drives a reset line (debug §4.3): a line moves only through attach's reset TLV (`Wire.attach_under_reset`) or
         a fixture. The hart runs after it, so DATA0 this host's abstract commands changed is written back first
         (`restore_data`, debug §4: before the hart runs). -> (flags, pc)"""
