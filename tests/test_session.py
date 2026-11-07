@@ -114,6 +114,25 @@ def test_watchdog_counts_from_the_last_request(bench):
     b.open()
 
 
+def test_end_after_a_lapse_sends_nothing(bench):
+    """A host whose session lapsed (no_session, the probe released it) has nothing to end: end() sends no request, so
+    a closing tool is not refused session_required for an end with session_id 0 (core §4.3) on top of the loss."""
+    clock, ep = bench
+    a = new_host(ep, 1)
+    a.open(lease_ms=1000)
+    write(a, 1)
+    clock.ms = 5000                            # lapsed
+    with pytest.raises(host.NoSession):
+        write(a, 2)
+    sent = []
+    send = a.send
+    a.send = lambda b: (sent.append(b), send(b))[1]
+    a.end()
+    assert sent == [] and a.session is None
+    a.end()                                    # a second end: still nothing
+    assert sent == []
+
+
 def test_a_lapsed_lock_is_no_session_and_the_host_opens_anew(bench):
     """core §6.2 / §9: after the lease lapsed the probe released everything the session created; a request of the id
     is rejected no_session (no expired, no resume) and the host counts the loss and is out of the session."""

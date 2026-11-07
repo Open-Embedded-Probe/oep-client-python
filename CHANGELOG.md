@@ -1,6 +1,12 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) `Host.end()` with no session (never opened, ended, or lost to a no_session) sends nothing. It used to send the
+  end with session_id 0, which a probe or broker refuses session_required (core §4.3): a tool that closed after its
+  session lapsed saw that refusal instead of the no_session that told what happened.
+- (JA) セッションが無いとき（開いていない、終えた、no_session で失った）の `Host.end()` は何も送らない。これまでは session_id 0 の
+  end を送り、probe や broker に session_required で断られていた（core §4.3）。lease が切れた後に閉じる道具は、何が起きたかを示す
+  no_session ではなく、その断りを見ていた。
 - (EN) `oep_client.decode` (`decode_i2c`) is gone: decoding what a capture holds is WireSkein's (`wireskein analyze` /
   `decode`, `wireskein.runlog.i2c`), which also keeps what is known about each bus. Hand it the capture
   (`wireskein.sources.oep.capture_of`).

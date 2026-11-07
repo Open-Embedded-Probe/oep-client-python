@@ -631,7 +631,13 @@ class Host:
     def end(self) -> None:
         """End the session: the probe releases the lock and everything the session created (core §6.4, §9) - its
         plan, its shares of connections and streams, its subscriptions. A resent end is answered from the probe's
-        resend table (core §5.1)."""
+        resend table (core §5.1). With no session (never opened, ended, or lost to a no_session: the probe released it
+        already) there is nothing to end and nothing is sent: an end with session_id 0 would only be refused
+        session_required (core §4.3) and hide how the session was lost."""
+        if self.session is None:
+            if self.kept is not None:
+                self.kept.ended()
+            return
         self.request(m.CORE_FN, m.OP_END)
         self.session = None
         self._swept()
