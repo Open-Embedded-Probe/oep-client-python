@@ -1,6 +1,13 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) `acquire`: a stream's `wait` has `wait.beside(fn, *args)`: fn runs in another thread - something that does not
+  use the session, such as another process (a ch32rv flash) - while the stream is collected, and its value comes back
+  (its exception raised). A blocking call made from `during` itself collects nothing until it returns, so the stream
+  overflows meanwhile.
+- (JA) `acquire`: 流し続けの `wait` に `wait.beside(fn, *args)` を足した。セッションを使わない処理（別プロセスの ch32rv の書き込み
+  など）を別のスレッドで走らせ、その間も取り込みを読み続け、fn の値を返す（例外はそのまま上げる）。`during` の中で直接待つと、
+  終わるまで読まないので、その間に溜められる分を超える。
 - (EN) `Host.end()` with no session (never opened, ended, or lost to a no_session) sends nothing. It used to send the
   end with session_id 0, which a probe or broker refuses session_required (core §4.3): a tool that closed after its
   session lapsed saw that refusal instead of the no_session that told what happened.

@@ -22,7 +22,9 @@ put together on disk while it runs: a timeline, cut where data was lost).
 A stream can run while the script does its steps on the same session (marking sections, sending console commands):
 `during=steps` in place of `seconds` streams until steps(wait) returns, `wait(seconds)` collecting while it waits.
 Steps should call wait often (the probe holds only its stream buffer meanwhile); a loss with on_loss "stop" raises
-StreamStopped out of wait, and the stream ends there.
+StreamStopped out of wait, and the stream ends there. Something long that does not use the session - another process
+such as a ch32rv flash - goes through `wait.beside(fn)`: fn runs in another thread while the stream is collected, and
+its value comes back (a blocking call made from steps itself collects nothing until it returns).
 
     def steps(wait):
         for duty in (64, 128):
@@ -83,7 +85,8 @@ class Request:
     on_loss: str = "stop"                    # stream: "stop" at the first loss, or "continue" to the end
     spool_dir: str | None = None             # stream: where its channels are put together on disk while it runs
     during: Callable[[Callable[[float], None]], None] | None = None   # stream: instead of `seconds`, runs until this
-                                             # returns - called with wait(seconds), which collects while it waits
+                                             # returns - called with wait(seconds), which collects while it waits;
+                                             # wait.beside(fn) collects while fn runs in another thread
 
     def __post_init__(self):
         names = [n for n, _ in self.channels] + [n for n, *_ in self.analog]
@@ -1157,22 +1160,54 @@ class StreamStopped(Exception):
     """Raised by a stream's `wait` (Request.during) when data was lost and on_loss is "stop": the stream stops there."""
 
 
-def _drive(req: Request, poll, lost) -> None:
-    """Collect a started stream: for req.seconds, or while req.during(wait) runs - its `wait(seconds)` collecting
-    meanwhile. poll(seconds) takes what comes, lost() says whether anything was lost; with on_loss "stop" a loss ends
-    it (a StreamStopped out of wait, caught here)."""
-    import time
+class _Wait:
+    """The `wait` a stream's `during` gets: wait(seconds) collects for that long; wait.beside(fn, *args, **kwargs) runs
+    fn in another thread - something that does not use this session's Host, such as another process (a ch32rv flash) -
+    and collects until it returns, -> its value (its exception raised here). A loss with on_loss "stop" raises
+    StreamStopped once fn has returned (the stream cannot stop what fn does)."""
 
-    def wait(seconds: float) -> None:
+    def __init__(self, req: Request, poll, lost):
+        self.req, self.poll, self.lost = req, poll, lost
+
+    def _check(self) -> None:
+        if self.req.on_loss == "stop" and self.lost():
+            raise StreamStopped("data was lost while streaming")
+
+    def __call__(self, seconds: float) -> None:
+        import time
         deadline = time.monotonic() + seconds
         while True:
             now = time.monotonic()
             if now >= deadline:
                 return
-            poll(min(STREAM_POLL_S, deadline - now))
-            if req.on_loss == "stop" and lost():
-                raise StreamStopped("data was lost while streaming")
+            self.poll(min(STREAM_POLL_S, deadline - now))
+            self._check()
 
+    def beside(self, fn, *args, **kwargs):
+        import threading
+        out: dict = {}
+
+        def run():
+            try:
+                out["value"] = fn(*args, **kwargs)
+            except BaseException as e:          # handed to the caller below
+                out["error"] = e
+        t = threading.Thread(target=run, name="acquire-beside", daemon=True)
+        t.start()
+        while t.is_alive():
+            self.poll(STREAM_POLL_S)
+        t.join()
+        if "error" in out:
+            raise out["error"]
+        self._check()
+        return out.get("value")
+
+
+def _drive(req: Request, poll, lost) -> None:
+    """Collect a started stream: for req.seconds, or while req.during(wait) runs - its `wait(seconds)` collecting
+    meanwhile (and `wait.beside(fn)` while fn runs in another thread). poll(seconds) takes what comes, lost() says
+    whether anything was lost; with on_loss "stop" a loss ends it (a StreamStopped out of wait, caught here)."""
+    wait = _Wait(req, poll, lost)
     try:
         if req.during is None:
             wait(req.seconds)
