@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 0.0.52
 - (EN) Capture format 1 is per-channel reductions (oep-spec 165a278, capture §1.3): `LogicCapture.configure(...,
   carriage={role: (carriage, D)})` with capture_blocks.SAMPLE / ANY_HIGH / ANY_LOW / CHANGE_LATCH (the `events`
   argument is gone), and `blocks()` / `columns()` give raw bits and the reductions' interval values
