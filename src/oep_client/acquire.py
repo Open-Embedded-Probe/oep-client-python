@@ -1878,7 +1878,7 @@ def _budget(oc, cfg, got: int, samples: int, channels: int) -> dict:
     what format 0 would have taken (1 bit a channel a sample, at least)."""
     from oep_client import capture_blocks
     return {"format": int(cfg.format), "block": cfg.block, "bytes": got,
-            "expected_bytes": capture_blocks.segment_bytes(samples, len(cfg.raw_roles), cfg.reduced, cfg.block),
+            "expected_bytes": capture_blocks.segment_bytes(samples, len(cfg.raw_roles), cfg.reduced, cfg.block, cfg.width),
             "format0_bytes": -(-samples * channels // 8)}
 
 

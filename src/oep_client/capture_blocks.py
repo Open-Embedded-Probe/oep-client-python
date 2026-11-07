@@ -36,18 +36,21 @@ def value_bits(kind: int) -> int:
     return 2 if kind == CHANGE_LATCH else 1
 
 
-def block_bytes(raw: int, reduced: dict[int, tuple[int, int]], r: int) -> int:
-    """The bytes one block of r samples takes (§1.3): the raw part, then the reduced part (a start bit per change_latch
-    channel and every interval's value). `reduced`: role -> (carriage, D)."""
+def block_bytes(raw: int, reduced: dict[int, tuple[int, int]], r: int, width: int | None = None) -> int:
+    """The bytes one block of r samples takes (§1.3): the raw part (r samples of the layout's w bits: `width`, R when
+    None), then the reduced part (a start bit per change_latch channel and every interval's value). `reduced`: role ->
+    (carriage, D)."""
     bits = sum(1 for k, _ in reduced.values() if k == CHANGE_LATCH)
     bits += sum(-(-r // d) * value_bits(k) for k, d in reduced.values())
-    return (r * raw + 7) // 8 + (bits + 7) // 8
+    w = raw if width is None else width
+    return (r * w + 7) // 8 + (bits + 7) // 8
 
 
-def segment_bytes(samples: int, raw: int, reduced: dict[int, tuple[int, int]], block: int) -> int:
+def segment_bytes(samples: int, raw: int, reduced: dict[int, tuple[int, int]], block: int,
+                  width: int | None = None) -> int:
     """A format 1 segment's bytes: whole blocks of L and the last one."""
     whole, rest = divmod(samples, block)
-    return whole * block_bytes(raw, reduced, block) + (block_bytes(raw, reduced, rest) if rest else 0)
+    return whole * block_bytes(raw, reduced, block, width) + (block_bytes(raw, reduced, rest, width) if rest else 0)
 
 
 @dataclass
@@ -83,23 +86,27 @@ def _columns(raw: bytes, r: int, wb: int) -> list[bytes]:
 
 
 def read_logic_blocks(data: bytes, samples: int, raw_roles: list[int], reduced: dict[int, tuple[int, int]],
-                      block: int) -> list[LogicBlock]:
+                      block: int, width: int | None = None, positions: list[int] | None = None) -> list[LogicBlock]:
     """A format 1 segment's bytes (§1.3) -> its blocks. `raw_roles`: the raw channels' roles, `reduced`: role ->
-    (carriage, D) for the others (both as configured; read in role order), `block`: the answer's L. Bytes left over or
-    too few raise ProtocolError."""
+    (carriage, D) for the others (both as configured; read in role order), `block`: the answer's L, `width` /
+    `positions`: the answer's layout w and pos (R and 0 .. R-1 when None). Bytes left over or too few raise
+    ProtocolError."""
     raw_roles, red = sorted(raw_roles), sorted(reduced)
     R = len(raw_roles)
+    w = R if width is None else width
+    pos_of = list(range(R)) if positions is None else list(positions)
     latches = [role for role in red if reduced[role][0] == CHANGE_LATCH]
     out, pos = [], 0
     for first in range(0, samples, block):
         r = min(block, samples - first)
-        size = block_bytes(R, reduced, r)
+        size = block_bytes(R, reduced, r, w)
         if pos + size > len(data):
             raise h.ProtocolError(f"format 1: block at sample {first} cut short")
-        rb = (r * R + 7) // 8
+        rb = (r * w + 7) // 8
         b = LogicBlock(first, r)
-        for role, bits in zip(raw_roles, _columns(data[pos:pos + rb], r, R) if R else []):
-            b.raw[role] = bits
+        cols = _columns(data[pos:pos + rb], r, w) if R else []
+        for j, role in enumerate(raw_roles):
+            b.raw[role] = cols[pos_of[j]]
         part = data[pos + rb:pos + size]
         at = 0
         for role in latches:
@@ -129,30 +136,33 @@ class ReducedColumn(NamedTuple):
 
 
 def segment_columns(data: bytes, samples: int, raw_roles: list[int], reduced: dict[int, tuple[int, int]],
-                    block: int) -> dict[int, bytes | ReducedColumn]:
+                    block: int, width: int | None = None,
+                    positions: list[int] | None = None) -> dict[int, bytes | ReducedColumn]:
     """A format 1 segment (§1.3) read as columns without blocks: role -> a raw channel's bits (bytes, sample i at bit
     i mod 8; the bits past `samples` 0) or a reduced channel's ReducedColumn. A change_latch block's start other than the
     level its interval before ended on is a broken stream (ProtocolError), as are bytes left over or too few. With numpy
     every whole block is unpacked at once; without it, the same through read_logic_blocks."""
     raw_roles, red = sorted(raw_roles), sorted(reduced)
     R = len(raw_roles)
-    expect = segment_bytes(samples, R, reduced, block)
+    w = R if width is None else width
+    pos_of = list(range(R)) if positions is None else list(positions)
+    expect = segment_bytes(samples, R, reduced, block, w)
     if len(data) != expect:
         raise h.ProtocolError(f"format 1: {len(data)} bytes for {samples} samples ({expect} expected)")
     if _np is None:
-        return _columns_plain(data, samples, raw_roles, reduced, block)
+        return _columns_plain(data, samples, raw_roles, reduced, block, w, pos_of)
     np = _np
     whole, rest = divmod(samples, block)
-    full = block_bytes(R, reduced, block)
-    rb = block * R // 8
+    full = block_bytes(R, reduced, block, w)
+    rb = block * w // 8
     buf = np.frombuffer(data, np.uint8)
     blocks = buf[:whole * full].reshape(whole, full)
-    tail = _columns_plain(data[whole * full:], rest, raw_roles, reduced, block) if rest else None
+    tail = _columns_plain(data[whole * full:], rest, raw_roles, reduced, block, w, pos_of) if rest else None
     out: dict[int, bytes | ReducedColumn] = {}
     if R:
-        bits = np.unpackbits(blocks[:, :rb], axis=1, bitorder="little").reshape(-1, R)
+        bits = np.unpackbits(blocks[:, :rb], axis=1, bitorder="little").reshape(-1, w)
         for j, role in enumerate(raw_roles):
-            col = bits[:, j]
+            col = bits[:, pos_of[j]]
             if rest:
                 col = np.concatenate((col, np.unpackbits(np.frombuffer(tail[role], np.uint8), bitorder="little")[:rest]))
             out[role] = np.packbits(col, bitorder="little").tobytes()
@@ -193,13 +203,14 @@ def segment_columns(data: bytes, samples: int, raw_roles: list[int], reduced: di
 
 
 def _columns_plain(data: bytes, samples: int, raw_roles: list[int], reduced: dict[int, tuple[int, int]],
-                   block: int) -> dict[int, bytes | ReducedColumn]:
+                   block: int, width: int | None = None,
+                   positions: list[int] | None = None) -> dict[int, bytes | ReducedColumn]:
     """segment_columns without numpy (and its partial last block): through read_logic_blocks."""
     raw_roles, red = sorted(raw_roles), sorted(reduced)
     levels = {role: 0 for role in raw_roles}
     vals = {role: [] for role in red}
     starts: dict[int, int] = {}
-    for b in read_logic_blocks(data, samples, raw_roles, reduced, block):
+    for b in read_logic_blocks(data, samples, raw_roles, reduced, block, width, positions):
         for role in raw_roles:
             levels[role] |= int.from_bytes(b.raw[role], "little") << b.first
         for role in red:

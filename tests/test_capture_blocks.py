@@ -216,3 +216,34 @@ def test_group_trigger_caps():
     p4 = c.TriggerCaps.unpack(struct.pack("<BBBBIBI", 1, 1, 1, 0, 0b11110, 0, 0xFFFFFFFF))   # the P4's
     assert p4.kinds() == ["level", "edge", "cross_up", "cross_down"] and not p4.takes(c.COND["above"])
     assert c.TriggerCaps.unpack(b"\x01\x01\x01") is None
+
+
+def test_raw_part_at_the_layouts_w():
+    """The raw part is r samples of the layout's w bits, raw channel j at bit pos[j] (§1.3): a probe that sends the
+    raw lanes as taken (w 16, more bits than raw channels) reads the same, the other bits ignored."""
+    rng = random.Random(5)
+    L, samples, R, w = 64, 150, 3, 16
+    raw = [[rng.randint(0, 1) for _ in range(samples)] for _ in range(R)]
+    red = [rng.randint(0, 1) for _ in range(samples)]
+    reduced = {R: (cb.ANY_HIGH, 8)}
+    data = b""
+    for f in range(0, samples, L):
+        r = min(L, samples - f)
+        words = [sum(raw[j][f + i] << j for j in range(R)) | (rng.randint(0, 0xFFFF) & ~0b111) for i in range(r)]
+        data += b"".join(x.to_bytes(2, "little") for x in words)
+        acc = 0
+        for k in range(-(-r // 8)):
+            acc |= int(1 in red[f + 8 * k:f + min(8 * k + 8, r)]) << k
+        data += acc.to_bytes((-(-r // 8) + 7) // 8, "little")
+    np_ = cb._np
+    for fast in (False, True):
+        if fast and np_ is None:
+            continue
+        cb._np = np_ if fast else None
+        try:
+            cols = cb.segment_columns(data, samples, list(range(R)), reduced, L, w, list(range(R)))
+        finally:
+            cb._np = np_
+        for j in range(R):
+            assert cb.bits_list(cols[j], samples) == raw[j]
+        assert cols[R].n == sum(-(-min(L, samples - f) // 8) for f in range(0, samples, L))

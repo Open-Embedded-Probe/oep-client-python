@@ -197,7 +197,7 @@ class Config:
         if self.format == DATA_FORMAT["analog_blocks"]:
             return capture_blocks.analog_segment_bytes(samples, self.order, self.carriage, self.block, self.bits)
         if self.format == DATA_FORMAT["logic_blocks"]:
-            return capture_blocks.segment_bytes(samples, len(self.raw_roles), self.reduced, self.block)
+            return capture_blocks.segment_bytes(samples, len(self.raw_roles), self.reduced, self.block, self.width)
         if self.width:
             return (samples * self.width + 7) // 8
         return samples * len(self.order) * self.slot // 8
@@ -919,7 +919,7 @@ class LogicCapture(Interface):
     def blocks(self, data: bytes, samples: int) -> list[capture_blocks.LogicBlock]:
         """A format 1 segment's bytes -> its blocks (raw channels as bits, reduced channels as interval values, §1.3)."""
         c = self.config
-        return capture_blocks.read_logic_blocks(data, samples, c.raw_roles, c.reduced, c.block)
+        return capture_blocks.read_logic_blocks(data, samples, c.raw_roles, c.reduced, c.block, c.width, c.positions)
 
     def state_timed(self, data: bytes, samples: int) -> list[tuple[int, int]]:
         """A format 3 segment's bytes -> (ticks from start, state) per sample (§3.8; Config.timebase the tick rate)."""
@@ -934,7 +934,7 @@ class LogicCapture(Interface):
         """A format 1 segment's bytes -> role -> its raw bits or its ReducedColumn over the whole segment, without blocks
         (capture_blocks.segment_columns)."""
         c = self.config
-        return capture_blocks.segment_columns(data, samples, c.raw_roles, c.reduced, c.block)
+        return capture_blocks.segment_columns(data, samples, c.raw_roles, c.reduced, c.block, c.width, c.positions)
 
     # ---- the §3.0 layout ---------------------------------------------------------------------------------
     def channel(self, data: bytes, k: int, samples: int | None = None) -> list[int]:
