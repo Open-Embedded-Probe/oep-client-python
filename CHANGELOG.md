@@ -8,13 +8,15 @@
   ProtocolError). `acquire.Request(resolution={name: (mode, D)})`: a sampled line comes as `Bits` at step D, any other
   reduction as the new `Reduced` (kind, values packed, start level); `Changes` is gone. The configure answer's
   `data_rate` (streaming) is read into `Config.data_rate` and goes to `meta.probe.data_rate`; `tolerable_delay_s()`
-  uses it.
+  uses it. `Part.samples` (and `Result.samples` for one part) says a part's ticks: a part of reduced lines only ends
+  inside its last interval.
 - (JA) キャプチャの形式 1 を、線ごとの縮約に替えた（oep-spec 165a278、capture §1.3）。`LogicCapture.configure(...,
   carriage={役割: (運び方, D)})` で、運び方は capture_blocks.SAMPLE / ANY_HIGH / ANY_LOW / CHANGE_LATCH（`events` の引数は
   無くした）。`blocks()` / `columns()` は raw のビットと、縮約の区間の値（`capture_blocks.ReducedColumn`）を返す。change_latch の
   ブロックの start が前の区間の終わりと合わなければ ProtocolError。`acquire.Request(resolution={名前: (モード, D)})`: sample の線は
   step D の `Bits`、ほかの縮約は新しい `Reduced`（運び方、詰めた値、始まりのレベル）で返す。`Changes` は無くした。configure の
   応答の `data_rate`（流し続け）を `Config.data_rate` に読み、`meta.probe.data_rate` に入れる。`tolerable_delay_s()` もそれを使う。
+  `Part.samples`（1 区間なら `Result.samples`）は区間の tick の数を示す（縮約の線だけの区間は、最後の区間の途中で終わる）。
 - (EN) `acquire`: a stream's `wait` has `wait.beside(fn, *args)`: fn runs in another thread - something that does not
   use the session, such as another process (a ch32rv flash) - while the stream is collected, and its value comes back
   (its exception raised). A blocking call made from `during` itself collects nothing until it returns, so the stream

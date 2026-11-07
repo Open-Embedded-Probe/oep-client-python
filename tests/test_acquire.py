@@ -224,3 +224,16 @@ def test_bits_written_across_bytes(tmp_path):
     acquire._flush_bits(f, carry)
     out = np.unpackbits(np.frombuffer(f.getvalue(), np.uint8), bitorder="little")[: len(want)]
     assert list(out) == want and len(f.getvalue()) == (len(want) + 7) // 8
+
+
+def test_parts_say_their_samples(probe, tmp_path):
+    """Part.samples: a part's ticks - a part of reduced lines only ends inside its last interval, so its lines do not
+    say it. One-shot: Result.samples and all_parts[0].samples; a stream's parts add up."""
+    req = acquire.Request([("A", "GPIO10")], 20_000_000, 1000, resolution={"A": ("any_low", 64)})
+    res = acquire.capture_at(probe(), req)
+    assert res.samples == 1000 and res.all_parts[0].samples == 1000 and res.channels[0].n == 16
+    req = acquire.Request([("A", "GPIO10"), ("B", "GPIO11")], 1_000_000, 0, mode="stream", seconds=0.2,
+                          resolution={"A": ("change_latch", 8), "B": ("sample", 8)}, spool_dir=str(tmp_path))
+    res = acquire.capture_at(probe(), req)
+    for p in res.all_parts:
+        assert p.samples and -(-p.samples // 8) == p.channels[0].n

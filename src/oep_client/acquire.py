@@ -264,6 +264,8 @@ class Part:
     channels: list
     meta: dict = field(default_factory=dict)
     tick0: int | None = None
+    samples: int | None = None                   # its ticks (the base samples), when known: a part of reduced lines
+                                                 # only ends inside its last interval
 
 
 @dataclass
@@ -276,6 +278,7 @@ class Result:
     lost: list[dict] = field(default_factory=list)   # {"after_part", "reason", "stopped", "ticks"?}: any is a failure
     layout: str = "timeline"
     temp_dir: str | None = None                  # where OnDisk data lives; the caller removes it once copied
+    samples: int | None = None                   # one part: its ticks, when known (Part.samples)
 
     @property
     def complete(self) -> bool:
@@ -286,7 +289,7 @@ class Result:
         """The parts, one part made of `channels` and `meta` when the capture came in one."""
         if self.parts is not None:
             return self.parts
-        return [Part(self.channels, {k: v for k, v in self.meta.items() if k != "probe"}, 0)]
+        return [Part(self.channels, {k: v for k, v in self.meta.items() if k != "probe"}, 0, self.samples)]
 
 
 # ---------------- packing ----------------
@@ -906,7 +909,7 @@ def _capture(link, core, oc, oh, message, target: str, req: Request, ids: list[i
                                aseg.start_uncertainty_ns, aseg.trigger_index)
     if probe:
         meta["probe"] = probe
-    return Result(tick, chans, meta)
+    return Result(tick, chans, meta, samples=seg.samples if cap else None)
 
 
 def _analog_values(an, acfg, data: bytes, k: int, samples: int):
@@ -1039,7 +1042,7 @@ def _repeat_result(cap, hst, cfg, req: Request, names, ids, probe, fast, open_s,
                     tick0 = prev.tick0 + prev_samples                # right after the one before
                 else:
                     tick0 = round(Fraction(seg.start_ns - first_ns, 10**9) * rate)
-                prev, prev_samples = Part(chans, meta, tick0), seg.samples
+                prev, prev_samples = Part(chans, meta, tick0, seg.samples), seg.samples
                 parts.append(prev)
             last = time.monotonic()
     finally:
@@ -1358,7 +1361,7 @@ def _analog_stream_result(an, hst, acfg, req: Request, aids, probe, fast, open_s
                                       x.start_uncertainty_ns if x else None, None)
                 tick0 = round(Fraction(x.start_ns - first_ns, 10**9) * rate) if x else \
                     (parts[-1].tick0 + parts[-1].channels[0].n if parts else 0)
-                parts.append(Part(chans, _seg_meta(x) if x else {}, tick0))
+                parts.append(Part(chans, _seg_meta(x) if x else {}, tick0, samples))
             if skipped:
                 lost.append({"after_part": len(parts) - 1, "reason": "the probe dropped a segment (no room to send)"})
             pos += n + skipped
@@ -1668,7 +1671,7 @@ class _Spool:
                 os.truncate(f.name, (n + 7) // 8)
                 chans.append(Bits(name, OnDisk(f.name), n, 1, 0, {"pin": ch}))
         if n:
-            self.parts.append(Part(chans, dict(cur["meta"]), int(cur["tick0"])))
+            self.parts.append(Part(chans, dict(cur["meta"]), int(cur["tick0"]), n))
         self._last_samples, self._last_end = n, self.at
         self.cur = None
         self._follows = follows
@@ -1731,7 +1734,7 @@ def _stream_parts(cap, cfg, got, names, ids, req: Request) -> tuple[list, list]:
         run = memoryview(got.data)[i0:i0 + n]   # no copy: a 30 s stream at 40 MB/s is 1.2 GB
         if not blocks and cfg.width % 8 == 0:    # format 0, whole bytes a sample: the stretch at once (no padding)
             samples = min(sum(x.samples for x in inside), len(run) * 8 // cfg.width)
-            parts.append(_part(_samples_at_once(run, names, ids, cfg, samples), _seg_meta(inside[0]),
+            parts.append(_part(_samples_at_once(run, names, ids, cfg, samples), _seg_meta(inside[0]), samples,
                                round(Fraction(inside[0].start_ns - first_ns, 10**9) * rate)))
             continue
         acc, acc_samples, acc_meta, tick0 = None, 0, None, None
@@ -1747,7 +1750,7 @@ def _stream_parts(cap, cfg, got, names, ids, req: Request) -> tuple[list, list]:
             restart = acc is not None and any(acc_samples % d for d in ds)
             if acc is None or restart:           # a grid restart (format 1) is not a loss: the next part follows on
                 if acc is not None:
-                    parts.append(_part(_built(acc, acc_samples, ids), acc_meta, tick0))
+                    parts.append(_part(_built(acc, acc_samples, ids), acc_meta, acc_samples, tick0))
                     tick0 += acc_samples
                 else:
                     tick0 = round(Fraction(x.start_ns - first_ns, 10**9) * rate)
@@ -1756,7 +1759,7 @@ def _stream_parts(cap, cfg, got, names, ids, req: Request) -> tuple[list, list]:
                 a_.add(c, acc_samples)
             acc_samples += samples
         if acc is not None:
-            parts.append(_part(_built(acc, acc_samples, ids), acc_meta, tick0))
+            parts.append(_part(_built(acc, acc_samples, ids), acc_meta, acc_samples, tick0))
     for x in lost:                               # how long, when the segments' times say
         k = x["after_part"]
         if 0 <= k < len(parts) - 1:
@@ -1766,8 +1769,8 @@ def _stream_parts(cap, cfg, got, names, ids, req: Request) -> tuple[list, list]:
     return parts, lost
 
 
-def _part(chans, meta, tick0):
-    return Part(chans, dict(meta), int(tick0))
+def _part(chans, meta, samples, tick0):
+    return Part(chans, dict(meta), int(tick0), samples)
 
 
 def _seg_meta(x) -> dict:
