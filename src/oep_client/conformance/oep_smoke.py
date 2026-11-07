@@ -9,7 +9,7 @@ from . import ops, require, tlvs
 REVIEWED_INTERFACES = {  # oep-spec interfaces/
     'oep-if-fixture.ja.md': '777a972349a14d1efa6e4575d3118b4e0566b81a6f22320401d529e4dca585f1',
     'oep-if-plan.ja.md': 'da8bd60af53499573c07bc33dbd8c4df93eb61a93b91dc57907f26620ae36bbf',
-    'oep-if-debug.ja.md': '1f490ab984c5820b29acfee923b9400849a3d0011c9ed6bb7144397d8dd29d38',
+    'oep-if-debug.ja.md': '6f21171b494e67d50bfc78b4da9e16949033c9e24d960efb42887335da021681',
     'oep-if-common.ja.md': '25fed0b1b8b7f246a8b71d02cea810249803b1c3c1e9c3df466c04f38687f70c',
 }
 

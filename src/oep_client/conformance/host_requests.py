@@ -13,10 +13,10 @@ REVIEWED = {
     'interfaces/oep-if-plan.ja.md': 'da8bd60af53499573c07bc33dbd8c4df93eb61a93b91dc57907f26620ae36bbf',
     'interfaces/oep-if-fixture.ja.md': '777a972349a14d1efa6e4575d3118b4e0566b81a6f22320401d529e4dca585f1',
     'docs/oep-core.ja.md': '0408d232e728bb9692ab1c24cefa1fdbf109c35aeebd378034d86c0f4d19789a',
-    'interfaces/oep-if-debug.ja.md': '1f490ab984c5820b29acfee923b9400849a3d0011c9ed6bb7144397d8dd29d38',
-    'interfaces/oep-if-capture.ja.md': '786bf349dfe322cee7b0d13e9d250cee2d0778bef3590ae751b2e87b11bb2fd3',
+    'interfaces/oep-if-debug.ja.md': '6f21171b494e67d50bfc78b4da9e16949033c9e24d960efb42887335da021681',
+    'interfaces/oep-if-capture.ja.md': 'f1035dc14cf469d929d782dbe710fc2c1e1567006da41a001abe3c5c25761324',
 }
-REVIEWED_REGISTRY_SHA256='5fccf16a1d0ea2857834f2f4d83deca2294b3d5ef65b80e06a3b9020f78224ae'
+REVIEWED_REGISTRY_SHA256='82456b04874c4d20775744d2bde3398d7a748d955d73b8f295a5e8e889a46477'
 
 
 def reviewed_identity(spec):
@@ -83,7 +83,7 @@ def policy():
                 ('samples', b'\x10\x00\x00\x00', False), ('segments', b'\x02\x00\x00\x00', False),
                 ('trigger', b'\x02\x00\x00\x00\x00\x00' if name == 'logic' else b'\x03\x01\xb8\x0b\x00\x00', False),
                 ('pretrigger', b'\x02\x00\x00\x00', False),
-                ('format', b'\x01', True), ('carriage', b'\x00\x01\x01\x00\x00\x00', True),
+                ('format', b'\x01', True), ('carriage', b'\x00\x01\x02\x00\x00\x00', True),
                 ('trigger_opts', b'\x01\x01\x00\x00\x00\x00\x00', True),
                 ('block_max', b'\x00\x01\x00\x00', False)]
         if name == 'logic':

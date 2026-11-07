@@ -1,6 +1,7 @@
 """capture_blocks against oep-spec's shared vectors (tests/vectors/capture_formats.json, capture §1.3): every stream
-reads back to the levels it was made from - raw and fallback channels as bits, events channels as their ticks."""
+reads back to the levels it was made from - raw channels as bits, reduced channels as their interval values."""
 import json
+import random
 from pathlib import Path
 
 import pytest
@@ -8,69 +9,160 @@ import pytest
 from oep_client import capture_blocks as cb, host as h
 
 DATA = json.loads((Path(__file__).parent / "vectors/capture_formats.json").read_text())
+KIND = {"sample": cb.SAMPLE, "any_high": cb.ANY_HIGH, "any_low": cb.ANY_LOW, "change_latch": cb.CHANGE_LATCH}
 
 
-def expect_ticks(levels: str, first: int, r: int, d: int, before: int):
+def expect_values(kind: int, levels: list[int], d: int, before):
+    """The values §1.3 gives a channel's levels (before: the level before them, or None)."""
     out, last = [], before
-    for t in range(-(-r // d)):
-        c = 0
-        for i in range(t * d, min((t + 1) * d, r)):
-            v = int(levels[first + i])
-            c += v != last
-            last = v
-        if c:
-            out.append((t, last, min(c, cb.COUNT_SATURATED)))
+    for lo in range(0, len(levels), d):
+        part = levels[lo:lo + d]
+        if kind == cb.SAMPLE:
+            out.append(part[0])
+        elif kind == cb.ANY_HIGH:
+            out.append(int(1 in part))
+        elif kind == cb.ANY_LOW:
+            out.append(0 if 0 in part else 1)
+        else:
+            ch = 0
+            for v in part:
+                ch |= last is not None and v != last
+                last = v
+            out.append(part[-1] | ch << 1)
     return out
 
 
-FAST = [False] + ([True] if cb._np is not None else [])
+def _case(case):
+    R = case["R"]
+    reduced = {R + e: (KIND[k], d) for e, (k, d) in enumerate(zip(case["kinds"], case["d"]))}
+    return R, reduced
 
 
-@pytest.mark.parametrize("fast", FAST)
 @pytest.mark.parametrize("case", DATA["logic_blocks"], ids=lambda c: c["name"])
-def test_logic_blocks_read_back(case, fast):
-    L, R, ds = case["L"], case["R"], case["events_d"]
-    raw_roles = list(range(R))
-    event_d = {R + e: d for e, d in enumerate(ds)}
+def test_logic_blocks_read_back(case):
+    L = case["L"]
+    R, reduced = _case(case)
     prev_end = None
     for seg in case["segments"]:
-        n = len((seg["raw"] + seg["events"])[0])
-        blocks = cb.read_logic_blocks(bytes.fromhex(seg["stream_hex"]), n, raw_roles, event_d, L, use_numpy=fast)
+        n = len((seg["raw"] + seg["reduced"])[0])
+        data = bytes.fromhex(seg["stream_hex"])
+        blocks = cb.read_logic_blocks(data, n, list(range(R)), reduced, L)
         for j, levels in enumerate(seg["raw"]):
-            got = "".join("".join(map(str, cb.bits_list(b.raw[j], b.samples))) for b in blocks)
-            assert got == levels
-        for e, levels in enumerate(seg["events"]):
+            assert "".join("".join(map(str, cb.bits_list(b.raw[j], b.samples))) for b in blocks) == levels
+        for e, levels in enumerate(seg["reduced"]):
             role = R + e
-            before = prev_end[e] if seg["contiguous"] and prev_end else int(levels[0])
-            for b in blocks:
-                part = levels[b.first:b.first + b.samples]
-                assert b.start_levels[role] == before              # fallback or not (§1.3 start_level)
-                if role in b.fallback:
-                    assert "".join(map(str, cb.bits_list(b.raw[role], b.samples))) == part
-                else:
-                    c = b.events[role]
-                    assert c.start_level == before
-                    assert list(zip(c.ticks, c.levels, c.counts)) == expect_ticks(levels, b.first, b.samples, ds[e], before)
-                before = int(part[-1])
-        prev_end = [int(ch[-1]) for ch in seg["events"]]
+            assert sum((b.values[role] for b in blocks), []) == seg["values"][e]
+            kind, d = reduced[role]
+            before = prev_end[e] if seg["contiguous"] and prev_end else None
+            assert seg["values"][e] == expect_values(kind, [int(x) for x in levels], d, before)
+            if kind == cb.CHANGE_LATCH:      # each block's start: the level before it (sample 0's after a gap)
+                for b in blocks:
+                    want = int(levels[b.first - 1]) if b.first else (before if before is not None else int(levels[0]))
+                    assert b.starts[role] == want
+        for fast in (False, True):          # the same as columns, with numpy and without
+            np_ = cb._np
+            if fast and np_ is None:
+                continue
+            cb._np = np_ if fast else None
+            try:
+                cols = cb.segment_columns(data, n, list(range(R)), reduced, L)
+            finally:
+                cb._np = np_
+            for j, levels in enumerate(seg["raw"]):
+                assert "".join(map(str, cb.bits_list(cols[j], n))) == levels
+            for e in range(len(seg["reduced"])):
+                col = cols[R + e]
+                nb = cb.value_bits(col.kind)
+                v = int.from_bytes(col.data, "little")
+                assert [(v >> (k * nb)) & ((1 << nb) - 1) for k in range(col.n)] == seg["values"][e]
+        prev_end = [int(ch[-1]) for ch in seg["reduced"]]
 
 
-@pytest.mark.parametrize("fast", FAST)
-def test_a_cut_segment_is_a_protocol_error(fast):
+def test_a_cut_segment_is_a_protocol_error():
     case = DATA["logic_blocks"][0]
     seg = case["segments"][0]
     data = bytes.fromhex(seg["stream_hex"])
-    n = len((seg["raw"] + seg["events"])[0])
-    args = (n, list(range(case["R"])), {case["R"] + e: d for e, d in enumerate(case["events_d"])}, case["L"])
-    with pytest.raises(h.ProtocolError):
-        cb.read_logic_blocks(data[:-1], *args, use_numpy=fast)
-    with pytest.raises(h.ProtocolError):
-        cb.read_logic_blocks(data + b"\0", *args, use_numpy=fast)
+    R, reduced = _case(case)
+    n = len((seg["raw"] + seg["reduced"])[0])
+    for bad in (data[:-1], data + b"\0"):
+        with pytest.raises(h.ProtocolError):
+            cb.read_logic_blocks(bad, n, list(range(R)), reduced, case["L"])
+        with pytest.raises(h.ProtocolError):
+            cb.segment_columns(bad, n, list(range(R)), reduced, case["L"])
 
 
-def test_worst_bytes_matches_the_spec_example():
-    # §1.3: 16 channels, 4 raw, 12 events at D 64, L 4096 -> 8 + 2048 + 3072
-    assert cb.worst_bytes(4, [64] * 12, 4096) == 5128
+def test_block_bytes_fixed_by_the_setting():
+    # §1.3: 4 raw, 12 sample at D 32, L 4096: 2048 + 12 x 128 bits; change_latch adds its start bit and 2 bits an interval
+    assert cb.block_bytes(4, {k: (cb.SAMPLE, 32) for k in range(4, 16)}, 4096) == 2048 + 192
+    assert cb.block_bytes(0, {0: (cb.CHANGE_LATCH, 8)}, 64) == (1 + 16 + 7) // 8
+    assert cb.segment_bytes(72, 1, {1: (cb.SAMPLE, 16)}, 32) == 2 * cb.block_bytes(1, {1: (cb.SAMPLE, 16)}, 32) + \
+        cb.block_bytes(1, {1: (cb.SAMPLE, 16)}, 8)
+
+
+def test_a_change_latch_start_that_does_not_follow_is_broken():
+    """A block's change_latch start other than the level the interval before ended on: a broken stream (WireSkein keeps
+    one start a segment), with numpy and without."""
+    from oep_client.virtual_bench_capture import logic_block
+    L, lv = 16, [0] * 8 + [1] * 8 + [1] * 16
+    blocks = [logic_block([], [lv[f:f + L]], [cb.CHANGE_LATCH], [8], [lv[f - 1] if f else lv[0]]) for f in (0, 16)]
+    good = b"".join(blocks)
+    cb.segment_columns(good, 32, [], {0: (cb.CHANGE_LATCH, 8)}, L)
+    bad = blocks[0] + bytes([blocks[1][0] ^ 1]) + blocks[1][1:]          # the second block's start bit flipped
+    np_ = cb._np
+    for fast in (False, True):
+        if fast and np_ is None:
+            continue
+        cb._np = np_ if fast else None
+        try:
+            with pytest.raises(h.ProtocolError):
+                cb.segment_columns(bad, 32, [], {0: (cb.CHANGE_LATCH, 8)}, L)
+        finally:
+            cb._np = np_
+
+
+def test_segment_columns_random():
+    """Random segments (R 0-3, reduced 0-6 of every carriage, D 2-64 that divide L, L 64-1024, a short last block):
+    columns with numpy and without, and blocks, all give the values §1.3 says (virtual bench's encoder)."""
+    from oep_client.virtual_bench_capture import logic_block
+    rng = random.Random(2)
+    for _ in range(60):
+        L = rng.choice([64, 256, 1024])
+        R, E = rng.randint(0, 3), rng.randint(0, 6)
+        R = R or (E == 0)
+        kinds = [rng.choice(list(KIND.values())) for _ in range(E)]
+        ds = [rng.choice([d for d in (2, 4, 8, 16, 32, 64) if L % d == 0]) for _ in range(E)]
+        samples = rng.randint(1, 5 * L)
+
+        def line(p):
+            out, v = [], rng.randint(0, 1)
+            for _ in range(samples):
+                v ^= rng.random() < p
+                out.append(int(v))
+            return out
+        raw = [line(.5) for _ in range(R)]
+        red = [line(rng.choice([.001, .05, .5])) for _ in range(E)]
+        data = b"".join(logic_block([x[f:f + L] for x in raw], [x[f:f + L] for x in red], kinds, ds,
+                                    [red[e][f - 1] if f else red[e][0] for e in range(E)])
+                        for f in range(0, samples, L))
+        reduced = {R + e: (kinds[e], ds[e]) for e in range(E)}
+        np_ = cb._np
+        for fast in (False, True):
+            if fast and np_ is None:
+                continue
+            cb._np = np_ if fast else None
+            try:
+                cols = cb.segment_columns(data, samples, list(range(R)), reduced, L)
+            finally:
+                cb._np = np_
+            for k in range(R):
+                assert cb.bits_list(cols[k], samples) == raw[k]
+            for e in range(E):
+                col = cols[R + e]
+                nb = cb.value_bits(kinds[e])
+                v = int.from_bytes(col.data, "little")
+                got = [(v >> (k * nb)) & ((1 << nb) - 1) for k in range(col.n)]
+                assert got == expect_values(kinds[e], red[e], ds[e], None)
+                assert col.start_level == (red[e][0] if kinds[e] == cb.CHANGE_LATCH else 0)
 
 
 def test_named_extensions_and_capture_drops():
@@ -108,58 +200,6 @@ def test_configure_answer_judge_latency():
     assert cfg.judge_latency_ns == 100819200
     assert c._config(rate, analog=False).judge_latency_ns is None
     assert c._config(rate + m.tlv(c.JUDGE_LATENCY, b"\x01\x02"), analog=True).judge_latency_ns is None
-
-
-def test_segment_columns_match_the_lines():
-    """segment_columns (format 1 as columns, no blocks): random segments (R 0-3, E 0-9, D 1/2/8/64, L 64-1024, a short
-    last block, quiet and busy lines so some blocks fall back) read back as the lines they were made from - a raw
-    channel's bits, an events channel's ticks counted from the segment's first sample (changes in each, the level at
-    its end; a fallback block's counted from its samples) and its level before the segment. Malformed: cut short, a
-    byte past the end."""
-    import random
-    pytest.importorskip("numpy")                  # optional (segment_columns needs it; read_logic_blocks does not)
-    from oep_client import host as h
-    from oep_client.virtual_bench_capture import logic_block
-    rng = random.Random(2)
-    for _ in range(60):
-        L = rng.choice([64, 256, 1024])
-        R, E = rng.randint(0, 3), rng.randint(0, 9)
-        R = R or (E == 0)
-        ds = [d if L % d == 0 else 1 for d in (rng.choice([1, 2, 8, 64]) for _ in range(E))]
-        samples = rng.randint(1, 5 * L)
-
-        def line(p):
-            out, v = [], rng.randint(0, 1)
-            for _ in range(samples):
-                v ^= rng.random() < p
-                out.append(int(v))
-            return out
-        raw = [line(.5) for _ in range(R)]
-        evs = [line(rng.choice([.001, .05, .5])) for _ in range(E)]
-        before = [rng.randint(0, 1) for _ in range(E)]
-        data = b"".join(logic_block([x[f:f + L] for x in raw], [x[f:f + L] for x in evs], ds,
-                                    [evs[e][f - 1] if f else before[e] for e in range(E)], L)
-                        for f in range(0, samples, L))
-        event_d = {R + e: ds[e] for e in range(E)}
-        cols = cb.segment_columns(data, samples, list(range(R)), event_d, L)
-        for k in range(R):
-            assert cb.bits_list(cols[k], samples) == raw[k]
-        for e in range(E):
-            d, v, prev = ds[e], evs[e], before[e]
-            want = []
-            for q in range(-(-samples // d)):
-                part = v[q * d:(q + 1) * d]
-                n = sum(a != b for a, b in zip([prev] + part[:-1], part))
-                if n:
-                    want.append((q, part[-1], n))
-                prev = part[-1]
-            col = cols[R + e]
-            got = list(zip(col.quanta.tolist(), col.levels.tolist(), col.counts.tolist()))
-            assert got == want and col.start_level == before[e]
-        with pytest.raises(h.ProtocolError):
-            cb.segment_columns(data[:-1], samples, list(range(R)), event_d, L)
-        with pytest.raises(h.ProtocolError):
-            cb.segment_columns(data + b"\0", samples, list(range(R)), event_d, L)
 
 
 def test_group_trigger_caps():

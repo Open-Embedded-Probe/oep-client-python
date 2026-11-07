@@ -178,64 +178,54 @@ def pack_samples(values: list[int], w: int) -> bytes:
     return bytes(out)
 
 
-def logic_block(raw: list[list[int]], events: list[list[int]], ds: list[int], before: list[int], L: int) -> bytes:
-    """One format 1 block (§1.3) of r = len(levels) samples: the raw channels' and events channels' levels, the events
-    channels' D and the level before the block (start_level). A channel whose events would pass L / 8 bytes goes raw
-    (fallback, required); the others may not."""
-    r = len((raw + events)[0])
-    E = len(events)
-    fb, ev = [], []
-    for e, lv in enumerate(events):
-        d, last, mine = ds[e], before[e], []
-        for t in range(-(-r // d)):
-            c = 0
-            for v in lv[t * d:min((t + 1) * d, r)]:
-                c += v != last
+def logic_values(kind: int, lv, d: int, before: int) -> list[int]:
+    """A reduced channel's interval values for a block's levels (§1.3): sample the interval's first, any_high its OR,
+    any_low its AND, change_latch its last level (bit 0) and a change from the sample before (bit 1; `before` the level
+    before the block)."""
+    out, last = [], before
+    for lo in range(0, len(lv), d):
+        part = [int(v) for v in lv[lo:lo + d]]
+        if kind == CARRIAGE["sample"]:
+            out.append(part[0])
+        elif kind == CARRIAGE["any_high"]:
+            out.append(int(1 in part))
+        elif kind == CARRIAGE["any_low"]:
+            out.append(0 if 0 in part else 1)
+        else:
+            ch = 0
+            for v in part:
+                ch |= v != last
                 last = v
-            if c:
-                mine.append(struct.pack("<HBB", t, e, (last << 7) | min(c, 127)))
-        if len(mine) * 4 > L // 8:
-            fb.append(e)
-        else:
-            ev += mine
-    nb = (E + 7) // 8
-    fallback = sum(1 << e for e in fb).to_bytes(nb, "little")
-    start = sum(before[e] << e for e in range(E)).to_bytes(nb, "little")
-    cols = raw + [events[e] for e in fb]
-    body = pack_samples([sum(c[i] << k for k, c in enumerate(cols)) for i in range(r)], len(cols)) if cols else b""
-    return fallback + start + struct.pack("<I", len(ev)) + body + b"".join(ev)
+            out.append(part[-1] | ch << 1)
+    return out
 
 
-def logic_block_np(np, raw: list, events: list, ds: list[int], before: list[int], L: int) -> bytes:
-    """logic_block with each channel's levels a numpy array: the same bytes, made at once."""
-    r = len((raw + events)[0])
-    E = len(events)
-    fb, ev = [], []
-    for e, lv in enumerate(events):
-        d = ds[e]
-        q = -(-r // d)
-        prev = np.concatenate([np.array([before[e]], np.uint8), lv[:-1]])
-        changed = np.zeros(q * d, np.int64)
-        changed[:r] = lv != prev
-        counts = changed.reshape(q, d).sum(axis=1)
-        last = lv[np.minimum((np.arange(q) + 1) * d, r) - 1].astype(np.int64)
-        t = np.nonzero(counts)[0]
-        rec = np.zeros(len(t), dtype=[("t", "<u2"), ("e", "u1"), ("v", "u1")])
-        rec["t"], rec["e"], rec["v"] = t, e, (last[t] << 7) | np.minimum(counts[t], 127)
-        if len(t) * 4 > L // 8:
-            fb.append(e)
-        else:
-            ev.append(rec.tobytes())
-    nb = (E + 7) // 8
-    fallback = sum(1 << e for e in fb).to_bytes(nb, "little")
-    start = sum(before[e] << e for e in range(E)).to_bytes(nb, "little")
-    cols = raw + [events[e] for e in fb]
+def logic_block(raw: list, reduced: list, kinds: list[int], ds: list[int], before: list[int], L: int = 0) -> bytes:
+    """One format 1 block (§1.3) of r samples: the raw channels' levels packed R bits a sample, then the reduced part -
+    a start bit per change_latch channel (`before`: per reduced channel the level before the block) and every reduced
+    channel's interval values (role order, b bits each), padded at its end. Levels may be lists or numpy arrays."""
+    r = len((list(raw) + list(reduced))[0])
+    body = pack_samples([sum(int(c[i]) << k for k, c in enumerate(raw)) for i in range(r)], len(raw)) if raw else b""
+    acc = at = 0
+    for e, k in enumerate(kinds):
+        if k == CARRIAGE["change_latch"]:
+            acc |= before[e] << at
+            at += 1
+    for e, k in enumerate(kinds):
+        nb = 2 if k == CARRIAGE["change_latch"] else 1
+        for v in logic_values(k, reduced[e], ds[e], before[e]):
+            acc |= v << at
+            at += nb
+    return body + acc.to_bytes((at + 7) // 8, "little")
+
+
+def logic_block_np(np, raw: list, reduced: list, kinds: list[int], ds: list[int], before: list[int], L: int = 0) -> bytes:
+    """logic_block with each channel's levels a numpy array: the raw part made at once."""
     body = b""
-    if cols:
-        bits = np.stack(cols, axis=1).astype(np.uint8)
+    if raw:
+        bits = np.stack(raw, axis=1).astype(np.uint8)
         body = np.packbits(bits.reshape(-1), bitorder="little").tobytes()
-    n_ev = sum(len(x) // 4 for x in ev)
-    return fallback + start + struct.pack("<I", n_ev) + body + b"".join(ev)
+    return body + (logic_block([], [x.tolist() for x in reduced], kinds, ds, before) if reduced else b"")
 
 
 def analog_part(values: list[int], kind: int, d: int, b: int) -> bytes:
@@ -525,12 +515,13 @@ class VirtualCapture:
                     raise Reject(m.MALFORMED)
                 role, kind, d = struct.unpack("<BBI", v)
                 carriage.append((role, kind, d, raw_tag))
-        # carriage (§3.3): d 0, raw with d > 1, a role twice, carriage without format 1 / 2 -> malformed; an analog
+        # carriage (§3.3): d 0, raw with d other than 1, a reduction with d 1, a role twice, carriage without format
+        # 1 / 2 -> malformed; an analog
         # kind is a bit set (§1.4): none, or packed with another, is a value the definition excludes
         reduced = ACARRIAGE["minmax"] | ACARRIAGE["sum"]
         excluded = ((lambda kind: not kind or kind & ACARRIAGE["packed"] and kind & reduced)
                     if self.analog else (lambda kind: False))
-        if (any(d == 0 or not self.analog and kind == CARRIAGE["raw"] and d > 1 or excluded(kind)
+        if (any(d == 0 or not self.analog and (kind == CARRIAGE["raw"]) != (d == 1) or excluded(kind)
                 for _, kind, d, _ in carriage)
                 or len({c[0] for c in carriage}) != len(carriage)
                 or carriage and fmt not in BLOCK_FORMATS):
@@ -784,16 +775,18 @@ class VirtualCapture:
         return out
 
     def _blocks(self, first: int, n: int, contiguous: bool, segment_start: bool = True) -> bytes:
-        """A format 1 segment (§1.3): blocks of L from its sample 0; start_level the sample before when it is
-        contiguous in the generation, else the block's first. Format 2: _analog_blocks; format 3: _timed."""
+        """A format 1 segment (§1.3): blocks of L from its sample 0; change_latch compared with the sample before when
+        it is contiguous in the generation, else with nothing (the block's first). Format 2: _analog_blocks; format 3:
+        _timed."""
         if self.format == FORMAT["state_timed"]:
             return self._timed(first, n, segment_start)
         if self.analog:
             return self._analog_blocks(first, n)
         roles = list(range(self.channels))
         raw = [k for k in roles if self.carriages.get(k, (CARRIAGE["raw"], 1))[0] == CARRIAGE["raw"]]
-        ev = [k for k in roles if k not in raw]
-        ds = [self.carriages[k][1] for k in ev]
+        red = [k for k in roles if k not in raw]
+        kinds = [self.carriages[k][0] for k in red]
+        ds = [self.carriages[k][1] for k in red]
         levels = self._levels(first, n)                            # numpy: the samples and the blocks at once
         out = bytearray()
         for b in range(0, n, self.block):
@@ -801,14 +794,14 @@ class VirtualCapture:
             at = first + b
             if levels is not None:
                 before = [int(levels[k][b - 1]) if b else (self.value(k, at - 1) if contiguous else int(levels[k][0]))
-                          for k in ev]
+                          for k in red]
                 import numpy as np
-                out += logic_block_np(np, [levels[k][b:b + r] for k in raw], [levels[k][b:b + r] for k in ev], ds,
-                                      before, self.block)
+                out += logic_block_np(np, [levels[k][b:b + r] for k in raw], [levels[k][b:b + r] for k in red], kinds,
+                                      ds, before)
                 continue
-            before = [self.value(k, at - 1) if (b or contiguous) else self.value(k, at) for k in ev]
+            before = [self.value(k, at - 1) if (b or contiguous) else self.value(k, at) for k in red]
             out += logic_block([[self.value(k, at + i) for i in range(r)] for k in raw],
-                               [[self.value(k, at + i) for i in range(r)] for k in ev], ds, before, self.block)
+                               [[self.value(k, at + i) for i in range(r)] for k in red], kinds, ds, before)
         return bytes(out)
 
     def _ticks(self, i: int) -> int:

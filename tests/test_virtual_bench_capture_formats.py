@@ -19,68 +19,85 @@ def planned(hst, lc, n):
     return list(range(n))
 
 
-def check_blocks(blocks, events, samples, first, contiguous_before=None):
+SAMPLE, ANY_HIGH, ANY_LOW, CHANGE_LATCH = cb.SAMPLE, cb.ANY_HIGH, cb.ANY_LOW, cb.CHANGE_LATCH
+
+
+def want_values(role, kind, d, at, r, before):
+    """§1.3's values for the virtual line `role` over samples at .. at + r - 1 (before: the level before, or None)."""
+    out, last = [], before
+    for lo in range(0, r, d):
+        part = [level(role, at + i) for i in range(lo, min(lo + d, r))]
+        if kind == SAMPLE:
+            out.append(part[0])
+        elif kind == ANY_HIGH:
+            out.append(int(1 in part))
+        elif kind == ANY_LOW:
+            out.append(0 if 0 in part else 1)
+        else:
+            ch = 0
+            for v in part:
+                ch |= last is not None and v != last
+                last = v
+            out.append(part[-1] | ch << 1)
+    return out
+
+
+def check_blocks(blocks, reduced, samples, first, contiguous_before=None):
     for b in blocks:
         at = first + b.first
         for role, bits in b.raw.items():
             assert cb.bits_list(bits, b.samples) == [level(role, at + i) for i in range(b.samples)]
-        for role, ch in b.events.items():
-            before = level(role, at - 1) if (b.first or contiguous_before) else level(role, at)
-            assert ch.start_level == before
-            want, last = [], before
-            for t in range(-(-b.samples // ch.d)):
-                n = 0
-                for i in range(t * ch.d, min((t + 1) * ch.d, b.samples)):
-                    v = level(role, at + i)
-                    n += v != last
-                    last = v
-                if n:
-                    want.append((t, last, n))
-            assert list(zip(ch.ticks, ch.levels, ch.counts)) == want
+        for role, (kind, d) in reduced.items():
+            before = level(role, at - 1) if (b.first or contiguous_before) else None
+            assert b.values[role] == want_values(role, kind, d, at, b.samples, before)
+            if kind == CHANGE_LATCH:
+                assert b.starts[role] == (before if before is not None else level(role, at))
     assert sum(b.samples for b in blocks) == samples
-    assert {r for b in blocks for r in list(b.raw) + list(b.events)} >= set(events)
 
 
-def test_format_1_one_shot_raw_events_and_a_required_fallback():
+def test_format_1_one_shot_raw_and_every_reduction():
     ep, hst, lc, clock = bench()
     roles = planned(hst, lc, 12)
-    events = {2: 4, 8: 16, 9: 16, 11: 32}                  # role 2 changes every 4 samples: past L/8, so fallback
-    cfg = lc.configure(rate=1_000_000, samples=1000, data_format=LOGIC_BLOCKS, events=events, roles=roles, block_max=256)
+    reduced = {2: (CHANGE_LATCH, 4), 8: (SAMPLE, 16), 9: (ANY_HIGH, 16), 11: (ANY_LOW, 32)}
+    cfg = lc.configure(rate=1_000_000, samples=1000, data_format=LOGIC_BLOCKS, carriage=reduced, roles=roles,
+                       block_max=256)
     assert (cfg.format, cfg.block, cfg.width, cfg.positions) == (LOGIC_BLOCKS, 256, 8, list(range(8)))
     lc.start()
     clock.t += 5
     (seg,) = lc.wait()
-    blocks = lc.blocks(lc.read_segment(seg), seg.samples)
+    data = lc.read_segment(seg)
+    blocks = lc.blocks(data, seg.samples)
     assert [b.samples for b in blocks] == [256, 256, 256, 232]   # a partial last block
-    assert all(b.fallback == {2} for b in blocks)
-    check_blocks(blocks, events, seg.samples, 0)
-    assert len(lc.read_segment(seg)) <= 4 * cb.worst_bytes(8, list(events.values()), 256)
+    check_blocks(blocks, reduced, seg.samples, 0)
+    assert len(data) == cb.segment_bytes(seg.samples, 8, reduced, 256)   # fixed by the setting
 
 
-def test_format_1_repeat_start_level_follows_the_segment_before():
+def test_format_1_repeat_change_latch_follows_the_segment_before():
     ep, hst, lc, clock = bench()
     roles = planned(hst, lc, 10)
-    events = {9: 8}
-    lc.configure(rate=1_000_000, mode=c.REPEAT, samples=200, segments=3, data_format=LOGIC_BLOCKS, events=events,
+    reduced = {9: (CHANGE_LATCH, 8)}
+    lc.configure(rate=1_000_000, mode=c.REPEAT, samples=200, segments=3, data_format=LOGIC_BLOCKS, carriage=reduced,
                  roles=roles)
     lc.start()
     clock.t += 5
     segs = lc.segments()
     assert len(segs) == 3 and not any(s.flags & 1 for s in segs)
     for k, s in enumerate(segs):
-        check_blocks(lc.blocks(lc.read_segment(s), s.samples), events, s.samples, k * 200, contiguous_before=k > 0)
+        check_blocks(lc.blocks(lc.read_segment(s), s.samples), reduced, s.samples, k * 200, contiguous_before=k > 0)
 
 
 def test_format_1_contract():
     ep, hst, lc, clock = bench()
     roles = planned(hst, lc, 4)
-    with pytest.raises(h.Rejected) as e:                    # a raw carriage with d > 1: malformed (§3.3)
-        lc._call(lc.CONFIGURE, m.tlv(c.MODE, bytes([c.ONE_SHOT])) + m.tlv(c.RATE, struct.pack("<I", 1000))
-                 + m.tlv(c.SAMPLES, struct.pack("<I", 64)) + m.tlv(c.FORMAT | c.CRITICAL, bytes([LOGIC_BLOCKS]))
-                 + m.tlv(c.CARRIAGE | c.CRITICAL, struct.pack("<BBI", 0, c.LOGIC_CARRIAGE["raw"], 4)))
-    assert e.value.result.detail == m.MALFORMED
+    head = (m.tlv(c.MODE, bytes([c.ONE_SHOT])) + m.tlv(c.RATE, struct.pack("<I", 1000))
+            + m.tlv(c.SAMPLES, struct.pack("<I", 64)) + m.tlv(c.FORMAT | c.CRITICAL, bytes([LOGIC_BLOCKS])))
+    for kind, d in ((c.LOGIC_CARRIAGE["raw"], 4), (SAMPLE, 1)):   # raw with d > 1, a reduction with d 1: malformed
+        with pytest.raises(h.Rejected) as e:
+            lc._call(lc.CONFIGURE, head + m.tlv(c.CARRIAGE | c.CRITICAL, struct.pack("<BBI", 0, kind, d)))
+        assert e.value.result.detail == m.MALFORMED
     with pytest.raises(h.Unsupported):                      # L can't be a multiple of 8 and 3 within 16
-        lc.configure(rate=1000, samples=64, data_format=LOGIC_BLOCKS, events={3: 3}, roles=roles, block_max=16)
+        lc.configure(rate=1000, samples=64, data_format=LOGIC_BLOCKS, carriage={3: (SAMPLE, 3)}, roles=roles,
+                     block_max=16)
     with pytest.raises(h.Unsupported):                      # a critical TLV it does not know (core §2.3)
         lc._call(lc.CONFIGURE, m.tlv(c.MODE, bytes([c.ONE_SHOT])) + m.tlv(c.RATE, struct.pack("<I", 1000))
                  + m.tlv(c.SAMPLES, struct.pack("<I", 64))
@@ -212,8 +229,8 @@ def streamed_segments(ep, segs):
 def test_format_1_streaming_blocks_per_segment_and_a_short_end():
     ep, hst, lc, clock = bench()
     roles = planned(hst, lc, 10)
-    events = {8: 16, 9: 16}
-    cfg = lc.configure(rate=100_000, mode=c.STREAMING, data_format=LOGIC_BLOCKS, events=events, roles=roles,
+    events = {8: (SAMPLE, 16), 9: (CHANGE_LATCH, 16)}
+    cfg = lc.configure(rate=100_000, mode=c.STREAMING, data_format=LOGIC_BLOCKS, carriage=events, roles=roles,
                        block_max=512)
     assert cfg.block == 512
     lc.subscribe()
@@ -239,8 +256,8 @@ def test_format_1_streaming_blocks_per_segment_and_a_short_end():
 def test_format_1_streaming_drops_a_segment_whole_while_unsubscribed():
     ep, hst, lc, clock = bench()
     roles = planned(hst, lc, 10)
-    events = {9: 16}
-    lc.configure(rate=100_000, mode=c.STREAMING, data_format=LOGIC_BLOCKS, events=events, roles=roles, block_max=512)
+    events = {9: (ANY_LOW, 16)}
+    lc.configure(rate=100_000, mode=c.STREAMING, data_format=LOGIC_BLOCKS, carriage=events, roles=roles, block_max=512)
     lc.subscribe()
     lc.start()
     got = {}
@@ -263,26 +280,27 @@ def test_format_1_streaming_drops_a_segment_whole_while_unsubscribed():
     assert complete >= 2 and lc.status().flags & c.STATUS_FLAGS["dropped"]
 
 
-def test_logic_waves_quiet_and_uart_lines_carry_few_events():
-    """--logic-wave: quiet and UART-like lines (§1.3's typical case) - their events stay far below the worst case."""
+def test_logic_waves_quiet_and_uart_lines_reduced():
+    """--logic-wave: quiet and UART-like lines change_latched at 64: the size is the setting's whatever the lines do; a
+    quiet line never changes, a UART line's start bits show as changes."""
     from oep_client import virtual_bench_capture as vbc
     ep, hst, lc, clock = bench()
     roles = planned(hst, lc, 16)
     cap = ep.captures[lc.fn]
     for r in range(4, 16):
         cap.waves[r] = vbc.logic_wave("uart:115200" if r % 2 else "quiet")
-    events = {r: 64 for r in range(4, 16)}
-    lc.configure(rate=20_000_000, samples=65536, data_format=LOGIC_BLOCKS, events=events, roles=roles)
+    reduced = {r: (CHANGE_LATCH, 64) for r in range(4, 16)}
+    lc.configure(rate=20_000_000, samples=65536, data_format=LOGIC_BLOCKS, carriage=reduced, roles=roles)
     lc.start()
     clock.t += 10
     (seg,) = lc.wait()
     data = lc.read_segment(seg)
-    blocks = lc.blocks(data, seg.samples)
-    assert not any(b.fallback for b in blocks)
-    worst = cb.worst_bytes(4, list(events.values()), lc.config.block) * len(blocks)
-    assert len(data) < 0.45 * worst                            # 4 raw lines dominate: 2048 B of a 5128 B worst block
-    uart = blocks[0].events[5]
-    assert cb.COUNT_SATURATED not in list(uart.counts)         # a 115200 bit is 173 samples: one change a tick at most
+    assert len(data) == cb.segment_bytes(seg.samples, 4, reduced, lc.config.block)
+    cols = lc.columns(data, seg.samples)
+    quiet = int.from_bytes(cols[4].data, "little")
+    assert all(not (quiet >> (2 * k + 1)) & 1 for k in range(cols[4].n))   # never a change
+    uart = int.from_bytes(cols[5].data, "little")
+    assert any((uart >> (2 * k + 1)) & 1 for k in range(cols[5].n))       # some
     assert vbc.logic_wave("uart:115200:A")(0, 20_000_000) == 0  # the start bit
 
 
@@ -334,11 +352,11 @@ def test_streaming_behind_more_than_its_buffer_stops_in_error(monkeypatch):
     assert st.state == c.STATE["error"]
 
 
-def test_format_1_with_every_channel_events_has_w_and_c_0():
+def test_format_1_with_every_channel_reduced_has_w_and_c_0():
     ep, hst, lc, clock = bench()
     roles = planned(hst, lc, 3)
-    events = {r: 8 for r in roles}
-    cfg = lc.configure(rate=1000, samples=64, data_format=LOGIC_BLOCKS, events=events, roles=roles, block_max=64)
+    events = {r: (SAMPLE, 8) for r in roles}
+    cfg = lc.configure(rate=1000, samples=64, data_format=LOGIC_BLOCKS, carriage=events, roles=roles, block_max=64)
     assert (cfg.width, cfg.positions) == (0, [])             # §1.1's w range's exception: no raw part
     lc.start()
     clock.t += 100

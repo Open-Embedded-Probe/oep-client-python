@@ -17,7 +17,7 @@ def refused_stale(reply):
     return reply[3:5]==b'\0\4' and refusal_carries('unavailable',reply[5:],b'\1\1\0\6')
 from .host_deadline import reviewed_identity as core_identity
 
-REVIEWED={'interfaces/oep-if-capture.ja.md':'786bf349dfe322cee7b0d13e9d250cee2d0778bef3590ae751b2e87b11bb2fd3',
+REVIEWED={'interfaces/oep-if-capture.ja.md':'f1035dc14cf469d929d782dbe710fc2c1e1567006da41a001abe3c5c25761324',
           'interfaces/oep-if-common.ja.md':'25fed0b1b8b7f246a8b71d02cea810249803b1c3c1e9c3df466c04f38687f70c'}
 
 def reviewed_identity(path):

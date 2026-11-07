@@ -38,10 +38,9 @@ uncertainty is kept. ADC values are kept raw with the probe's linear conversion;
 reading and factory calibration go along in `probe`, never applied.
 
 Channels come as the probe gave them: a logic line as its samples (`Bits`, one bit each, sample i at bit i % 8 of
-byte i // 8) or as its changes (`Changes`, capture format 1 events: per event a varint - its quantum minus the
-previous event's, minus one - then a byte, bit 7 the level after and bits 0-6 the count of changes in the quantum,
-127 meaning at least 127), an analog one as its raw values (`Analog`). numpy is used to put streams and format 1
-blocks together.
+byte i // 8; a line taken by capture format 1's sample at D, its intervals' first samples at step D), or reduced over
+intervals (`Reduced`, format 1's any_high / any_low / change_latch: a fixed number of bits an interval), an analog one
+as its raw values (`Analog`). numpy is used to put streams and format 1 blocks together.
 """
 
 from __future__ import annotations
@@ -57,7 +56,9 @@ from pathlib import Path
 
 from . import registry as _reg
 
-__all__ = ["Analog", "Bits", "Changes", "OnDisk", "Part", "Request", "Result", "StreamStopped", "capture", "capture_at"]
+__all__ = ["Analog", "Bits", "OnDisk", "Part", "Reduced", "Request", "Result", "StreamStopped", "capture", "capture_at"]
+
+REDUCTIONS = ("sample", "any_high", "any_low", "change_latch")   # format 1's carriages but raw (capture §1.3)
 
 TRIGGERS = ("high", "low", "rise", "fall", "both")
 ANALOG_TRIGGERS = ("high", "low", "rise", "fall")
@@ -78,7 +79,8 @@ class Request:
     analog: list[tuple[str, str, int | None]] = field(default_factory=list)   # (name, the line as above, frontend)
     analog_rate: int | None = None           # analog samples per second (default: `rate`)
     analog_samples: int | None = None        # default: as long as the logic capture
-    resolution: dict[str, int] = field(default_factory=dict)   # logic lines as their changes (format 1): name -> D
+    resolution: dict[str, tuple[str, int]] = field(default_factory=dict)   # logic lines reduced (capture format 1):
+                                             # name -> (one of REDUCTIONS, D: 2 or more samples an interval)
     mode: str = "oneshot"                    # "oneshot", "stream" (for `seconds`) or "repeat"
     seconds: float | None = None             # stream: how long (as LogicCapture.stream(seconds=...))
     segments: int | None = None              # repeat: how many acquisitions
@@ -117,9 +119,11 @@ class Request:
         if self.arm not in ("pretrigger", "now"):
             raise ValueError(f"arm {self.arm!r}: pretrigger or now")
         logic = {n for n, _ in self.channels}
-        for name, d in self.resolution.items():
-            if name not in logic or d < 1:
-                raise ValueError(f"{name}/{d}: a resolution is for a logic channel captured, 1 or more samples")
+        for name, how in self.resolution.items():
+            mode, d = how if isinstance(how, tuple) and len(how) == 2 else (None, 0)
+            if name not in logic or mode not in REDUCTIONS or not isinstance(d, int) or d < 2:
+                raise ValueError(f"{name}={how!r}: a resolution is for a logic channel captured, (one of "
+                                 f"{', '.join(REDUCTIONS)}, 2 or more samples)")
 
 
 class OnDisk:
@@ -170,73 +174,41 @@ class Bits:
 
 
 @dataclass
-class Changes:
-    """A logic line as its changes at a resolution of `step` ticks (capture format 1): quantum k is ticks
-    [phase + k * step, phase + (k + 1) * step), n quanta; start_level the level before quantum 0. `data` holds
-    `count` events (the module's description); step 1 is lossless."""
+class Reduced:
+    """A logic line reduced over intervals of `step` ticks (capture format 1): interval k is ticks
+    [phase + k * step, phase + (k + 1) * step), n intervals (the last one may be cut by the segment's end). `kind`:
+    "any_high" (1 bit: 1 when the interval had a 1), "any_low" (1 bit: 0 when it had a 0) or "change_latch" (2 bits:
+    bit 0 the interval's last level, bit 1 whether it changed from the tick before). `data`: the values packed `bits`
+    each, interval k at bit k * bits (bit j at bit j % 8 of byte j // 8); start_level: the level before interval 0
+    (change_latch)."""
     name: str
+    kind: str
     data: bytes
     n: int
     step: int = 1
     phase: int = 0
     start_level: int = 0
-    count: int = 0
     acquisition: dict = field(default_factory=dict)
 
     def __post_init__(self):
-        if self.step < 1 or not 0 <= self.phase or self.start_level not in (0, 1) or self.n < 0:
-            raise ValueError(f"{self.name}: step must be >= 1, phase >= 0, start_level 0 or 1")
+        if self.kind not in REDUCTIONS[1:] or self.step < 1 or not 0 <= self.phase or self.start_level not in (0, 1) \
+                or self.n < 0:
+            raise ValueError(f"{self.name}: kind one of {REDUCTIONS[1:]}, step >= 1, phase >= 0, start_level 0 or 1")
+        if len(self.data) != (self.n * self.bits + 7) // 8:
+            raise ValueError(f"{self.name}: {len(self.data)} bytes for {self.n} intervals of {self.bits} bits")
+
+    @property
+    def bits(self) -> int:
+        return 2 if self.kind == "change_latch" else 1
 
     @property
     def end(self) -> int:
         return self.phase + self.n * self.step
 
-    def decode(self) -> tuple[list[int], list[int], list[int]]:
-        """-> (quanta, levels after, counts), one entry per event."""
-        ks, levels, counts = [], [], []
-        k, i, d = -1, 0, self.data
-        while i < len(d):
-            gap, shift = 0, 0
-            while True:
-                b = d[i]
-                i += 1
-                gap |= (b & 0x7F) << shift
-                shift += 7
-                if b < 0x80:
-                    break
-            k += gap + 1
-            ks.append(k)
-            levels.append(d[i] >> 7)
-            counts.append(d[i] & 0x7F)
-            i += 1
-        if len(ks) != self.count:
-            raise ValueError(f"{self.name}: {len(ks)} events in the data, {self.count} counted")
-        return ks, levels, counts
-
-
-def changes(name: str, quanta, levels, counts, n: int, step: int = 1, phase: int = 0, start_level: int = 0,
-            **acquisition) -> Changes:
-    """(quantum, level after, changes in it) per event, quanta increasing and below n -> Changes. A count of 127 or
-    more is kept as 127 (at least 127); otherwise the level follows from the one before and the count's parity, and
-    at step 1 each event is one change."""
-    out = bytearray()
-    prev, level = -1, start_level
-    quanta, levels, counts = list(quanta), list(levels), list(counts)
-    for k, lv, c in zip(quanta, levels, counts):
-        if not prev < k < n or lv not in (0, 1) or c < 1 or (step == 1 and c != 1):
-            raise ValueError(f"{name}: event (quantum {k}, level {lv}, count {c}) out of order or impossible")
-        c = min(c, 127)
-        if c < 127 and lv != level ^ (c & 1):
-            raise ValueError(f"{name}: quantum {k} ends at {lv} after {c} changes from {level}")
-        gap = k - prev - 1
-        while True:
-            out.append((gap & 0x7F) | (0x80 if gap > 0x7F else 0))
-            gap >>= 7
-            if not gap:
-                break
-        out.append((lv << 7) | c)
-        prev, level = k, lv
-    return Changes(name, bytes(out), n, step, phase, start_level, len(quanta), acquisition)
+    def values(self) -> list[int]:
+        """The n interval values."""
+        v, b = int.from_bytes(self.data, "little"), self.bits
+        return [(v >> (k * b)) & ((1 << b) - 1) for k in range(self.n)]
 
 
 _TYPECODE = {8: "B", 16: "H", 32: "I"}
@@ -743,9 +715,11 @@ def _capture(link, core, oc, oh, message, target: str, req: Request, ids: list[i
                     kind, value = TRIGGER[req.trigger[1]]
                     trigger = (kind, names.index(req.trigger[0]), value)
                 blocks = {}
-                if req.resolution:          # format 1: these lines as their changes, the others raw (§1.3)
+                if req.resolution:          # format 1: these lines reduced, the others raw (§1.3)
+                    carriage = oc._CAP.enum["logic_carriage"]
                     blocks = dict(data_format=oc.DATA_FORMAT["logic_blocks"], roles=list(range(len(ids))),
-                                  events={names.index(n): d for n, d in req.resolution.items()})
+                                  carriage={names.index(n): (carriage[mode], d)
+                                            for n, (mode, d) in req.resolution.items()})
                 if req.arm == "now" and trigger and not grouped:   # arm 0 (§3.3): optional, so critical; 1 the default
                     if not hasattr(oc, "TriggerOpts"):
                         raise ValueError("--arm now needs an oep-client-python with trigger_opts")
@@ -907,7 +881,7 @@ def _capture(link, core, oc, oh, message, target: str, req: Request, ids: list[i
         if seg.trigger_index is not None:              # tick 0 is the segment's (base) sample 0
             meta["trigger_tick"] = seg.trigger_index
         tick = Fraction(cfg.rate)
-        if getattr(cfg, "event_d", None):
+        if _is_blocks(oc, cfg):
             chans = _from_blocks(cap, data, names, seg.samples, cfg)
             probe["data"] = _budget(oc, cfg, len(data), seg.samples, len(names))
         else:
@@ -976,95 +950,34 @@ def _analog_chans(an, acfg, req: Request, aids, data: bytes, samples: int, t0: F
     return out
 
 
+def _is_blocks(oc, cfg) -> bool:
+    """Whether the capture is in format 1 (the logic blocks)."""
+    return getattr(cfg, "format", 0) == oc.DATA_FORMAT["logic_blocks"]
+
+
+def _reduction_name(kind: int) -> str:
+    from oep_client import capture_blocks
+    return next(name for name, v in capture_blocks.LOGIC_CARRIAGE.items() if v == kind)
+
+
 def _from_blocks(cap, data: bytes, names: list[str], samples: int, cfg) -> list:
-    """A format 1 segment's bytes -> the file's channels, in the order asked: a raw channel as bits, an events channel
-    as `events` at its D (_segment_columns)."""
+    """A format 1 segment's bytes -> the file's channels, in the order asked: a raw channel as bits, a sampled one as
+    bits at its D, any other reduction as Reduced."""
     out = []
     for name, col in zip(names, _segment_columns(cap, data, samples, len(names), cfg)):
         if isinstance(col, bytes):
             out.append(Bits(name, col[:(samples + 7) // 8], samples))
+        elif _reduction_name(col.kind) == "sample":
+            out.append(Bits(name, col.data, col.n, col.d))
         else:
-            d = col[4]
-            out.append(_events_np(name, *col[:4], -(-samples // d), d))
-    return out
-
-
-def _block_columns(blocks, roles: int, cfg) -> list:
-    """A format 1 segment's blocks -> per role, a raw channel's bits (L is a multiple of 8, so the blocks' bytes join
-    as they are; the last block's tail 0, §1.3), or an events channel's (quanta of the segment, levels after, counts,
-    start level, D) as numpy arrays (L is a multiple of D). A block the probe carried raw (fallback) is counted here
-    from its samples and the block's start level, the same way the probe counts (§1.3)."""
-    import numpy as np
-    out = []
-    for role in range(roles):
-        d = cfg.event_d.get(role)
-        if d is None:
-            out.append(b"".join(b.raw[role] for b in blocks))
-            continue
-        qs, ls, cs = [], [], []
-        for b in blocks:
-            q0 = b.first // d
-            if role in b.fallback:
-                lv = np.unpackbits(np.frombuffer(b.raw[role], np.uint8), bitorder="little")[:b.samples]
-                change = np.empty(b.samples, np.uint8)
-                change[0] = lv[0] != b.start_levels[role]       # the level before the block (§1.3)
-                np.not_equal(lv[1:], lv[:-1], out=change[1:])
-                per = np.add.reduceat(change.astype(np.int64), np.arange(0, b.samples, d))
-                t = np.flatnonzero(per)
-                qs.append(q0 + t)
-                ls.append(lv[np.minimum((t + 1) * d, b.samples) - 1])
-                cs.append(per[t])
-            else:
-                e = b.events[role]
-                qs.append(q0 + np.asarray(e.ticks, np.int64))
-                ls.append(np.asarray(e.levels, np.uint8))
-                cs.append(np.asarray(e.counts, np.int64))
-        start = int(blocks[0].start_levels[role]) if blocks else 0
-        out.append((np.concatenate(qs).astype(np.int64) if qs else np.zeros(0, np.int64),
-                    np.concatenate(ls).astype(np.uint8) if ls else np.zeros(0, np.uint8),
-                    np.concatenate(cs).astype(np.int64) if cs else np.zeros(0, np.int64), start, d))
+            out.append(Reduced(name, _reduction_name(col.kind), col.data, col.n, col.d, 0, col.start_level))
     return out
 
 
 def _segment_columns(cap, data: bytes, samples: int, roles: int, cfg) -> list:
-    """_block_columns of a format 1 segment's bytes; read by columns when the client can (no block objects)."""
-    columns = getattr(cap, "columns", None)
-    if columns is None:
-        return _block_columns(cap.blocks(data, samples), roles, cfg)
-    got = columns(data, samples)
-    return [got[r] if r not in cfg.event_d else (*got[r], cfg.event_d[r]) for r in range(roles)]
-
-
-def _events_np(name: str, quanta, levels, counts, start_level: int, n: int, step: int, **acquisition):
-    """changes() over numpy arrays, at once: the same checks and the same bytes (the Changes encoding)."""
-    import numpy as np
-    q = np.asarray(quanta, np.int64)
-    lv = np.asarray(levels, np.int64)
-    c = np.asarray(counts, np.int64)
-    if len(q):
-        before = np.concatenate(([start_level], lv[:-1]))
-        sat = np.minimum(c, 127)
-        bad = (np.diff(q, prepend=-1) <= 0) | (q >= n) | ((lv != 0) & (lv != 1)) | (c < 1) | \
-            ((sat < 127) & (lv != before ^ (sat & 1)))
-        if step == 1:
-            bad |= c != 1
-        if bad.any():
-            k = int(np.flatnonzero(bad)[0])
-            raise ValueError(f"{name}: event (quantum {q[k]}, level {lv[k]}, count {c[k]}) out of order or impossible")
-        gap = np.diff(q, prepend=-1) - 1
-        nb = np.ones(len(q), np.int64)
-        for j in range(1, 10):
-            nb += gap >= (1 << (7 * j))
-        at = np.concatenate(([0], np.cumsum(nb + 1)[:-1]))
-        out = np.empty(int((nb + 1).sum()), np.uint8)
-        for j in range(int(nb.max())):
-            m = nb > j
-            out[at[m] + j] = ((gap[m] >> (7 * j)) & 0x7F) | np.where(nb[m] > j + 1, 0x80, 0)
-        out[at + nb] = (lv << 7) | sat
-        data = out.tobytes()
-    else:
-        data = b""
-    return Changes(name, data, n, step, 0, start_level, len(q), acquisition)
+    """A format 1 segment's columns in role order (raw bits, or capture_blocks.ReducedColumn)."""
+    got = cap.columns(data, samples)
+    return [got[r] for r in range(roles)]
 
 
 REPEAT_POLL_S = 0.002   # how often repeat looks for finished segments
@@ -1109,7 +1022,7 @@ def _repeat_result(cap, hst, cfg, req: Request, names, ids, probe, fast, open_s,
                 received += len(data)
                 cap.release(seg.serial, seg.generation or None)
                 nxt = seg.serial + 1
-                if getattr(cfg, "event_d", None):
+                if _is_blocks(oc, cfg):
                     chans = _from_blocks(cap, data, names, seg.samples, cfg)
                 else:
                     chans = from_interleaved(data, names, cfg.width, cfg.positions, seg.samples)
@@ -1464,12 +1377,9 @@ def _stream_result(cap, hst, cfg, req: Request, names, ids, probe, fast, open_s,
     import time
     link = hst.link
     if getattr(cfg, "stream_buffer", None) is not None:   # how long this host may pause (§3.3), before it starts
-        worst = None
-        if getattr(cfg, "event_d", None):                 # format 1: over its worst bandwidth, a lower bound
-            from oep_client import capture_blocks
-            worst = capture_blocks.worst_bytes(len(cfg.raw_roles), list(cfg.event_d.values()), cfg.block) \
-                * float(cfg.rate) / cfg.block
-        probe["stream_buffer"] = {"bytes": cfg.stream_buffer, "tolerable_delay_s": cfg.tolerable_delay_s(worst)}
+        probe["stream_buffer"] = {"bytes": cfg.stream_buffer, "tolerable_delay_s": cfg.tolerable_delay_s()}
+    if getattr(cfg, "data_rate", None):                   # what the setting sends (§3.3): the host's margin to judge
+        probe["data_rate"] = cfg.data_rate
     spool = _Spool(cap, cfg, names, ids, req) if _spools(cfg) else None
     got, read_s = _collect(cap, link, req, oc, spool)
     st = cap.status()
@@ -1534,7 +1444,7 @@ class _Streamed:
 def _spools(cfg) -> bool:
     """Whether a stream is put together on disk as it comes (_Spool): format 0 with whole bytes a sample, and format
     1 (segment by segment). Format 0 with a sample across bytes is put together at the end, in memory."""
-    return bool(getattr(cfg, "event_d", None)) or cfg.width % 8 == 0
+    return bool(getattr(cfg, "reduced", None) or getattr(cfg, "raw_roles", None)) or cfg.width % 8 == 0
 
 
 class _Spool:
@@ -1547,8 +1457,8 @@ class _Spool:
         import tempfile
         self.cap, self.cfg, self.names, self.ids, self.req = cap, cfg, names, ids, req
         self.dir = tempfile.mkdtemp(prefix=".oep-acquire-stream-", dir=req.spool_dir)
-        self.blocks = bool(getattr(cfg, "event_d", None))
-        self.ds = list(getattr(cfg, "event_d", {}).values())
+        self.blocks = bool(getattr(cfg, "reduced", None) or getattr(cfg, "raw_roles", None))
+        self.ds = [d for _, d in getattr(cfg, "reduced", {}).values()]
         self.rate = Fraction(cfg.rate)
         self.parts, self.lost = [], []
         self.pending = bytearray()      # bytes from position `at` not put together yet (a gapless stretch)
@@ -1695,15 +1605,16 @@ class _Spool:
             self._open(p, x)
             data = bytes(self.pending[p - self.at:nxt - self.at])
             cols = _segment_columns(self.cap, data, samples, len(self.names), self.cfg)
-            for c, (col, f, ev) in enumerate(zip(cols, self.cur["files"], self.cur["events"])):
+            for c, (col, f, red) in enumerate(zip(cols, self.cur["files"], self.cur["events"])):
                 if isinstance(col, bytes):           # joined bit by bit: a segment need not end on a whole byte
                     self.cur["carry"][c] = _write_bits(f, self.cur["carry"][c], col, samples)
-                else:
-                    ev[0].append(col[0] + self.cur["samples"] // col[4])
-                    ev[1].append(col[1])
-                    ev[2].append(col[2])
-                    if ev[3] is None:
-                        ev[3] = col[3]
+                else:                                # a reduced channel's values, joined bit by bit the same way
+                    b = 2 if _reduction_name(col.kind) == "change_latch" else 1
+                    self.cur["carry"][c] = _write_bits(f, self.cur["carry"][c], col.data, col.n * b)
+                    if red[0] is None:
+                        red[0] = col.start_level     # the part's start: its first segment's (§1.3)
+                    red[1] += col.n
+                    red[2] = (col.kind, col.d)
             self.cur["samples"] += samples
             del self.pending[:nxt - self.at]
             self.at = nxt
@@ -1728,7 +1639,7 @@ class _Spool:
         k = len(self.parts)
         files = [open(os.path.join(self.dir, f"p{k}-{j}.bits"), "wb") for j in range(len(self.names))]
         self.cur = {"tick0": tick0, "meta": _seg_meta(seg) if seg is not None else {}, "samples": 0, "files": files,
-                    "events": [[[], [], [], None] for _ in self.names], "carry": [None] * len(self.names)}
+                    "events": [[None, 0, None] for _ in self.names], "carry": [None] * len(self.names)}
         self._follows = False
 
     _last_samples, _last_end, _follows = 0, None, False
@@ -1739,15 +1650,20 @@ class _Spool:
         import os
         cur, n = self.cur, self.cur["samples"]
         chans = []
-        for role, (name, ch, f, ev) in enumerate(zip(self.names, self.ids, cur["files"], cur["events"])):
+        for role, (name, ch, f, red) in enumerate(zip(self.names, self.ids, cur["files"], cur["events"])):
             _flush_bits(f, cur["carry"][role])
             f.close()
-            d = self.cfg.event_d.get(role) if self.blocks else None
-            if d is not None:
-                os.unlink(f.name)
-                import numpy as np
-                cat = [np.concatenate(x) if x else np.zeros(0, np.int64) for x in ev[:3]]
-                chans.append(_events_np(name, *cat, ev[3] or 0, -(-n // d), d, pin=ch))
+            if red[2] is not None:                   # reduced: sample as bits at D, the others as Reduced
+                kind, d = red[2]
+                mode = _reduction_name(kind)
+                b = 2 if mode == "change_latch" else 1
+                os.truncate(f.name, (red[1] * b + 7) // 8)
+                if mode == "sample":
+                    chans.append(Bits(name, OnDisk(f.name), red[1], d, 0, {"pin": ch}))
+                else:
+                    data = Path(f.name).read_bytes()
+                    os.unlink(f.name)
+                    chans.append(Reduced(name, mode, data, red[1], d, 0, red[0] or 0, {"pin": ch}))
             else:
                 os.truncate(f.name, (n + 7) // 8)
                 chans.append(Bits(name, OnDisk(f.name), n, 1, 0, {"pin": ch}))
@@ -1796,7 +1712,8 @@ def _stream_parts(cap, cfg, got, names, ids, req: Request) -> tuple[list, list]:
     segs = sorted(got.segments.values(), key=lambda x: x.position)
     rate = Fraction(cfg.rate)
     first_ns = segs[0].start_ns
-    ds = [d for d in getattr(cfg, "event_d", {}).values()]
+    ds = [d for _, d in getattr(cfg, "reduced", {}).values()]
+    blocks = bool(getattr(cfg, "reduced", None) or getattr(cfg, "raw_roles", None))
     parts, lost = [], []
     if got.start != 0:                           # positions count from the generation's start: the first is gone
         if req.on_loss == "stop":
@@ -1812,7 +1729,7 @@ def _stream_parts(cap, cfg, got, names, ids, req: Request) -> tuple[list, list]:
             lost.append({"after_part": len(parts) - 1, "reason": "the probe dropped a segment (no room to send)"})
         inside = [x for x in segs if p0 <= x.position < p0 + n]
         run = memoryview(got.data)[i0:i0 + n]   # no copy: a 30 s stream at 40 MB/s is 1.2 GB
-        if not ds and cfg.width % 8 == 0:        # format 0, whole bytes a sample: the stretch at once (no padding)
+        if not blocks and cfg.width % 8 == 0:    # format 0, whole bytes a sample: the stretch at once (no padding)
             samples = min(sum(x.samples for x in inside), len(run) * 8 // cfg.width)
             parts.append(_part(_samples_at_once(run, names, ids, cfg, samples), _seg_meta(inside[0]),
                                round(Fraction(inside[0].start_ns - first_ns, 10**9) * rate)))
@@ -1822,7 +1739,7 @@ def _stream_parts(cap, cfg, got, names, ids, req: Request) -> tuple[list, list]:
             end_ = inside[k + 1].position if k + 1 < len(inside) else p0 + n
             data = bytes(run[x.position - p0:end_ - p0])
             samples = x.samples
-            if not ds:
+            if not blocks:
                 samples = min(samples, len(data) * 8 // cfg.width)
                 chans = from_interleaved(data, names, cfg.width, cfg.positions, samples)
             else:
@@ -1933,45 +1850,35 @@ def _join_bits(pieces) -> bytes:
 
 
 class _Acc:
-    """One channel of a part being joined from its segments (bits: joined bit by bit; events: quanta offset by the
-    samples so far, a multiple of D). A segment that follows on carries the level before it as its start (§1.3), so
-    its changes join the part's as they are."""
+    """One channel of a part being joined from its segments, bit by bit (a segment need not end on a whole byte): bits
+    (at their step) or a reduced channel's values. A reduced part keeps its first segment's start level (§1.3)."""
     def __init__(self, c):
-        self.first, self.pieces = c, []
-        self.start = getattr(c, "start_level", None)
+        self.first, self.pieces, self.n = c, [], 0
 
     def add(self, c, offset: int) -> None:
-        if isinstance(c, Changes):
-            ks, lv, ct = c.decode()
-            q = offset // c.step
-            self.pieces.append(([q + k for k in ks], lv, ct, c.n))
-        else:
-            self.pieces.append((c.bits, c.n))
+        b = c.bits if isinstance(c, Reduced) else 1
+        self.pieces.append((c.data if isinstance(c, Reduced) else c.bits, c.n * b))
+        self.n += c.n
 
 
 def _built(acc: list, samples: int, ids) -> list:
     out = []
     for a, ch in zip(acc, ids):
         c = a.first
-        if isinstance(c, Changes):
-            ks, lv, ct = [], [], []
-            for k_, l_, c_, _ in a.pieces:
-                ks += k_
-                lv += l_
-                ct += c_
-            out.append(changes(c.name, ks, lv, ct, -(-samples // c.step), c.step, 0, a.start, pin=ch))
+        if isinstance(c, Reduced):
+            out.append(Reduced(c.name, c.kind, _join_bits(a.pieces)[:(a.n * c.bits + 7) // 8], a.n, c.step, 0,
+                               c.start_level, {"pin": ch}))
         else:
-            out.append(Bits(c.name, _join_bits(a.pieces)[:(samples + 7) // 8], samples, 1, 0, {"pin": ch}))
+            out.append(Bits(c.name, _join_bits(a.pieces)[:(a.n + 7) // 8], a.n, c.step, 0, {"pin": ch}))
     return out
 
 
 def _budget(oc, cfg, got: int, samples: int, channels: int) -> dict:
-    """meta.probe.data: the bytes the probe sent for the segment, the most §1.3's formula allows for it, and what
-    format 0 would have taken (1 bit a channel a sample, at least)."""
+    """meta.probe.data: the bytes the probe sent for the segment, what §1.3 makes of it (fixed by the setting), and
+    what format 0 would have taken (1 bit a channel a sample, at least)."""
     from oep_client import capture_blocks
-    L = cfg.block
-    worst_block = capture_blocks.worst_bytes(len(cfg.raw_roles), list(cfg.event_d.values()), L)
-    return {"format": int(cfg.format), "block": L, "bytes": got, "worst_bytes": -(-samples // L) * worst_block,
+    return {"format": int(cfg.format), "block": cfg.block, "bytes": got,
+            "expected_bytes": capture_blocks.segment_bytes(samples, len(cfg.raw_roles), cfg.reduced, cfg.block),
             "format0_bytes": -(-samples * channels // 8)}
 
 

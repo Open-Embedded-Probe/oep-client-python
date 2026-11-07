@@ -116,21 +116,31 @@ def test_during_is_for_a_stream_in_place_of_seconds():
 
 
 def test_a_format_1_stream_on_disk(probe, tmp_path):
-    """Streamed in format 1, raw and changes lines, put together on disk as it comes: every segment joined in order."""
-    for resolution in ({"B": 1}, {"A": 4, "B": 1}):
+    """Streamed in format 1, raw and reduced lines, put together on disk as it comes: every segment joined in order."""
+    for resolution in ({"B": ("change_latch", 4)}, {"A": ("sample", 4), "B": ("any_high", 8)}):
         req = acquire.Request([("A", "GPIO10"), ("B", "GPIO11")], 1_000_000, 0, mode="stream", seconds=0.3,
                               resolution=resolution, spool_dir=str(tmp_path))
         res = acquire.capture_at(probe(), req)
         assert res.complete and len(res.parts) == 1, resolution
 
 
-def test_format_1_lines_as_their_changes(probe):
-    req = acquire.Request([("A", "GPIO10"), ("B", "GPIO11")], 20_000_000, 1000, resolution={"B": 1})
+def test_format_1_lines_reduced(probe):
+    """A sampled line comes as bits at its D, another reduction as Reduced: A (bit 0 of the counter, a new level every
+    sample) sampled every 2nd sample is one level throughout; B (bit 1, a change every 2nd sample) has a change in every
+    interval of 4."""
+    req = acquire.Request([("A", "GPIO10"), ("B", "GPIO11")], 20_000_000, 1000,
+                          resolution={"A": ("sample", 2), "B": ("change_latch", 4)})
     res = acquire.capture_at(probe(), req)
     a, b = res.channels
-    assert isinstance(a, acquire.Bits) and isinstance(b, acquire.Changes)
-    ks, lv, ct = b.decode()
-    assert ct == [1] * len(ks) and ks[:2] == [2, 4]        # B (bit 1 of the counter) changes every second sample
+    assert isinstance(a, acquire.Bits) and a.step == 2 and a.n == 500
+    levels = [(a.bits[i // 8] >> (i % 8)) & 1 for i in range(a.n)]
+    assert len(set(levels)) == 1
+    assert isinstance(b, acquire.Reduced) and b.kind == "change_latch" and b.step == 4 and b.n == 250
+    assert all(v >> 1 for v in b.values())
+    with pytest.raises(ValueError):                       # a resolution names a reduction and D 2 or more
+        acquire.Request([("A", "GPIO10")], 1_000_000, 100, resolution={"A": 4})
+    with pytest.raises(ValueError):
+        acquire.Request([("A", "GPIO10")], 1_000_000, 100, resolution={"A": ("sample", 1)})
 
 
 def test_uart_link_speed_is_asked_for_unless_turned_off():

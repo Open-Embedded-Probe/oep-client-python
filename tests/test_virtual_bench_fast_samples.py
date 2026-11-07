@@ -54,7 +54,8 @@ def test_format_1_blocks_at_once_are_the_same():
         channels = rnd.randint(1, 4)
         cap = track(8, channels, 1_000_000, {k: rnd.choice(WAVES) for k in range(channels) if rnd.random() < 0.6})
         cap.block = rnd.choice([64, 256])
-        cap.carriages = {k: (vbc.CARRIAGE["events"], rnd.choice([1, 4])) for k in range(channels) if rnd.random() < 0.5}
+        cap.carriages = {k: (rnd.choice([v for name, v in vbc.CARRIAGE.items() if name != "raw"]), rnd.choice([2, 4, 8]))
+                         for k in range(channels) if rnd.random() < 0.5}
         first, n = rnd.randrange(1, 1 << 20), rnd.randint(1, 700)
         contiguous = rnd.random() < 0.5
         fast = cap._blocks(first, n, contiguous=contiguous)

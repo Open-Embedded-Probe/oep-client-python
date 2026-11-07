@@ -542,7 +542,7 @@ def p4_x035() -> VirtualProbe:
         Offered(7, 0, "oep.fixture.logic", _roles({k: pins for k in range(16)})
             + _capture_decl(["one_shot", "repeat", "streaming"], 16, 1 << 20, 8, 1_000, 20_000_000, 0b0111, 16,
                             (_FMT["logic_blocks"], _FMT["test_counter"]),
-                            (sum(1 << v for v in _CARRIAGE.values()), 2, 4096), linked=True)    # raw / events D 2-4096
+                            (sum(1 << v for v in _CARRIAGE.values()), 2, 4096), linked=True)    # raw and the reductions, D 2-4096
             # PARLIO's clock input (rising or falling, a qualifier) and the GPIO flex glitch filters (25 - 1600 ns)
             + (catalog.tlv(_CAPD["external_clock"], struct.pack("<IBB", 40_000_000, 0b011, 1)),
                catalog.tlv(_CAPD["glitch_filter"], struct.pack("<BIII", 0, 25, 1600, 25))),
