@@ -97,3 +97,11 @@ def test_address_and_openocd_hook(tmp_path):
     assert len(paths) == 2 and (tmp_path / "interface/cmsis-dap.cfg").exists()
     assert "proc program" in target and "$::env(TEST_SERIAL_PORT_PEER_PICO)" in target
     assert "/usr/bin/python3 -m oep_client.rp2040_peer flash" in target
+
+
+def test_clear_rtt_ids_wipes_the_old_blocks():
+    m, cb = rtt_model()
+    m.put(0x20010000, rp.RTT_ID)
+    assert rp.clear_rtt_ids(m) == 2
+    with pytest.raises(RuntimeError):
+        rp.Rtt(m, wait=0)

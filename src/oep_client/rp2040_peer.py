@@ -121,6 +121,23 @@ def image_of(path: str) -> bytes:
     return bytes(image)
 
 
+def clear_rtt_ids(mem) -> int:
+    """Wipe every SEGGER RTT control block's ID left in RAM (RAM outlives a reboot): a console opened after the reboot
+    then finds only the block the new image writes, never the old one - whose offsets, written back while the new
+    image set them up again, lost its first lines. The core must be halted. -> how many were wiped."""
+    n, chunk = 0, 16 * 1024
+    for at in range(RAM, RAM_END, chunk):
+        words = mem.read_block(at, min(chunk, RAM_END - at) // 4)
+        raw = struct.pack(f"<{len(words)}I", *words)
+        i = raw.find(RTT_ID)
+        while i >= 0:
+            if i % 4 == 0:
+                mem.write32(at + i, 0)
+                n += 1
+            i = raw.find(RTT_ID, i + 1)
+    return n
+
+
 def flash(address: str, path: str, log=print) -> None:
     """Write the image over SWD, verify it, reboot the chip. Raises on a mismatch."""
     unit, port = parse(address)
@@ -134,6 +151,7 @@ def flash(address: str, path: str, log=print) -> None:
             if not rp2040.program_and_verify(t.core, image, 0, log=log):
                 raise RuntimeError(f"{address}: the flash did not read back as written ({len(image)} B)")
             log(f"{address}: {len(image)} B written and verified")
+            clear_rtt_ids(t.mem)
             rp2040.Rom(t.core).reboot()
         finally:
             t.close()
@@ -162,7 +180,7 @@ class Rtt:
         chunk = 16 * 1024
         while True:
             for at in range(RAM, RAM_END, chunk):
-                words = self.mem.read_block(at, chunk // 4)
+                words = self.mem.read_block(at, min(chunk, RAM_END - at) // 4)
                 raw = struct.pack(f"<{len(words)}I", *words)
                 i = raw.find(RTT_ID)
                 while i >= 0:
