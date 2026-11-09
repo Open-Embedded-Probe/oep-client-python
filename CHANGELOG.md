@@ -1,6 +1,15 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) `rp2040`: the RP2040's flash written over SWD through its boot ROM (`rom_table_lookup` at 0x18 on the function
+  table at 0x14), the sequence shared with `rp2350.Flash` (which now takes another chip's ROM lookup and spare RAM), and
+  a reboot by the watchdog the pico-sdk's way (PSM WDSEL all but the oscillators, SCRATCH4 0: left as it comes, the
+  trigger restarted nothing). `arm.CortexM.reset_halt()`: reset the core and stop on its first instruction (a core
+  locked up in a fault handler is no place to call the ROM from).
+- (JA) `rp2040`: RP2040 の flash を SWD でブート ROM から書く（関数表は 0x14、`rom_table_lookup` は 0x18）。手順は `rp2350.Flash` と
+  共通にし、Flash はほかのチップの ROM の引き方と空いている RAM を受け取れるようにした。起動し直しは pico-sdk と同じウォッチドッグの
+  手順（PSM の WDSEL を発振器以外すべて、SCRATCH4 を 0。そのままではトリガしても何も起動し直さなかった）。`arm.CortexM.reset_halt()`:
+  コアをリセットして最初の命令で止める（fault の処理の途中で lockup したコアからは ROM を呼べない）。
 
 ## 0.0.52
 - (EN) Capture format 1 is per-channel reductions (oep-spec 165a278, capture §1.3): `LogicCapture.configure(...,

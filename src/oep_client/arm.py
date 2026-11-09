@@ -315,6 +315,19 @@ class CortexM:
             raise h.OepError(f"stopped at {pc:#010x}, not at the return breakpoint")
         return self.reg(0)
 
+    DEMCR, VC_CORERESET = 0xE000EDFC, 1
+
+    def reset_halt(self, timeout: float = 1.0) -> int:
+        """Reset the core and stop it on its first instruction (DEMCR.VC_CORERESET through AIRCR.SYSRESETREQ), the
+        catch cleared again: a clean core to call ROM functions on (a core left locked up in a fault handler is not
+        one). C_MASKINTS is cleared first (it survives the reset). -> PC"""
+        self.mem.write32(self.DHCSR, self.KEY | self.C_DEBUGEN | self.C_HALT)
+        self.mem.write32(self.DEMCR, self.mem.read32(self.DEMCR) | self.VC_CORERESET)
+        self.mem.write32(self.AIRCR, 0x05FA0004)
+        self._wait(self.S_HALT, timeout)
+        self.mem.write32(self.DEMCR, self.mem.read32(self.DEMCR) & ~self.VC_CORERESET)
+        return self.reg(self.PC)
+
     def sys_reset(self) -> None:
         """AIRCR.SYSRESETREQ: the core restarts; debug-domain state (DHCSR) survives, so clear the mask first."""
         self.mem.write32(self.DHCSR, self.KEY | self.C_DEBUGEN | self.C_HALT)

@@ -48,8 +48,11 @@ class Rom:
 
 
 class Flash:
-    def __init__(self, core: CortexM):
-        self.core, self.rom = core, Rom(core)
+    """The pico-sdk's hardware_flash order through the ROM. `rom`, `buf` / `buf_bytes`: another chip's ROM lookup and
+    the RAM it can spare (rp2040 hands in its own); RP2350's by default."""
+    def __init__(self, core: CortexM, rom=None, buf: int = BUF, buf_bytes: int = BUF_BYTES):
+        self.core, self.rom = core, rom or Rom(core)
+        self.buf, self.buf_bytes = buf, buf_bytes
 
     def program(self, offset: int, data: bytes, log=lambda s: None) -> bytes:
         """Erase and program at flash `offset` (sector aligned). Leaves the flash in command-XIP mode: reads through
@@ -64,10 +67,10 @@ class Flash:
         self.core.call(fn["EX"])                                                # flash_exit_xip
         self.core.call(fn["RE"], (offset, erase, BLOCK, BLOCK_ERASE_CMD), timeout=120)   # flash_range_erase
         t1 = time.monotonic()
-        for at in range(0, len(data), BUF_BYTES):
-            chunk = data[at:at + BUF_BYTES]
-            self.core.mem.write_block(BUF, list(struct.unpack(f"<{len(chunk) // 4}I", chunk)))
-            self.core.call(fn["RP"], (offset + at, BUF, len(chunk)), timeout=30)   # flash_range_program
+        for at in range(0, len(data), self.buf_bytes):
+            chunk = data[at:at + self.buf_bytes]
+            self.core.mem.write_block(self.buf, list(struct.unpack(f"<{len(chunk) // 4}I", chunk)))
+            self.core.call(fn["RP"], (offset + at, self.buf, len(chunk)), timeout=30)   # flash_range_program
         t2 = time.monotonic()
         self.core.call(fn["FC"])                                                # flash_flush_cache
         self.core.call(fn["CX"])                                                # flash_enter_cmd_xip
@@ -79,7 +82,7 @@ class Flash:
         return struct.pack(f"<{len(words)}I", *words)[:length]
 
 
-def program_and_verify(core: CortexM, image: bytes, offset: int = 0, log=lambda s: None) -> bool:
-    flash = Flash(core)
+def program_and_verify(core: CortexM, image: bytes, offset: int = 0, log=lambda s: None, flash: Flash | None = None) -> bool:
+    flash = flash or Flash(core)
     padded = flash.program(offset, image, log)
     return flash.read(offset, len(padded)) == padded

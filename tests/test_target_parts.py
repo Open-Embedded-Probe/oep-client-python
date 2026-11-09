@@ -433,6 +433,8 @@ class FakeCortexM:
     ROM = {("I", "F"): 0xE3D, ("E", "X"): 0xF65, ("R", "E"): 0xF15, ("R", "P"): 0xEDD, ("F", "C"): 0x3801,
            ("C", "X"): 0x659, ("R", "B"): 0x6F3}
 
+    BKPT, STACK = 0x20040000, 0x20080000                              # where the host puts them (RP2350)
+
     def __init__(self):
         self.regs = {i: 0 for i in range(17)}
         self.regs[16] = 0x01000000
@@ -499,8 +501,8 @@ class FakeCortexM:
         elif pc == 0x3800: self.log.append("flush")
         elif pc == 0x658:  self.xip = True; self.log.append("enter_cmd_xip")
         else: raise AssertionError(f"call to {pc:#x}")
-        assert self.regs[13] == 0x20080000 and self.regs[14] == 0x20040001 and self.regs[16] & 1 << 24
-        self.regs[15] = 0x20040000                                    # returned onto the breakpoint
+        assert self.regs[13] == self.STACK and self.regs[14] == self.BKPT | 1 and self.regs[16] & 1 << 24
+        self.regs[15] = self.BKPT                                     # returned onto the breakpoint
         self.dhcsr |= 1 << 17
 
 
@@ -527,3 +529,49 @@ def test_rp2350_flash_program_runs_the_sdk_sequence_and_verifies():
     rp2350.Rom(core).reboot()
     assert model.log[-1] == "reboot flags 0 delay 10" and not model.dhcsr & 8
 
+
+
+class FakeRp2040(FakeCortexM):
+    """The model with the RP2040 ROM's lookup: halfword pointers to the function table at 0x14 and to
+    rom_table_lookup(table, code) at 0x18; no reboot function (the watchdog's trigger restarts the chip)."""
+    BKPT, STACK = 0x20030000, 0x20040000
+    TABLE, LOOKUP = 0x7A, 0x1D
+
+    def read32(self, a):
+        if a == 0x14: return 0x00C40000 | self.TABLE                  # func table at 0x14, data table at 0x16
+        if a == 0x18: return self.LOOKUP                              # rom_table_lookup at 0x18 (Thumb bit set)
+        return super().read32(a)
+
+    def write32(self, a, v):
+        if a == 0x40058000 and v >> 31:
+            assert not self.dhcsr & 8, "watchdog reboot with C_MASKINTS left set"
+            self.log.append("watchdog reboot"); return
+        if a == 0xE000EDF0 and not v & 1:                             # debug off: the core runs on, nothing modelled
+            self.dhcsr = 0; return
+        super().write32(a, v)
+
+    def run(self):
+        if self.regs[15] == self.LOOKUP & ~1:                         # rom_table_lookup(table, code)
+            assert self.dhcsr & 8 and self.regs[0] == self.TABLE
+            code = self.regs[1]
+            self.regs[0] = self.ROM.get((chr(code & 0xFF), chr(code >> 8)), 0)
+            self.regs[15] = self.BKPT
+            self.dhcsr |= 1 << 17
+            return
+        super().run()
+
+
+def test_rp2040_flash_program_runs_the_sdk_sequence_through_its_own_lookup():
+    from oep_client import rp2040
+    model = FakeRp2040()
+    core = rp2040.core_of(model)
+    core.halt()
+    image = bytes(range(256)) * 70 + b"\x12\x34"
+    assert rp2040.program_and_verify(core, image, 0)
+    assert model.log[:3] == ["connect", "exit_xip", "erase 0x0+20480"]
+    assert model.log[3:5] == ["program 0x0+16384", "program 0x4000+1792"]
+    assert model.log[5:] == ["flush", "enter_cmd_xip"]
+    assert bytes(model.flash[:len(image)]) == image
+    rp2040.Rom(core).reboot()
+    assert model.log[-1] == "watchdog reboot" and not model.dhcsr & 8
+    assert model.ram[0x40010008] == 0x1FFFC and model.ram[0x4005801C] == 0   # WDSEL all but the oscillators, SCRATCH4
