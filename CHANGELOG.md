@@ -3,14 +3,16 @@
 ## Unreleased
 - (EN) An RP2040 board as a test's peer over an OEP probe's SWD alone (`oep_client.rp2040_peer`), for a peer whose USB goes to
   the device under test: `python -m oep_client.rp2040_peer flash oep://<probe>/<port> <elf|bin>` (the port's labels
-  `<port>.swdio` / `<port>.swclk`; through ch32rv's broker sharing its lock when it runs, found with `$CH32RV`),
-  the console as SEGGER RTT through the MEM-AP (`console`, and pyserial's `oep://` handler in `oep_client.pyserial`), and
+  `<port>.swdio` / `<port>.swclk`; through ch32rv's broker sharing its lock when it runs, found with `$CH32RV`; the old
+  image's SEGGER RTT IDs left in RAM are wiped before the reboot, so the console finds the new one's), the console as
+  SEGGER RTT through the MEM-AP (`console`, and pyserial's `oep://` handler in `oep_client.pyserial`), and
   `pytest_plugins = ["oep_client.pytest_rp2040_peer"]` for pytest-embedded-arduino-cli: arduino-pico's OpenOCD upload
   (`uploadmethod=picoprobe_cmsis_dap`) handed to the writer through generated hook files, the peer's own device lock,
   the DUT's ch32rv passed on.
 - (JA) RP2040 の基板を、OEP のプローブの SWD だけで試験の相手（peer）にする（`oep_client.rp2040_peer`）。USB を DUT に
   つなぐ相手のため。`python -m oep_client.rp2040_peer flash oep://<probe>/<port> <elf|bin>`（口のラベル `<port>.swdio` /
-  `<port>.swclk`。ch32rv の broker が動いていれば、そのロックに相乗りする。broker は `$CH32RV` で探す）、コンソールは
+  `<port>.swclk`。ch32rv の broker が動いていれば、そのロックに相乗りする。broker は `$CH32RV` で探す。RAM に残った前の
+  イメージの SEGGER RTT の ID は起動し直す前に消し、コンソールが新しいものを見つけるようにする）、コンソールは
   MEM-AP の上の SEGGER RTT（`console`、pyserial の `oep://` の handler は `oep_client.pyserial`）。pytest-embedded-arduino-cli
   には `pytest_plugins = ["oep_client.pytest_rp2040_peer"]`: arduino-pico の OpenOCD の書き込み（`uploadmethod=picoprobe_cmsis_dap`）
   を、書き出した hook のファイルで書き込みの道具に渡す。peer のロックは自分のもの。DUT の ch32rv を引き渡す。
