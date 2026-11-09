@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 0.0.53
 - (EN) An RP2040 board as a test's peer over an OEP probe's SWD alone (`oep_client.rp2040_peer`), for a peer whose USB goes to
   the device under test: `python -m oep_client.rp2040_peer flash oep://<probe>/<port> <elf|bin>` (the port's labels
   `<port>.swdio` / `<port>.swclk`; through ch32rv's broker sharing its lock when it runs, found with `$CH32RV`; the old
