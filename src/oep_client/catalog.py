@@ -32,6 +32,13 @@ MIN_CLOCK_HZ = _COMMON["min_clock_hz"]     # u32
 FEATURES = _COMMON["features"]             # u32, bits defined by the interface
 CHANNEL_GROUP = _COMMON["channel_group"]   # group(u8) n(u8) then n x (role(u8), channel(u16)): a fixed pin set
 OPS = _COMMON["ops"]                       # base(u8) bitmap: the ops this fn offers (core §1.2, §7.4)
+OP_NAME = _COMMON["op_name"]               # op(u8) flags(u8) name: an op's name (core §7.4, optional)
+OP_FIELD = _COMMON["op_field"]             # op(u8) part(u8) type(u8) name: one field of an op's fixed part (core §7.4)
+OP_NAME_FORM = reg.CORE.enum["op_name_flag"]["form"]
+OP_NAME_LOCK_FREE = reg.CORE.enum["op_name_flag"]["lock_free"]
+OP_FIELD_PARTS = reg.CORE.enum["op_field_part"]          # request / success / failed
+OP_FIELD_TYPES = reg.CORE.enum["op_field_type"]          # u8 ... text, and the list bit
+OP_FIELD_LIST = OP_FIELD_TYPES["list"]
 assert OPS == m.TAG_OPS
 CRITICAL = 0x80
 INTERFACE_TAG_FIRST = 0x40
@@ -197,6 +204,50 @@ def text(tag: int, s: str) -> bytes:
     return tlv(tag, s.encode("ascii"))
 
 
+class OpField:
+    """One field of an op's fixed part (core §7.4 op_field): its name and type (registry op_field_type)."""
+
+    def __init__(self, name: str, type: int):
+        self.name, self.type = name, type
+
+    @property
+    def type_name(self) -> str:
+        names = {v: k for k, v in OP_FIELD_TYPES.items() if k != "list"}
+        base = self.type & ~OP_FIELD_LIST
+        label = names.get(base, f"type{base}")
+        return label + "[]" if self.type & OP_FIELD_LIST else label
+
+    def __repr__(self) -> str:
+        return f"{self.name}: {self.type_name}"
+
+
+@dataclass
+class OpForm:
+    """An op's name and, with form, its request / success / failed fixed parts' fields (core §7.4)."""
+
+    op: int
+    name: str
+    flags: int
+    request: list[OpField] = field(default_factory=list)
+    success: list[OpField] = field(default_factory=list)
+    failed: list[OpField] = field(default_factory=list)
+
+    @property
+    def form(self) -> bool:
+        return bool(self.flags & OP_NAME_FORM)
+
+    @property
+    def lock_free(self) -> bool:
+        return bool(self.flags & OP_NAME_LOCK_FREE)
+
+    def signature(self) -> str:
+        """measure(mode: u8) -> temp: i32, hum: u32 (the name alone without form)"""
+        if not self.form:
+            return self.name
+        s = f"{self.name}({', '.join(map(repr, self.request))})"
+        return s + (" -> " + ", ".join(map(repr, self.success)) if self.success else "")
+
+
 @dataclass
 class Description:
     """Common tags decoded; interface-specific and unknown tags kept raw, in order."""
@@ -212,11 +263,13 @@ class Description:
     specific: list[tuple[int, bytes]] = field(default_factory=list)
     unknown_critical: list[int] = field(default_factory=list)
     broken: list[int] = field(default_factory=list)   # common tags whose value is not their defined length (not used)
+    op_forms: dict[int, OpForm] = field(default_factory=dict)   # op -> its op_name / op_field (core §7.4)
 
 
 def decode_description(data: bytes) -> Description:
     d = Description()
     seen: set[int] = set()
+    fields: list[tuple[int, int, int, str]] = []         # op_field (op, part, type, name), in the describe's order
     for tag, value in split_tlv(data):
         if tag & CRITICAL:
             continue                                # bit 7 in an answer: an unknown tag, skipped (core §2.2)
@@ -248,11 +301,28 @@ def decode_description(data: bytes) -> Description:
                 d.ops_invalid = why
             else:
                 d.ops = unpack_ops(value)
+        elif t == OP_NAME:
+            if len(value) < 3:
+                d.broken.append(tag)
+                continue
+            if value[0] in d.op_forms:
+                continue                                    # a second op_name for an op: the first is used
+            d.op_forms[value[0]] = OpForm(value[0], value[2:].decode("ascii", "replace"), value[1])
+        elif t == OP_FIELD:
+            if len(value) < 4:
+                d.broken.append(tag)
+                continue
+            fields.append((value[0], value[1], value[2], value[3:].decode("ascii", "replace")))
         elif t >= INTERFACE_TAG_FIRST:
             d.specific.append((tag, value))
         elif tag & CRITICAL:
             d.unknown_critical.append(tag)
         # an unknown non-critical common tag is skipped
+    parts = {OP_FIELD_PARTS["request"]: "request", OP_FIELD_PARTS["success"]: "success", OP_FIELD_PARTS["failed"]: "failed"}
+    for op, part, type_, name in fields:                   # only an op named with form takes its fields
+        form = d.op_forms.get(op)
+        if form is not None and form.form and part in parts:
+            getattr(form, parts[part]).append(OpField(name, type_))
     for role in d.roles:
         d.roles[role] = sorted(set(d.roles[role]))
     if d.ops_invalid:

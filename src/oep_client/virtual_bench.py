@@ -320,7 +320,9 @@ NETWORK_ITEMS = (Item("wifi.{}.ssid", "text", "index", WIFI_ENTRIES, reg.LIMITS[
                  Item("ipv4.{}.mode", "enum", "netif", choices=tuple(choices_of(reg.CORE.enum["ipv4_mode"]).items())),
                  Item("ipv4.{}.address", "ipv4", "netif"), Item("ipv4.{}.prefix", "u32", "netif"),
                  Item("ipv4.{}.gateway", "ipv4", "netif"), Item("ipv4.{}.dns", "ipv4", "netif"))
-assert {i.name for i in CORE_ITEMS + NETWORK_ITEMS} == set(_CS), "the core's items as the registry names them"
+# transports §3.1: a probe whose own USB device can start more than one set of transports (none of the profiles here)
+USB_ITEMS = (Item("usb.transports", "enum", flags=FLAG["restart"], choices=((0, "bulk-hid-cdc"), (1, "bulk-hid"))),)
+assert {i.name for i in CORE_ITEMS + NETWORK_ITEMS + USB_ITEMS} == set(_CS), "the core's items as the registry names them"
 HOLD = Item("channel.{}.hold", "bool", "channel")
 REST = Item("channel.{}.rest", "enum", "channel", choices=tuple(choices_of(reg.WIRE_RVSWD.enum["rest"]).items()))
 
@@ -672,6 +674,16 @@ def rp2350_pins() -> VirtualProbe:
 
 
 STAND_IN = f"{NS}.stand-in"
+# The stand-in ops' names and fields (core §7.4 op_name / op_field): write(value: u32), read() -> value: u32 (lock-free)
+_OPN, _OPF = reg.DESCRIBE_COMMON["op_name"], reg.DESCRIBE_COMMON["op_field"]
+_FLAG, _PART, _TYPE = (reg.CORE.enum[k] for k in ("op_name_flag", "op_field_part", "op_field_type"))
+_WRITE, _READ = STAND_IN_OPS
+STAND_IN_FORMS = (
+    catalog.tlv(_OPN, bytes([_WRITE, _FLAG["form"]]) + b"write"),
+    catalog.tlv(_OPF, bytes([_WRITE, _PART["request"], _TYPE["u32"]]) + b"value"),
+    catalog.tlv(_OPN, bytes([_READ, _FLAG["form"] | _FLAG["lock_free"]]) + b"read"),
+    catalog.tlv(_OPF, bytes([_READ, _PART["success"], _TYPE["u32"]]) + b"value"),
+)
 
 
 def _again(probe: VirtualProbe, offered: list[Offered]) -> VirtualProbe:
@@ -731,7 +743,7 @@ def with_stand_in(probe: VirtualProbe) -> VirtualProbe:
     """The profile plus one fn (the next number) the endpoint does not simulate: it answers only the two stand-in
     operations (endpoint.TOY_WRITE / TOY_READ), for tests of the session rules. VIRTUAL BENCH ONLY."""
     fn = max(o.fn for o in probe.offered) + 1
-    return _again(probe, list(probe.offered) + [Offered(fn, 0, STAND_IN)])
+    return _again(probe, list(probe.offered) + [Offered(fn, 0, STAND_IN, STAND_IN_FORMS)])
 
 
 ATTACH_HALT = reg.WIRE_RVSWD.enum["features"]["attach_halt"]   # attach method 1 (debug §3)

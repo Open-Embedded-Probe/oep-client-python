@@ -125,6 +125,15 @@ def main(argv=None) -> int:
     rs.add_argument("--reopen-s", type=float, default=0.0, metavar="S",
                     help="when the probe is not back within its restart_max_ms, open it again for up to S more seconds "
                          "(your reopen: a host where the device returns late, e.g. WSL re-attaching it through usbipd)")
+    ca = sub.add_parser("call", help="run any interface's op: by number with the request as hex bytes, or by the name and "
+                                     "fields its describe gives (core §7.4 op_name / op_field)")
+    ca.add_argument("probe", help="a probe: oep://UNIT_ID[?via=...], a serial port, tcp://HOST:PORT or usb")
+    ca.add_argument("interface", help="the interface's name (io.github.you.thing); its fn is looked up")
+    ca.add_argument("op", help="the op: a number (0x10) or its name")
+    ca.add_argument("args", nargs="*", help="NAME=VALUE per field (integers 10 or 0x, bools true / false, lists 1,2,3, "
+                                             "bytes hex, text as it is), or the request as hex bytes")
+    ca.add_argument("--text", action="store_true", help="the request is ARGS joined by spaces, as UTF-8 bytes")
+    ca.add_argument("--json", action="store_true")
     fd = sub.add_parser("find", help="probes on the local network that announce _oep._tcp (DNS-SD over mDNS)")
     fd.add_argument("--timeout", type=float, default=2.0, help="seconds to listen for answers (default 2)")
     fd.add_argument("--engine", choices=("auto", "zeroconf", "minimal"), default="auto",
@@ -157,6 +166,8 @@ def main(argv=None) -> int:
         return _restart_cmd(args)
     if args.command == "find":
         return _find_cmd(args)
+    if args.command == "call":
+        return _call_cmd(args)
 
     confirm = (0, 1)
     if args.virtual:
@@ -234,6 +245,74 @@ def _restart_cmd(args) -> int:
     if hst.restart_reopened:
         print(f"not back within restart_max_ms; reopened within --reopen-s {args.reopen_s:g}")
     print(f"restarted: boot_id 0x{before:08X} -> 0x{after:08X}" if before is not None else f"restarted: boot_id 0x{after:08X}")
+    return 0
+
+
+# ---- oep call -----------------------------------------------------------------------------------------------------
+
+def _field_value(field, text: str):
+    from . import call as c
+    t = field.type
+    if t & c.LIST:
+        items = [x for x in text.replace(" ", "").split(",") if x]
+        return [(x.lower() in ("1", "true")) if (t & ~c.LIST) == c.T["bool"] else int(x, 0) for x in items]
+    if t == c.T["bool"]:
+        if text.lower() not in ("0", "1", "true", "false"):
+            raise SystemExit(f"oep call: {field.name} takes true or false")
+        return text.lower() in ("1", "true")
+    if t == c.T["bytes"]:
+        return bytes.fromhex(text)
+    if t == c.T["text"]:
+        return text
+    return int(text, 0)
+
+
+def _call_cmd(args) -> int:
+    import json
+    from . import call as c
+    hst = _open_host(args.probe)
+    try:
+        forms = c.ops(hst, args.interface)
+    except c.NotOffered as e:
+        raise SystemExit(f"oep call: {e}") from None
+    op: int | str = int(args.op, 0) if args.op[:1].isdigit() else args.op
+    form = forms.get(op) if isinstance(op, int) else next((f for f in forms.values() if f.name == op), None)
+    payload, fields = None, {}
+    if args.text:
+        payload = " ".join(args.args).encode()
+    elif form is not None and form.form and (any("=" in a for a in args.args) or not args.args):
+        by_name = {f.name: f for f in form.request}
+        for item in args.args:
+            name, eq, value = item.partition("=")
+            if not eq or name not in by_name:
+                raise SystemExit(f"oep call: {form.signature()}: give NAME=VALUE for its fields ({item!r})")
+            fields[name] = _field_value(by_name[name], value)
+    else:
+        try:
+            payload = bytes.fromhex("".join(args.args))
+        except ValueError:
+            raise SystemExit("oep call: the request as hex bytes (its describe gives this op no fields)") from None
+    if not (form is not None and form.lock_free):
+        core.take(hst, 10000, owner="oep call")
+    try:
+        r = c.call(hst, args.interface, op, payload, **fields)
+    except TypeError as e:
+        raise SystemExit(f"oep call: {e}") from None
+    except c.NotOffered as e:
+        raise SystemExit(f"oep call: {e}") from None
+    except c.CommandFailed as e:
+        out = {"result": "failed", "op": e.op, "fields": e.fields, "payload": e.payload.hex()}
+        print(json.dumps(out, default=str) if args.json else f"failed  {e}" + ("" if e.fields else f"  {e.payload.hex()}"))
+        return 1
+    except c.CommandRejected as e:
+        print(json.dumps({"result": "rejected", "op": e.op, "why": str(e)}) if args.json else f"rejected  {e}")
+        return 1
+    shown = {k: (v.hex() if isinstance(v, bytes) else v) for k, v in r.items()}
+    if args.json:
+        print(json.dumps({"result": "completed", "revision": r.revision, "fields": shown, "payload": r.payload.hex()}))
+    else:
+        body = "  ".join(f"{k}={v}" for k, v in shown.items()) if shown or (form and form.form) else r.payload.hex()
+        print(f"completed  rev {r.revision}  {body}".rstrip())
     return 0
 
 

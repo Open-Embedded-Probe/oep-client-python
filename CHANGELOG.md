@@ -1,6 +1,23 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Any interface's op from the command line and Python: `oep call PROBE INTERFACE OP [ARGS...]` - by number with
+  the request as hex bytes, or by the name and fields its describe gives (oep-spec core §7.4 op_name / op_field,
+  draft e392ad5): `oep call oep://… io.github.you.mine add a=2 b=3` -> `completed  rev 1  sum=5`. Python:
+  `oep_client.call.call(hst, interface, op, payload=None, **fields)` returns the success fields by name (a dict and
+  attributes, `.revision`, `.payload`); `CommandRejected`, `CommandFailed` (code and message), and `InterfaceMissing` /
+  `RevisionMismatch` / `OpMissing`, all `NotOffered` for a test's skip. `oep dump` shows an op's signature
+  (`add(a: i32, b: i32) -> sum: i32`). The virtual bench's stand-in fn gives its two ops' names and fields. Registry,
+  vectors and the reviewed digests synced from oep-spec e392ad5 (the core's §7.4 tags and transports §3.1
+  usb.transports: the virtual bench knows the item).
+- (JA) どのインターフェースの op もコマンドラインと Python から呼べる: `oep call PROBE INTERFACE OP [ARGS...]`。番号と 16 進の
+  要求で、または describe が示す名前と欄で（oep-spec core §7.4 op_name / op_field、案 e392ad5）:
+  `oep call oep://… io.github.you.mine add a=2 b=3` → `completed  rev 1  sum=5`。Python は
+  `oep_client.call.call(hst, interface, op, payload=None, **fields)` で、成功の欄を名前で返す（辞書と属性、`.revision`、
+  `.payload`）。`CommandRejected`、`CommandFailed`（番号と文）、`InterfaceMissing` / `RevisionMismatch` / `OpMissing`（どれも
+  `NotOffered`: 試験の skip に）。`oep dump` は op の形（`add(a: i32, b: i32) -> sum: i32`）を出す。仮想ベンチの代役の fn は
+  2 つの op の名前と欄を持つ。registry、ベクタ、確かめた文書のダイジェストを oep-spec e392ad5 に合わせた（core §7.4 のタグと
+  transports §3.1 の usb.transports。仮想ベンチはその項目を知る）。
 
 ## 0.0.53
 - (EN) An RP2040 board as a test's peer over an OEP probe's SWD alone (`oep_client.rp2040_peer`), for a peer whose USB goes to

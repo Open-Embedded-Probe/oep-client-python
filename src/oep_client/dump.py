@@ -179,7 +179,11 @@ def describe_offer(o: Offer) -> dict:
         if getattr(d, key) is not None:
             out[key] = getattr(d, key)
     if d.ops is not None:
-        out["ops"] = interfaces.op_names(name, d.ops)
+        out["ops"] = [d.op_forms[op].name if op in d.op_forms else n
+                      for op, n in zip(sorted(d.ops), interfaces.op_names(name, d.ops))]
+    forms = [f.signature() for op, f in sorted(d.op_forms.items()) if f.form]
+    if forms:
+        out["op_forms"] = forms
     if d.features is not None:
         out["features"] = _features(d.features, known.features if known else {})
     specific = {}
@@ -241,6 +245,8 @@ def to_text(caps: Capabilities) -> str:
                 lines.append(f"{pad}  " + ", ".join(limits))
             if "ops" in r:
                 lines.append(f"{pad}  ops: " + (", ".join(r["ops"]) or "none"))
+            for sig in r.get("op_forms", []):
+                lines.append(f"{pad}    {sig}")
             if r.get("features"):
                 lines.append(f"{pad}  features: " + ", ".join(r["features"]))
             for k, v in r.get("declares", {}).items():

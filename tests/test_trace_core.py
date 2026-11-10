@@ -194,7 +194,8 @@ def test_fn_0_declares_unit_id_transport_and_max_op_ms(ep):
 
 def test_every_listed_fn_and_fn_0_declare_their_ops():
     """core §1.2, §7.4: the common tag ops is in fn 0's describe and in every listed fn's."""
-    for profile in (vb.p4_x035, vb.p4_bench, vb.esp32_v003, vb.rp2350_pins):
+    # the stand-in fn carries op_name / op_field (optional, for interfaces outside the registry)
+    for profile in (vb.p4_x035, vb.p4_bench, vb.esp32_v003, vb.rp2350_pins, lambda: vb.with_stand_in(vb.p4_bench())):
         ep = build(profile)
         for fn in [0] + [e.fn for e in entries(ep)[1]]:
             assert any(t == catalog.OPS for t, _ in describe(ep, fn)), (profile.__name__, fn)
@@ -1513,7 +1514,8 @@ def test_the_common_describe_tags_have_their_forms():
     channel_group group(u8) n(u8) n x (role u8, channel u16); ops base(u8) bitmap."""
     sizes = {catalog.MAX_CLOCK_HZ: 4, reg.DESCRIBE_COMMON["min_clock_hz"]: 4, catalog.FEATURES: 4, catalog.MAX_LENGTH: 2}
     seen = set()
-    for profile in (vb.p4_x035, vb.p4_bench, vb.esp32_v003, vb.rp2350_pins):
+    # the stand-in fn carries op_name / op_field (optional, for interfaces outside the registry)
+    for profile in (vb.p4_x035, vb.p4_bench, vb.esp32_v003, vb.rp2350_pins, lambda: vb.with_stand_in(vb.p4_bench())):
         ep = build(profile)
         for fn in [e.fn for e in entries(ep)[1]]:
             for t, v in describe(ep, fn):
@@ -2145,7 +2147,8 @@ def test_a_lock_free_op_changes_no_state():
 def test_the_bench_adds_nothing_to_the_projects_interfaces():
     """core §12 rule 7: no ops, tags or values are added to another's interface - the bench's oep. interfaces offer
     only their registry ops; its own experiments live under its own name."""
-    for profile in (vb.p4_x035, vb.p4_bench, vb.esp32_v003, vb.rp2350_pins):
+    # the stand-in fn carries op_name / op_field (optional, for interfaces outside the registry)
+    for profile in (vb.p4_x035, vb.p4_bench, vb.esp32_v003, vb.rp2350_pins, lambda: vb.with_stand_in(vb.p4_bench())):
         ep = build(lambda p=profile: vb.with_stand_in(p()))
         for fn, name in ep.names.items():
             if fn == m.CORE_FN:
