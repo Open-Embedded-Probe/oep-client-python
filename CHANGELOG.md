@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 0.0.54
 - (EN) Jobs (oep::SimpleInterface::job, the probe's worker): `oep_client.call.call_wait(hst, interface, op, timeout=,
   wait=, **fields)` starts the job and reads its status op until it ends; it returns the status's fields (start_ns,
   end_ns on the probe's clock) or raises `JobFailed` (code, message), `JobCancelled`, `JobTimeout` (a cancel sent
