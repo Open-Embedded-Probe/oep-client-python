@@ -145,3 +145,90 @@ def test_call_through_the_virtual_endpoint():
     assert sorted(f.signature() for f in forms.values()) == ["read() -> value: u32", "write(value: u32)"]
     c.call(hst, vb.STAND_IN, "write", value=1234)
     assert c.call(hst, vb.STAND_IN, "read")["value"] == 1234
+
+
+# ---- call_wait: a job and its status op (oep::SimpleInterface::job / addWorker) ----------------------------------------
+
+S = c.JOB_STATES
+JOB, STATUS, CANCEL = 0x10, 0x40, 0x41
+JOB_DESCRIBE = (catalog.ops_tlv([JOB, STATUS, CANCEL])
+                + op_name(JOB, F["form"], "collect") + op_field(JOB, P["request"], T["u8"], "count")
+                + op_name(STATUS, F["form"] | F["lock_free"], "status")
+                + b"".join(op_field(STATUS, P["success"], T[t], n) for n, t in
+                           [("state", "u8"), ("op", "u8"), ("code", "i32"), ("message", "text"), ("start_ns", "u64"),
+                            ("end_ns", "u64")])
+                + op_name(CANCEL, F["form"], "cancel"))
+
+
+class JobProbe(FakeHost):
+    """A worker: the job runs for `polls` status reads, then ends as `ends` says; clock() gives a boot_id."""
+
+    def __init__(self, polls=2, ends="done", restart_after=None):
+        self.polls, self.ends, self.restart_after, self.boot, self.reads = polls, ends, restart_after, 0x1234, 0
+        self.state, self.op_ = S["idle"], 0
+        super().__init__({JOB: self.start, STATUS: self.status, CANCEL: self.cancel})
+
+    def clock(self):
+        return h.ClockReading(0, 0, 0, self.boot, 0)
+
+    def start(self, p):
+        self.state, self.op_, self.reads = S["running"], JOB, 0
+        return m.Result(1, m.COMPLETED, m.SUCCESS, b"")
+
+    def cancel(self, p):
+        if self.state == S["running"] and self.ends != "never":
+            self.state = S["cancelled"]
+        return m.Result(1, m.COMPLETED, m.SUCCESS, b"")
+
+    def status(self, p):
+        self.reads += 1
+        if self.restart_after is not None and self.reads > self.restart_after:
+            self.boot, self.state, self.op_ = 0x9999, S["idle"], 0
+        elif self.state == S["running"] and self.ends != "never" and self.reads > self.polls:
+            self.state = S[self.ends]
+        code, msg = (5, b"bus stuck") if self.state == S["failed"] else (0, b"")
+        return m.Result(1, m.COMPLETED, m.SUCCESS,
+                        struct.pack("<BBiH", self.state, self.op_, code, len(msg)) + msg + struct.pack("<QQ", 100, 200))
+
+
+@pytest.fixture
+def jobs(monkeypatch):
+    def make(**kw):
+        p = JobProbe(**kw)
+        monkeypatch.setattr(core, "find", lambda hst, name, revision=None: 6)
+        monkeypatch.setattr(core, "revision", lambda hst, name, fn: 1)
+        monkeypatch.setattr(core, "describe", lambda hst, fn: catalog.split_tlv(JOB_DESCRIBE))
+        monkeypatch.setattr(core, "offers", lambda hst, fn, op: op in (JOB, STATUS, CANCEL))
+        return p
+    return make
+
+
+def test_call_wait_done(jobs):
+    p = jobs(polls=2)
+    waited = []
+    st = c.call_wait(p, "io.github.you.jobs", "collect", count=3, timeout=5, wait=waited.append)
+    assert st["state"] == S["done"] and st.start_ns == 100 and st.end_ns == 200
+    assert p.sent[0] == (6, JOB, b"\x03", True)
+    assert all(s[1] == STATUS and s[3] is False for s in p.sent[1:])   # the status: lock-free, outside the session
+    assert len(waited) == 2
+
+
+def test_call_wait_failed_cancelled_timeout(jobs):
+    with pytest.raises(c.JobFailed) as e:
+        c.call_wait(jobs(ends="failed"), "io.github.you.jobs", "collect", count=1, timeout=5, wait=lambda s: None)
+    assert e.value.code == 5 and e.value.message == "bus stuck" and e.value.op == "collect"
+    p = jobs(ends="never")
+    with pytest.raises(c.JobTimeout):
+        c.call_wait(p, "io.github.you.jobs", "collect", count=1, timeout=0, wait=lambda s: None)
+    assert p.sent[-1][1] == CANCEL
+    p = jobs(polls=99)
+    with pytest.raises(c.JobCancelled):
+        c.call_wait(p, "io.github.you.jobs", "collect", count=1, timeout=5,
+                    wait=lambda s: p.cancel(b""))                  # someone cancels it while this waits
+    assert issubclass(c.JobTimeout, TimeoutError)
+
+
+def test_call_wait_restarted(jobs):
+    with pytest.raises(c.ProbeRestarted):
+        c.call_wait(jobs(polls=99, restart_after=1), "io.github.you.jobs", "collect", count=1, timeout=5,
+                    wait=lambda s: None)

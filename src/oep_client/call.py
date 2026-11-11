@@ -11,12 +11,22 @@ op_field) - an interface this host has no module for, such as a sketch's oep::Si
 
 Errors: InterfaceMissing / RevisionMismatch / OpMissing (all NotOffered: a test can turn them into a skip),
 CommandRejected (the probe refused it: the reason), CommandFailed (completed failed: code and message when the op
-gives them)."""
+gives them).
+
+A job (oep::SimpleInterface::job: it starts work on the probe's worker and answers at once) and its status op:
+
+    st = call_wait(hst, "io.github.yourname.mine", "collect", count=3, timeout=10)
+    st.start_ns, st.end_ns                          # on the probe's clock (a capture's markers' one)
+    # wait=: a stream's wait (acquire.Request(during=...)) keeps the capture collecting while this waits
+
+JobFailed (the job's Worker::fail: code, message), JobCancelled, JobTimeout (cancel sent first), ProbeRestarted (its
+boot_id changed while the job ran)."""
 
 from __future__ import annotations
 
 import struct
-from typing import Any
+import time
+from typing import Any, Callable
 
 from . import catalog, core, host as h
 
@@ -64,6 +74,39 @@ class CommandFailed(h.Failed):
         super().__init__(result, why)
         self.op, self.fields, self.payload = op, fields or {}, result.payload
         self.code, self.message = self.fields.get("code"), self.fields.get("message")
+
+
+class JobFailed(h.OepError):
+    """The job ended failed: `code` and `message` from its Worker::fail(), `status` the status op's fields."""
+
+    def __init__(self, op: str, status: dict):
+        super().__init__(f"{op}: failed (code {status.get('code')}"
+                         + (f": {status['message']}" if status.get("message") else "") + ")")
+        self.op, self.status, self.code, self.message = op, status, status.get("code"), status.get("message")
+
+
+class JobCancelled(h.OepError):
+    """The job stopped on a cancel (`status` the status op's fields)."""
+
+    def __init__(self, op: str, status: dict):
+        super().__init__(f"{op}: cancelled")
+        self.op, self.status = op, status
+
+
+class JobTimeout(h.OepError, TimeoutError):
+    """The job still ran at the timeout; a cancel was sent (`status` the last status op's fields)."""
+
+    def __init__(self, op: str, timeout: float, status: dict):
+        super().__init__(f"{op}: still running after {timeout} s (cancel sent)")
+        self.op, self.status = op, status
+
+
+class ProbeRestarted(h.OepError):
+    """The probe's boot_id changed while the job ran (core §6.5): it restarted, the job with it."""
+
+
+# The status op's state (oep::Worker::State): the firmware's convention, not the registry's
+JOB_STATES = {"idle": 0, "running": 1, "done": 2, "failed": 3, "cancelled": 4}
 
 
 class CallResult(dict):
@@ -194,3 +237,48 @@ def call(hst: h.Host, interface: str, op: int | str, payload: bytes | None = Non
         except (struct.error, h.ShortPayload):
             failed = None                                  # a failed answer without its fields (a firmware bug)
     raise CommandFailed(label, r, failed)
+
+
+def call_wait(hst: h.Host, interface: str, op: int | str, payload: bytes | None = None, *, timeout: float,
+              wait: Callable[[float], None] | None = None, interval: float = 0.05, status: str = "status",
+              cancel: str = "cancel", revision: int | None = None, **fields) -> CallResult:
+    """Start the job `op` (as call()) and wait for it by its `status` op: the status's fields when it ended done.
+    wait(seconds) sleeps between the status reads (time.sleep by default; a stream's wait keeps a capture going)."""
+    boot = hst.clock().boot_id
+    started = call(hst, interface, op, payload, revision=revision, **fields)
+    code = started.op.op if isinstance(started.op, catalog.OpForm) else started.op
+    label = started.op.name if isinstance(started.op, catalog.OpForm) else f"0x{code:02x}"
+    pause = wait or time.sleep
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            st = call(hst, interface, status)
+        except (h.OepError, OSError):
+            _restarted(hst, boot, label)
+            raise
+        if st["op"] != code or st["state"] == JOB_STATES["idle"]:
+            _restarted(hst, boot, label)
+            raise ProbeRestarted(f"{label}: the status names op {st['op']} in state {st['state']}, not this job")
+        if st["state"] != JOB_STATES["running"]:
+            break
+        if time.monotonic() >= deadline:
+            try:
+                call(hst, interface, cancel)
+            except (h.OepError, OSError):
+                pass                                       # the timeout is the error to report
+            raise JobTimeout(label, timeout, dict(st))
+        pause(interval)
+    if st["state"] == JOB_STATES["failed"]:
+        raise JobFailed(label, dict(st))
+    if st["state"] == JOB_STATES["cancelled"]:
+        raise JobCancelled(label, dict(st))
+    return st
+
+
+def _restarted(hst: h.Host, boot: int, label: str) -> None:
+    try:
+        now = hst.clock().boot_id
+    except (h.OepError, OSError):
+        return
+    if now != boot:
+        raise ProbeRestarted(f"{label}: the probe restarted while the job ran (boot_id {boot:#x} -> {now:#x})")

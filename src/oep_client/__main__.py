@@ -133,6 +133,8 @@ def main(argv=None) -> int:
     ca.add_argument("args", nargs="*", help="NAME=VALUE per field (integers 10 or 0x, bools true / false, lists 1,2,3, "
                                              "bytes hex, text as it is), or the request as hex bytes")
     ca.add_argument("--text", action="store_true", help="the request is ARGS joined by spaces, as UTF-8 bytes")
+    ca.add_argument("--wait", type=float, metavar="S", help="the op is a job (oep::SimpleInterface::job): wait up to S "
+                                                            "seconds for it by the interface's status op, then show that")
     ca.add_argument("--json", action="store_true")
     fd = sub.add_parser("find", help="probes on the local network that announce _oep._tcp (DNS-SD over mDNS)")
     fd.add_argument("--timeout", type=float, default=2.0, help="seconds to listen for answers (default 2)")
@@ -293,9 +295,17 @@ def _call_cmd(args) -> int:
         except ValueError:
             raise SystemExit("oep call: the request as hex bytes (its describe gives this op no fields)") from None
     if not (form is not None and form.lock_free):
-        core.take(hst, 10000, owner="oep call")
+        core.take(hst, 10000 + int((args.wait or 0) * 1000), owner="oep call")   # a job's wait inside the lease
     try:
-        r = c.call(hst, args.interface, op, payload, **fields)
+        if args.wait is not None:
+            r = c.call_wait(hst, args.interface, op, payload, timeout=args.wait, **fields)
+        else:
+            r = c.call(hst, args.interface, op, payload, **fields)
+    except (c.JobFailed, c.JobCancelled, c.JobTimeout, c.ProbeRestarted) as e:
+        st = getattr(e, "status", {})
+        print(json.dumps({"result": type(e).__name__, "why": str(e), "status": st}, default=str) if args.json
+              else f"{type(e).__name__}  {e}")
+        return 1
     except TypeError as e:
         raise SystemExit(f"oep call: {e}") from None
     except c.NotOffered as e:

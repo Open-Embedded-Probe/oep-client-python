@@ -1,6 +1,15 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Jobs (oep::SimpleInterface::job, the probe's worker): `oep_client.call.call_wait(hst, interface, op, timeout=,
+  wait=, **fields)` starts the job and reads its status op until it ends; it returns the status's fields (start_ns,
+  end_ns on the probe's clock) or raises `JobFailed` (code, message), `JobCancelled`, `JobTimeout` (a cancel sent
+  first) or `ProbeRestarted` (the boot_id changed). `wait(seconds)` is called between the reads (a stream's wait keeps
+  a capture going). `oep call ... --wait S` does the same from the command line.
+- (JA) ジョブ（oep::SimpleInterface::job、プローブのワーカー）: `oep_client.call.call_wait(hst, interface, op, timeout=,
+  wait=, **欄)` はジョブを始め、終わるまで status の op を読む。status の欄（プローブの時計の start_ns、end_ns）を返すか、
+  `JobFailed`（番号、文）、`JobCancelled`、`JobTimeout`（先に cancel を送る）、`ProbeRestarted`（boot_id が変わった）を投げる。
+  読む間に `wait(秒)` を呼ぶ（流し続けの wait なら取り込みが続く）。コマンドラインは `oep call ... --wait S`。
 - (EN) Any interface's op from the command line and Python: `oep call PROBE INTERFACE OP [ARGS...]` - by number with
   the request as hex bytes, or by the name and fields its describe gives (oep-spec core §7.4 op_name / op_field,
   draft e392ad5): `oep call oep://… io.github.you.mine add a=2 b=3` -> `completed  rev 1  sum=5`. Python:
