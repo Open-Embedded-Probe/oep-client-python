@@ -62,6 +62,7 @@ names starting with `_`, may change. Check probe/client compatibility using the 
 | `registry` | generated from oep-spec's number table (never edited; copied again from oep-spec). The public way to reach an interface by name is `registry.INTERFACES[name]` (`.revision`, `.op`, `.tlv`, `.enum`, e.g. `INTERFACES["oep.fixture.uart"].enum["role"]`); the module-level names (`FIXTURE_UART`, ...) are the same objects |
 | `arm` | `oep.wire.swd`, `oep.target.arm-adi`, MEM-AP, halting and calling functions on a Cortex-M |
 | `ch32_flash` | writing a CH32 (a RAM loader, page by page) |
+| `ota_broker` | the Arduino IDE's network upload, received and written through an OEP probe (below, "Uploading from the Arduino IDE") |
 | `rp2350` | flash and reboot through the RP2350 boot ROM |
 | `uiapduino` | into and out of the UIAPduino bootloader |
 | `catalog` / `names` / `interfaces` / `dump` | the capability list and describe shapes, display |
@@ -89,6 +90,26 @@ dm.reset()                                    # ndmreset and let it run -> (flag
 wire.detach(conn)
 hst.end()
 ```
+
+## Uploading from the Arduino IDE (a network port)
+
+The Arduino IDE's Upload button writes a board on an OEP probe, with the core unchanged (no `platform.local.txt`). Start
+the broker first; the IDE then lists a network port for it.
+
+```
+python -m oep_client.ota_broker oep://<unit id>/<port>=<board>      # e.g. oep://80f1b2d835d6/pico=rpipico
+```
+
+- The port's labels `<port>.swdio` / `<port>.swclk` are the wire. The board defaults to `rpipico`. RP2040 / RP2350
+  boards (arduino-pico) are written over SWD (`rp2040_peer.flash`). Give as many as you like: one network port each.
+- In the IDE pick Tools > Port > `oep-<unit id>-<port> at <address>` and press Upload; leave the password empty when
+  asked.
+- How: it announces `_arduino._tcp` over mDNS (TXT `board`, `auth_upload=no`, `tcp_check=no`, `ssh_upload=no`) and
+  answers the core's network upload (arduino-pico's `uf2conv-network`, `tools/espota.py`): the `.bin` it receives (the
+  flash from 0x10000000) is checked by its MD5, then written; while it writes, digits keep espota waiting.
+- `--dry-run` receives and checks without writing. `--udp-port` and `--interface` choose where it listens and announces.
+- The console: wire the board's UART to the probe, pass it through to the probe's CDC port with the OEP settings, and
+  open that port in the IDE's Serial Monitor.
 
 ## USB access on Linux (udev)
 

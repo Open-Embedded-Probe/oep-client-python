@@ -1,6 +1,17 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) `oep_client.ota_broker`: the Arduino IDE's Upload button writes a board on an OEP probe, the core unchanged. It
+  announces each OEP port as a network port (`_arduino._tcp` over mDNS, TXT board / auth_upload=no) and answers the
+  core's network upload (`espota.py`): the `.bin` is checked by its MD5 and written over SWD (`rp2040_peer.flash`;
+  RP2040 / RP2350 boards), digits keeping espota waiting while it writes. `--dry-run` writes nothing. Checked with
+  arduino-pico 6.3.1's own `espota.py` and `arduino-cli upload --protocol network` on a Pico (73240 B in about 13 s).
+  `virtual_bench_mdns.Announcement` takes the TXT's entries (`properties`).
+- (JA) `oep_client.ota_broker`: Arduino IDE の「書き込み」ボタンで、OEP のプローブにつないだボードに書く。コアには手を入れない。OEP の口を
+  ネットワークのポートとして名乗り（mDNS の `_arduino._tcp`、TXT は board と auth_upload=no など）、コアのネットワーク書き込み（`espota.py`）に
+  答える: `.bin` を MD5 で確かめ、SWD で書く（`rp2040_peer.flash`。RP2040 / RP2350 のボード）。書き込みの間は数字を送って espota を待たせる。
+  `--dry-run` は書かない。arduino-pico 6.3.1 の `espota.py` と、Pico への `arduino-cli upload --protocol network` で確認（73240 B で約 13 秒）。
+  `virtual_bench_mdns.Announcement` は TXT の項目を受ける（`properties`）。
 
 ## 0.0.54
 - (EN) Jobs (oep::SimpleInterface::job, the probe's worker): `oep_client.call.call_wait(hst, interface, op, timeout=,

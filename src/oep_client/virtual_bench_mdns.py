@@ -46,8 +46,10 @@ class Announcement:
     """The records of one announced probe."""
 
     def __init__(self, unit_id: str, port: int, addresses: list[str], instance: str | None = None,
-                 host: str | None = None, service: str = SERVICE):
+                 host: str | None = None, service: str = SERVICE, properties: dict[str, str] | None = None):
         self.unit_id, self.port, self.addresses = unit_id, port, list(addresses)
+        # the TXT's key=value entries, in order: unit_id alone unless given (another service's own keys)
+        self.properties = dict(properties) if properties is not None else {"unit_id": unit_id}
         self.service = service if service.endswith(".") else service + "."
         self.label = instance or f"OEP virtual {unit_id} {port}"
         self.instance = f"{self.label}.{self.service}"
@@ -56,8 +58,11 @@ class Announcement:
             self.host += "."
 
     def txt(self) -> bytes:
-        entry = f"unit_id={self.unit_id}".encode()
-        return bytes([len(entry)]) + entry
+        out = b""
+        for key, value in self.properties.items():
+            entry = f"{key}={value}".encode()
+            out += bytes([len(entry)]) + entry
+        return out or b"\x00"                               # an empty TXT is one empty string (RFC 6763 §6.1)
 
     def ptr(self) -> tuple:
         return (self.service, T_PTR, encode_name(self.instance), False)
@@ -252,7 +257,7 @@ class ZeroconfResponder:
         self.zc = zc_mod.Zeroconf(interfaces=interfaces if interfaces is not None else zc_mod.InterfaceChoice.All,
                                   ip_version=zc_mod.IPVersion.V4Only)
         self.info = zc_mod.ServiceInfo(ann.service, ann.instance, port=ann.port,
-                                       properties={"unit_id": ann.unit_id}, server=ann.host,
+                                       properties=ann.properties, server=ann.host,
                                        addresses=[socket.inet_aton(ip) for ip in ann.addresses])
         try:
             self.zc.register_service(self.info, allow_name_change=True)
