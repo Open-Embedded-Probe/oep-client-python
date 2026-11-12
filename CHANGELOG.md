@@ -1,18 +1,26 @@
 # Changelog / 変更履歴
 
 ## Unreleased
-- (EN) `oep_client.ota_broker`: the Arduino IDE's Upload button writes a board on an OEP probe, the core unchanged. It
-  announces each OEP port as a network port (`_arduino._tcp` over mDNS, TXT board / auth_upload=no) and answers the
-  core's network upload (`espota.py`): the `.bin` is checked by its MD5 and written over SWD (`rp2040_peer.flash`;
-  RP2040 / RP2350 boards), digits keeping espota waiting while it writes. `--dry-run` writes nothing. Checked with
-  arduino-pico 6.3.1's own `espota.py` and `arduino-cli upload --protocol network` on a Pico (73240 B in about 13 s).
+- (EN) `oep_client.ota_broker`: the Arduino IDE's Upload button and its Debug for a board on an OEP probe, the core
+  unchanged. Each OEP port is announced as a network port (`_arduino._tcp` over mDNS, TXT board / auth_upload=no, one
+  LAN address) and the core's network upload (`espota.py`) is answered: the `.bin` checked by its MD5 and written over
+  SWD (`rp2040_peer.flash`; RP2040 / RP2350 boards), digits keeping espota waiting. `--gdb-port` adds
+  `oep_client.gdb_server` for it: GDB's remote protocol (M-profile target.xml, memory map, registers, memory, run /
+  stop / step, Ctrl-C, FPB breakpoints, `load` into flash as one image from the erase block, `monitor reset halt` /
+  `reset` / `halt` / `resume`), the IDE pointed at it by `debug_custom.json` (`servertype: external`). An upload while
+  gdb is connected is written within gdb's session. `--dry-run` writes nothing. Checked on a Pico: arduino-pico
+  6.3.1's own `espota.py`, `arduino-cli upload --protocol network` (73240 B in about 13 s), and cortex-debug's MI steps
+  through arduino-pico's gdb (load, a breakpoint at main, step, interrupt, reset; 9 s).
   `virtual_bench_mdns.Announcement` takes the TXT's entries (`properties`).
-- (JA) `oep_client.ota_broker`: Arduino IDE の「書き込み」ボタンで、OEP のプローブにつないだボードに書く。コアには手を入れない。OEP の口を
-  ネットワークのポートとして名乗り（mDNS の `_arduino._tcp`、TXT は board と auth_upload=no など）、コアのネットワーク書き込み（`espota.py`）に
-  答える: `.bin` を MD5 で確かめ、SWD で書く（`rp2040_peer.flash`。RP2040 / RP2350 のボード）。書き込みの間は数字を送って espota を待たせる。
-  `--dry-run` は書かない。arduino-pico 6.3.1 の `espota.py` と、Pico への `arduino-cli upload --protocol network` で確認（73240 B で約 13 秒）。
-  `virtual_bench_mdns.Announcement` は TXT の項目を受ける（`properties`）。
-
+- (JA) `oep_client.ota_broker`: Arduino IDE の「書き込み」ボタンと「デバッグ」で、OEP のプローブにつないだボードを扱う。コアには手を
+  入れない。OEP の口をネットワークのポートとして名乗り（mDNS の `_arduino._tcp`、TXT は board と auth_upload=no など、アドレスは LAN の 1 つ）、
+  コアのネットワーク書き込み（`espota.py`）に答える: `.bin` を MD5 で確かめ、SWD で書く（`rp2040_peer.flash`。RP2040 / RP2350 のボード）。
+  書き込みの間は数字を送って espota を待たせる。`--gdb-port` でその口の `oep_client.gdb_server` も持つ: gdb のリモートプロトコル（M-profile の
+  target.xml、メモリマップ、レジスタ、メモリ、実行・停止・ステップ、Ctrl-C、FPB のブレークポイント、消去ブロックからの 1 つの像としての flash への
+  `load`、`monitor reset halt` / `reset` / `halt` / `resume`）。IDE は `debug_custom.json`（`servertype: external`）でそこへ向ける。gdb がつながって
+  いる間の書き込みは gdb のセッションの中で書く。`--dry-run` は書かない。Pico で確認: arduino-pico 6.3.1 の `espota.py`、
+  `arduino-cli upload --protocol network`（73240 B で約 13 秒）、arduino-pico の gdb で cortex-debug の MI の手順（load、main でのブレーク、
+  ステップ、一時停止、リセット。9 秒）。`virtual_bench_mdns.Announcement` は TXT の項目を受ける（`properties`）。
 ## 0.0.54
 - (EN) Jobs (oep::SimpleInterface::job, the probe's worker): `oep_client.call.call_wait(hst, interface, op, timeout=,
   wait=, **fields)` starts the job and reads its status op until it ends; it returns the status's fields (start_ns,

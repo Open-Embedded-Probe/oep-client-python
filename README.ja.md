@@ -56,7 +56,8 @@ GitHub Release、PyPI（Trusted Publishing）へ出す。変更は CHANGELOG.md 
 | `registry` | oep-spec の番号の表から生成したモジュール（編集しない。oep-spec から写し直す）。名前からインターフェースの番号を引く公開の入口は `registry.INTERFACES[name]`（`.revision`、`.op`、`.tlv`、`.enum`。例 `INTERFACES["oep.fixture.uart"].enum["role"]`）。`FIXTURE_UART` などのモジュールの名前は同じもの |
 | `arm` | `oep.wire.swd`、`oep.target.arm-adi`、MEM-AP、Cortex-M の停止と関数呼び出し |
 | `ch32_flash` | CH32 の書き込み（RAM ローダー、ページ単位の書き直し） |
-| `ota_broker` | Arduino IDE のネットワーク書き込みを受けて、OEP のプローブ越しに書く（下の「Arduino IDE から書き込む」） |
+| `ota_broker` | Arduino IDE のネットワーク書き込みを受けて、OEP のプローブ越しに書く。gdb サーバーも持つ（下の「Arduino IDE から書き込む・デバッグする」） |
+| `gdb_server` | OEP の SWD の Cortex-M に gdb のリモートプロトコルで答える（レジスタ、メモリ、実行・停止・ステップ、FPB のブレークポイント、flash への load） |
 | `rp2350` | RP2350 の boot ROM 経由の flash と reboot |
 | `uiapduino` | UIAPduino のブートローダへの出入り |
 | `catalog` / `names` / `interfaces` / `dump` | 能力の一覧と describe の形、表示 |
@@ -85,23 +86,47 @@ wire.detach(conn)
 hst.end()
 ```
 
-## Arduino IDE から書き込む（ネットワークのポート）
+## Arduino IDE から書き込む・デバッグする
 
-OEP のプローブにつないだボードに、Arduino IDE の「書き込み」ボタンで書きます。コアには手を入れません（`platform.local.txt` も使わない）。
-ブローカーを先に起動しておくと、IDE のポートの一覧にネットワークのポートが出ます。
+OEP のプローブにつないだボードに、Arduino IDE の「書き込み」ボタンで書き、「デバッグ」で止めて調べます。コアには手を入れません
+（`platform.local.txt` も使わない）。ブローカーを先に起動しておきます。
 
 ```
-python -m oep_client.ota_broker oep://<unit id>/<口>=<ボード>      # 例: oep://80f1b2d835d6/pico=rpipico
+python -m oep_client.ota_broker oep://<unit id>/<口>=<ボード> --gdb-port 3333      # 例: oep://80f1b2d835d6/pico=rpipico
 ```
 
-- 口のラベル `<口>.swdio` / `<口>.swclk` の線を使います。ボードの既定は `rpipico`。今は RP2040 / RP2350 のボード（arduino-pico）で、SWD で
-  書きます（`rp2040_peer.flash`）。いくつでも並べられ、口ごとに 1 つのポートになります。
-- IDE の「ツール > ポート」で `oep-<unit id>-<口> at <アドレス>` を選び、「書き込み」を押します。パスワードを聞かれたら空のままにします。
-- 仕組み: mDNS で `_arduino._tcp` を名乗り（TXT は `board`、`auth_upload=no`、`tcp_check=no`、`ssh_upload=no`）、コアのネットワーク書き込み
-  （arduino-pico の `uf2conv-network`、`tools/espota.py`）の受け手になります。受け取った `.bin`（0x10000000 からの flash の中身）を MD5 で
-  確かめてから書き、書き込みの間は数字を送り続けて espota の待ちを切らしません。
-- `--dry-run` は受け取って確かめるだけで書きません。`--udp-port`、`--interface` で待ち受けと名乗る先を選べます。
+- 口のラベル `<口>.swdio` / `<口>.swclk` の線を使います。ボードの既定は `rpipico`。今は RP2040 / RP2350 のボード（arduino-pico）です。
+  いくつでも並べられ、口ごとにネットワークのポートが 1 つ、gdb のポートが 1 つ（`--gdb-port` から順に）になります。
 - コンソールは、相手の UART をプローブにつなぎ、OEP の設定でプローブの CDC に転送して、IDE のシリアルモニタでそのポートを開きます。
+
+### 書き込み
+
+- IDE の「ツール > ポート」で `oep-<unit id>-<口> at <アドレス>` を選び、「書き込み」を押します。パスワードを聞かれたら空のままにします。
+- 仕組み: mDNS で `_arduino._tcp` を名乗り（TXT は `board`、`auth_upload=no`、`tcp_check=no`、`ssh_upload=no`。アドレスは 1 つ、LAN のもの）、
+  コアのネットワーク書き込み（arduino-pico の `uf2conv-network`、`tools/espota.py`）の受け手になります。受け取った `.bin`（0x10000000 からの
+  flash の中身）を MD5 で確かめてから SWD で書き（`rp2040_peer.flash`）、書き込みの間は数字を送り続けて espota の待ちを切らしません。
+- gdb がつながっている間の書き込みは、gdb のセッションの中で書き、コアだけをリセットして走らせます（gdb はつながったまま）。
+- `--dry-run` は受け取って確かめるだけで書きません。`--udp-port`、`--interface` で待ち受けと名乗る先を選べます。
+
+### デバッグ
+
+IDE のデバッグ（cortex-debug）を、スケッチのフォルダの `debug_custom.json` でブローカーの gdb サーバーへ向けます。
+
+```json
+[
+  {
+    "configId": "rp2040:rp2040:rpipico",
+    "servertype": "external",
+    "gdbTarget": "localhost:3333"
+  }
+]
+```
+
+- ファイルは配列で、`configId` は IDE が作るデバッグの設定のものと同じ文字列にします（ボードの FQBN。ボードのメニューを変えていればその値も
+  付く。IDE が一度デバッグを始めるとスケッチのフォルダの `.theia/launch.json` に出るので、そこから写すのが確実です）。
+- gdb サーバーは 127.0.0.1 だけで待ちます。cortex-debug の外部サーバーの手順（`target extended-remote`、`monitor reset halt`、`load`、
+  `monitor halt`）に答えます。ほかに `monitor reset`（走らせる）、`monitor resume`。
+- gdb のつながっている間はプローブのロックを持ち、5 秒ごとに keepalive を送ります。
 
 ## Linux での USB の権限（udev）
 

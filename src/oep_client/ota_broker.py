@@ -105,6 +105,8 @@ class Target:
     writer: Writer | None = None
     busy: threading.Lock = field(default_factory=threading.Lock)
     sock: socket.socket | None = None
+    gdb_port: int = 0                 # a GDB server for the target on this TCP port (0: none)
+    debug: object | None = None       # the gdb session's open target while one is connected
 
     def __post_init__(self) -> None:
         if not self.name:
@@ -148,7 +150,10 @@ def receive(target: Target, inv: Invitation, peer: str, log: Callable[[str], Non
 
             def run() -> None:
                 try:
-                    target.writer(target.address, path, log)
+                    if target.debug is not None:          # gdb holds the probe: write within its session
+                        target.debug.upload(open(path, "rb").read(), log)
+                    else:
+                        target.writer(target.address, path, log)
                     outcome.append(None)
                 except BaseException as e:      # reported to the uploader, not raised in a thread
                     outcome.append(e)
@@ -201,15 +206,39 @@ class Broker:
             from . import virtual_bench_mdns as vm
             from .discovery import interface_addresses
             addrs = interfaces if interfaces is not None else interface_addresses()
-            # A LAN address only, when there is one: the IDE lists a port by the address it took from the A records,
-            # and one taken from loopback once and from the LAN the next time is two ports to it.
-            addrs = [ip for ip in addrs if not ip.startswith("127.")] or list(addrs)
+            # One address, a LAN one when there is one: the IDE lists a port by the address it took from the A
+            # records, and a host with two (loopback and the LAN, or two LAN addresses) gave it a different one from
+            # one look to the next - a different port each time. --interface picks it.
+            addrs = ([ip for ip in addrs if not ip.startswith("127.")] or list(addrs))[:1]
             for t in targets:
                 ann = vm.Announcement(unit_id=t.name, port=t.udp_port, addresses=addrs, instance=t.name,
                                       host=f"{t.name}.local.", service=SERVICE,
                                       properties={"board": t.board, "auth_upload": "no", "tcp_check": "no",
                                                   "ssh_upload": "no"})
                 self.responders.append(vm.start(ann, engine=engine, interfaces=interfaces))
+
+        self.gdb_servers = []
+        for t in targets:
+            if t.gdb_port and board_family(t.board) in ("rp2040", "rp2350"):
+                from . import gdb_server
+                srv = gdb_server.Server(self._debug_maker(t), port=t.gdb_port, bind="127.0.0.1", log=log)
+                t.gdb_port = srv.port
+                self.gdb_servers.append(srv)
+                threading.Thread(target=srv.serve_forever, args=(self._stop,), daemon=True,
+                                 name=f"gdb-{t.name}").start()
+
+    def _debug_maker(self, t: Target):
+        from . import gdb_server
+
+        class Debug(gdb_server.Rp2040Debug):
+            def open(self) -> None:
+                super().open()
+                t.debug = self
+
+            def close(self) -> None:
+                t.debug = None
+                super().close()
+        return lambda: Debug(t.address, owner=f"gdb {t.name}")
 
     def serve(self) -> None:
         socks = {t.sock: t for t in self.targets}
@@ -253,6 +282,8 @@ class Broker:
 
     def close(self) -> None:
         self.stop()
+        for g in getattr(self, "gdb_servers", []):
+            g.close()
         for r in self.responders:
             try:
                 r.close()
@@ -278,20 +309,25 @@ def main(argv=None) -> int:
     ap.add_argument("--interface", action="append", help="announce on this IPv4 address only (repeatable)")
     ap.add_argument("--engine", choices=["auto", "zeroconf", "minimal"], default="auto")
     ap.add_argument("--dry-run", action="store_true", help="receive and check each upload, write nothing")
+    ap.add_argument("--gdb-port", type=int, default=0,
+                    help="a GDB server on 127.0.0.1 for the first target on this port, the rest after it (0: none)")
     args = ap.parse_args(argv)
     targets = [parse_target(t) for t in args.targets]
     if args.dry_run:
         for t in targets:
             t.writer = lambda address, path, log: log(f"dry run: {os.path.getsize(path)} B not written to {address}")
-    if args.udp_port:
-        for i, t in enumerate(targets):
+    for i, t in enumerate(targets):
+        if args.udp_port:
             t.udp_port = args.udp_port + i
+        if args.gdb_port:
+            t.gdb_port = args.gdb_port + i
 
     def log(msg: str) -> None:
         print(time.strftime("%H:%M:%S"), msg, flush=True)
     broker = Broker(targets, interfaces=args.interface, engine=args.engine, log=log)
     for t in targets:
-        log(f"{t.name}: {t.address} as {t.board}, UDP {t.udp_port}")
+        log(f"{t.name}: {t.address} as {t.board}, UDP {t.udp_port}" + (f", gdb 127.0.0.1:{t.gdb_port}"
+                                                                         if t.gdb_port else ""))
     try:
         broker.serve()
     except KeyboardInterrupt:
