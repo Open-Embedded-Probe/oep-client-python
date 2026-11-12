@@ -9,7 +9,7 @@ broker's network port in the IDE and press Upload.
     python -m oep_client.ota_broker oep://<probe>/<port>[=<board>] ...
 
 - `<board>` is the board id put in the TXT `board` (the IDE shows it; default rpipico). The writer is chosen by the
-  board's family (`writer_for`): rp2040 / rp2350 boards are written over SWD by `rp2040_peer.flash`.
+  board's family (`writer_for`): RP2040 boards are written over SWD by `rp2040_peer.flash`.
 - One UDP port per target (`--udp-port` the first, the rest after it; 0: any free one), announced as the service's
   port. The TXT says auth_upload=no, tcp_check=no, ssh_upload=no: espota sends no password.
 
@@ -78,14 +78,14 @@ def board_family(board: str) -> str:
 
 
 def writer_for(board: str) -> Writer:
-    """The writer for a board id: rp2040 / rp2350 boards over SWD (rp2040_peer.flash)."""
+    """The writer for a board id: RP2040 boards over SWD (rp2040_peer.flash, the RP2040's core 0 and boot ROM)."""
     family = board_family(board)
-    if family in ("rp2040", "rp2350"):
+    if family == "rp2040":
         def write(address: str, path: str, log: Callable[[str], None]) -> None:
             from . import rp2040_peer
             rp2040_peer.flash(address, path, log=log)
         return write
-    raise ValueError(f"board {board!r}: no writer for it (rp2040 / rp2350 boards only)")
+    raise ValueError(f"board {board!r}: no writer for it (RP2040 boards only)")
 
 
 def instance_name(address: str) -> str:
@@ -219,7 +219,7 @@ class Broker:
 
         self.gdb_servers = []
         for t in targets:
-            if t.gdb_port and board_family(t.board) in ("rp2040", "rp2350"):
+            if t.gdb_port and board_family(t.board) == "rp2040":
                 from . import gdb_server
                 srv = gdb_server.Server(self._debug_maker(t), port=t.gdb_port, bind="127.0.0.1", log=log)
                 t.gdb_port = srv.port

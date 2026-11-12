@@ -77,8 +77,9 @@ def test_names_and_writers():
     assert ob.instance_name("oep://80f1b2d835d6/pico") == "oep-80f1b2d835d6-pico"
     assert ob.instance_name("oep://80f1b2d835d6/x035.pico") == "oep-80f1b2d835d6-x035-pico"
     assert ob.board_family("rpipico") == "rp2040" and ob.board_family("rpipico2") == "rp2350"
-    with pytest.raises(ValueError):
-        ob.writer_for("esp32")
+    for board in ("esp32", "rpipico2"):
+        with pytest.raises(ValueError):
+            ob.writer_for(board)
 
 
 def test_upload_written(broker_with):
