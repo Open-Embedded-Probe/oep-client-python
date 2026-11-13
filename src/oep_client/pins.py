@@ -695,6 +695,9 @@ class PinFinder:
         r, fam = self.report, self.family
         if self.pins is None or not self.riscv:
             return {}
+        if fam is not None and fam.no_map:
+            self.say(f"map: {fam.name} is not mapped: {fam.no_map}")
+            return {}
         if fam is None or not fam.gpio_ports:
             self.say("map: the family's GPIO block is not in targets.FAMILIES (nothing mapped)")
             return {}

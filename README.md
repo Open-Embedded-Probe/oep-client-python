@@ -214,7 +214,9 @@ bonded to one lead, whether there is an NRST to look for).
    floating then are driven; never the power channel, a reset candidate or the debug pair. A pad that seems to follow
    two channels is tried again with the others held low (a line nothing drives keeps what a neighbour's edge coupled
    into it); pads bonded to one lead in the package come out together (`PC16/PC11`). The target's registers are put
-   back and it runs again.
+   back and it runs again. Unless the option bytes say there is no NRST, step 6 runs first (an NRST the map does not
+   know would reset the target and cut the debug link). A family with pads that must not be driven (the CH32H417's
+   VIO18 pads rest at 1.2 V after a reset) is not mapped.
 6. **reset**: attach under reset through each candidate - the real line stops the hart at the reset vector (skipped for
    a family with no NRST to look for).
 7. **labels**: the connection profile the host keeps (wire, pins, line settings: the probe keeps no wiring) and the

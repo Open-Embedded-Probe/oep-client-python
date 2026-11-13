@@ -246,6 +246,8 @@ def test_target_table():
     assert targets.identify((1, (0x2080051C).to_bytes(4, "little"))).name == "ch32v20x"   # a CH32V208WBU6
     assert targets.identify((1, (0x20310500).to_bytes(4, "little"))).name == "ch32v20x"   # a CH32V203C8T6
     assert targets.identify((1, (0x20510510).to_bytes(4, "little"))).name == "ch32v20x"   # a CH32V205RCT6
+    h417 = targets.identify((1, (0x4170053D).to_bytes(4, "little")))
+    assert h417.name == "ch32h41x" and h417.no_map and not h417.gpio_ports      # its VIO18 pads must not be driven
     assert targets.identify((1, b"\x00\x00\x00\x11")) is None and targets.identify(None) is None
     st = targets.v00x_nrst_from_word(OPTION_ON)
     assert st.enabled and "12 ms" in st.detail
@@ -401,3 +403,13 @@ def test_the_reset_line_comes_before_the_map_unless_there_is_none(enabled, order
     f.map_pads = lambda: seen.append("map")
     f.run()
     assert seen == order
+
+
+def test_a_family_that_must_not_be_driven_is_not_mapped():
+    ep, hst, t = bench()
+    lines = []
+    f = finder(hst, t, lines, name="h417")
+    f.family, f.pins, f.riscv = targets.identify((1, (0x4170053D).to_bytes(4, "little"))), (14, 0xFFFF), True
+    f._plan = lambda *a, **k: pytest.fail("the map planned a channel to drive")
+    assert f.map_pads() == {}
+    assert any("ch32h41x is not mapped" in line and "VIO18" in line for line in lines)

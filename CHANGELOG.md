@@ -1,6 +1,13 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) `oep pins`: the CH32V203 and CH32V205 (target_id 0x203xxxxx, 0x205xxxxx) are `ch32v20x`, so their pads are
+  mapped; the CH32H417 is `ch32h41x`, identified but never mapped (`Family.no_map`: its VIO18 pads rest at 1.2 V).
+  The reset line is found before the map unless the option bytes say there is no NRST (an NRST the map did not know
+  reset a CH32V205 and cut the debug link).
+- (JA) `oep pins`: CH32V203 と CH32V205（target_id 0x203xxxxx、0x205xxxxx）を `ch32v20x` とし、ピンを map する。CH32H417 は
+  `ch32h41x` として見分けるが map しない（`Family.no_map`: VIO18 のピンは起動時 1.2 V）。NRST が無いと option bytes で分かる
+  とき以外は、map より先にリセットの線を探す（map が知らない NRST で CH32V205 がリセットされ、debug の接続が切れた）。
 
 ## 0.0.55
 - (EN) The pytest plugin's `oep_host` (an OEP session on the DUT's probe, sharing its broker's lock; behind the

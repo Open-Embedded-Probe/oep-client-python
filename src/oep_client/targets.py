@@ -44,6 +44,7 @@ class Family:
     nrst_pad: str = ""              # the pad that is NRST (when the target's settings make it so): its label's @P
     bonded: tuple[tuple[str, str], ...] = ()   # pads bonded to one lead inside the package: the map names them as one
     notes: str = ""
+    no_map: str = ""                # why the map step must not drive this family's pads (it then maps nothing)
 
     def matches(self, target_id: tuple[int, bytes] | None) -> bool:
         if not target_id or target_id[0] != SCHEME_DMI_7F or len(target_id[1]) != 4:
@@ -129,6 +130,10 @@ FAMILIES: tuple[Family, ...] = (
            idle_clock="low", gpio_ports="ABCD", gpio_pads=16, debug_pads=("PA13", "PA14"),
            notes="the CH32V208 (target_id 0x2080051c, CH32V208WBU6), the CH32V203 (0x20310500, CH32V203C8T6) and the CH32V205 "
                  "(0x20510510, CH32V205RCT6; SDI on PA13 as well)"),
+    Family("ch32h41x", "swio", ids=((0xFFF00000, 0x41700000),), debug_pads=("PB9", "PB8"),
+           notes="the CH32H417 (target_id 0x4170053d, CH32H417QEU6): answers on one wire (SWIO on PB9) after a reset",
+           no_map="its VIO18 pads rest at 1.2 V after a reset (absolute maximum VIO18 + 0.3 V): a channel driven high "
+                  "at 3.3 V would overstress them (6-2, 2026-11-13)"),
 )
 
 
