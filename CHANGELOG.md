@@ -1,6 +1,14 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Renamed: `oep_client.ota_broker` -> `oep_client.ide` (`python -m oep_client.ide`; its class `Server`): an IDE
+  server, not an OEP broker. `oep_client.rp2040_peer` -> `oep_client.rp2040_swd` (`python -m oep_client.rp2040_swd
+  flash|console`): an RP2040 over the probe's SWD, for any use. docs/swd: the IDE server, and §3.6 sharing the probe
+  through a broker by host guide §7.
+- (JA) 名前を変えた: `oep_client.ota_broker` → `oep_client.ide`（`python -m oep_client.ide`、クラスは `Server`）。OEP の broker
+  ではなく IDE のサーバーであるため。`oep_client.rp2040_peer` → `oep_client.rp2040_swd`（`python -m oep_client.rp2040_swd
+  flash|console`）。プローブの SWD の RP2040 を、用途によらず扱うもの。docs/swd: IDE のサーバーの呼び方と、§3.6 の broker との相乗り
+  （host ガイド §7）。
 - (EN) `oep_client.brokers`: finding the broker that serves a probe and sharing its lock, as OEP host guide §7.1 / §7.2
   have it: `OEP_BROKER` (`<host>:<port>`), else the user's `oep/brokers/<unit_id>.json` (its tcp endpoints; fn 0's
   describe must name the file's unit_id), else the probe itself; joined with `oep.probe.share`. `rp2040_peer` uses it

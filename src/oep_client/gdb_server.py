@@ -5,7 +5,7 @@ The Arduino IDE debugs through cortex-debug, which with `servertype: external` c
 gdb's remote protocol on a TCP port and does the work over the probe: registers and memory through the MEM-AP, run,
 stop and single-step through DHCSR, breakpoints in the FPB, `load` into flash by the chip's own routine.
 
-The target is a `Target`-shaped object (`Rp2040Debug` here: an RP2040's core 0 through `rp2040_peer`), so the server
+The target is a `Target`-shaped object (`Rp2040Debug` here: an RP2040's core 0 through `rp2040_swd`), so the server
 runs against a fake one in tests.
 
 What gdb gets:
@@ -71,7 +71,7 @@ class Rp2040Debug:
 
     # session
     def open(self) -> None:
-        from . import rp2040_peer as rp
+        from . import rp2040_swd as rp
         unit, port = rp.parse(self.address)
         self.host = rp.open_host(unit, self.owner)
         self.t = rp.Target(self.host, port)

@@ -1,9 +1,9 @@
-"""rp2040_peer without hardware: the ELF's flash image, the RTT rings on a model memory, addresses, the OpenOCD hook."""
+"""rp2040_swd without hardware: the ELF's flash image, the RTT rings on a model memory, addresses, the OpenOCD hook."""
 import struct
 
 import pytest
 
-from oep_client import rp2040_peer as rp
+from oep_client import rp2040_swd as rp
 
 
 def elf(segments):
@@ -96,7 +96,7 @@ def test_address_and_openocd_hook(tmp_path):
     target = (tmp_path / "target/rp2040.cfg").read_text()
     assert len(paths) == 2 and (tmp_path / "interface/cmsis-dap.cfg").exists()
     assert "proc program" in target and "$::env(TEST_SERIAL_PORT_PEER_PICO)" in target
-    assert "/usr/bin/python3 -m oep_client.rp2040_peer flash" in target
+    assert "/usr/bin/python3 -m oep_client.rp2040_swd flash" in target
 
 
 def test_clear_rtt_ids_wipes_the_old_blocks():

@@ -4,7 +4,7 @@
 
 OEP のプローブの SWD につないだ Arm のボードを、書いて、動かして、止めて調べます。道は 2 つです。
 
-- **Arduino IDE から**: 「書き込み」ボタンと「デバッグ」ボタン。コアにも IDE の設定にも手を入れません。ブローカーを 1 つ起動しておくだけです。
+- **Arduino IDE から**: 「書き込み」ボタンと「デバッグ」ボタン。コアにも IDE の設定にも手を入れません。IDE のサーバーを 1 つ起動しておき、デバッグにはスケッチのフォルダに `debug_custom.json` を置きます。
 - **OEP のホストから直接**: コマンド、gdb、pytest、Python。
 
 対象は RP2040 のボード（Raspberry Pi Pico など、arduino-pico）のコア 0 です。
@@ -23,34 +23,34 @@ OEP のプローブの SWD につないだ Arm のボードを、書いて、動
 
 ## 2. Arduino IDE から
 
-### 2.1 ブローカーを起動する
+### 2.1 IDE のサーバーを起動する
 
 ```
 pip install oep-client-python
-python -m oep_client.ota_broker oep://<unit id>/pico=rpipico --gdb-port 3333
+python -m oep_client.ide oep://<unit id>/pico=rpipico --gdb-port 3333
 ```
 
 - `=rpipico` は IDE に見せるボードの名前です（省くと `rpipico`）。口はいくつでも並べられます。口ごとに、ネットワークのポートが 1 つと、
   gdb のポートが 1 つ（`--gdb-port` から順に）できます。
-- ブローカーは、書き込みが来たときと gdb がつながっている間だけプローブを使います。ほかの時間は、ほかの道具がそのプローブを使えます。
+- IDE のサーバーは、書き込みが来たときと gdb がつながっている間だけプローブを使います。ほかの時間は、ほかの道具がそのプローブを使えます。
 - 起動の行に、口ごとの名前、UDP のポート、gdb のポートが出ます。
 
 ### 2.2 書き込む
 
 1. IDE でボード（Raspberry Pi Pico など）を選びます。
-2. 「ツール > ポート」で、ネットワークのポート `oep-<unit id>-<口> at <アドレス>` を選びます。ブローカーを起動してから一覧に出るまで、数秒
+2. 「ツール > ポート」で、ネットワークのポート `oep-<unit id>-<口> at <アドレス>` を選びます。IDE のサーバーを起動してから一覧に出るまで、数秒
    かかることがあります。
 3. 「書き込み」を押します。パスワードを聞かれたら、空のまま OK します。
 
-ブローカーは、IDE が送る `.bin` を MD5 で確かめてから SWD で書き、読み返して確かめ、ボードを起動し直します。
+IDE のサーバーは、IDE が送る `.bin` を MD5 で確かめてから SWD で書き、読み返して確かめ、ボードを起動し直します。
 
-仕組み: ブローカーは口ごとに mDNS の `_arduino._tcp` を名乗り（TXT は `board`、`auth_upload=no`、`tcp_check=no`、`ssh_upload=no`）、
+仕組み: IDE のサーバーは口ごとに mDNS の `_arduino._tcp` を名乗り（TXT は `board`、`auth_upload=no`、`tcp_check=no`、`ssh_upload=no`）、
 コアのネットワーク書き込み（arduino-pico の `tools/espota.py`）の受け手になります。名乗るアドレスは 1 つで、LAN のものです（`--interface` で
 選べます）。
 
 ### 2.3 デバッグする
 
-スケッチのフォルダに `debug_custom.json` を置き、IDE のデバッグをブローカーの gdb サーバーへ向けます。
+スケッチのフォルダに `debug_custom.json` を置き、IDE のデバッグをIDE のサーバーの gdb サーバーへ向けます。
 
 ```json
 [
@@ -67,8 +67,8 @@ python -m oep_client.ota_broker oep://<unit id>/pico=rpipico --gdb-port 3333
   `.theia/launch.json` に書く値を写すのが確実です。
 - 「デバッグ」を押すと、IDE はスケッチを書き込み（gdb の `load`）、コアをリセットして止め、`main` で止まります。ブレークポイント、ステップ、
   一時停止、変数とレジスタの表示が使えます。
-- gdb サーバーは 127.0.0.1 だけで待ちます。IDE はブローカーと同じ PC で動かします。
-- デバッグの間に「書き込み」を押しても、gdb は切れません。ブローカーは gdb のセッションの中で書き、コアだけをリセットして走らせます。
+- gdb サーバーは 127.0.0.1 だけで待ちます。IDE はIDE のサーバーと同じ PC で動かします。
+- デバッグの間に「書き込み」を押しても、gdb は切れません。IDE のサーバーは gdb のセッションの中で書き、コアだけをリセットして走らせます。
 
 ### 2.4 コンソール
 
@@ -92,7 +92,7 @@ oep settings set oep://<unit id> oep.fixture.uart/0 passthrough.cdc0.rx=GPIO12 p
 ### 3.1 書く
 
 ```
-python -m oep_client.rp2040_peer flash oep://<unit id>/pico sketch.ino.elf
+python -m oep_client.rp2040_swd flash oep://<unit id>/pico sketch.ino.elf
 ```
 
 ELF（flash の中の読み込む部分を並べる）か `.bin`（0x10000000 からの flash の中身）を書き、読み返して確かめ、ボードを起動し直します。
@@ -102,7 +102,7 @@ ELF（flash の中の読み込む部分を並べる）か `.bin`（0x10000000 �
 UART の線が無くても、ボードの RAM の RTT のリングを SWD で読めます（スケッチが RTT を使うとき）。
 
 ```
-python -m oep_client.rp2040_peer console oep://<unit id>/pico 10       # 10 秒の間、出力を表示する
+python -m oep_client.rp2040_swd console oep://<unit id>/pico 10       # 10 秒の間、出力を表示する
 ```
 
 pyserial からは、`oep_client.pyserial` を登録すると `oep://` を開けます。
@@ -115,8 +115,8 @@ port = serial.serial_for_url("oep://<unit id>/pico")
 
 ### 3.3 gdb で
 
-ブローカーの gdb サーバーに、コアに付いてくる gdb（arduino-pico なら `arm-none-eabi-gdb`）でつなぎます。書き込みの受け手が要らなければ、
-ブローカーをこの用途だけに起動しても同じです。
+IDE のサーバーの gdb サーバーに、コアに付いてくる gdb（arduino-pico なら `arm-none-eabi-gdb`）でつなぎます。書き込みの受け手が要らなければ、
+IDE のサーバーをこの用途だけに起動しても同じです。
 
 ```
 arm-none-eabi-gdb sketch.ino.elf
@@ -135,7 +135,7 @@ arm-none-eabi-gdb sketch.ino.elf
 | `halt` | 止める |
 | `resume`（`go`） | 走らせる |
 
-gdb のつながっている間、ブローカーはプローブのロックを持ち、5 秒ごとに keepalive を送ります。
+gdb のつながっている間、IDE のサーバーはプローブのロックを持ち、5 秒ごとに keepalive を送ります。
 
 ### 3.4 pytest（pytest-embedded-arduino-cli の相手のボード）
 
@@ -147,7 +147,7 @@ pytest_plugins = ["oep_client.pytest_rp2040_peer"]
 
 - 相手のアドレスは環境変数 `TEST_SERIAL_PORT_PEER_<名前>=oep://<unit id>/<口>` で渡します。
 - 相手のプロファイルは、arduino-pico の書き込みの方式を `uploadmethod=picoprobe_cmsis_dap` にします。プラグインが相手のフォルダに
-  OpenOCD の設定（`interface/cmsis-dap.cfg`、`target/rp2040.cfg`）を作り、書き込みを `rp2040_peer flash` に渡します。作られたファイルは
+  OpenOCD の設定（`interface/cmsis-dap.cfg`、`target/rp2040.cfg`）を作り、書き込みを `rp2040_swd flash` に渡します。作られたファイルは
   git に入れません。
 - 相手の機器のロックは、その口のもの（`rp2040-swd:<アドレス>`）です。
 
@@ -177,5 +177,6 @@ hst.link.close()
 
 ### 3.6 ほかの道具とプローブを分ける
 
-同じプローブを ch32rv のブローカーが使っているときは、`rp2040_peer` はそのロックを分けてもらいます（ch32rv の名前付きの拡張
-`io.github.ch32-riscv-ug.share`）。ch32rv が動いていなければ、プローブを直接開きます。
+同じプローブを broker（OEP の host ガイド §7）が受け持っているときは、`rp2040_swd` と IDE のサーバーはそのロックを分けてもらいます
+（`oep_client.brokers`: 環境変数 `OEP_BROKER`、利用者の `oep/brokers/<unit_id>.json`、相乗りの拡張 `oep.probe.share`）。broker が
+いなければ、プローブを直接開きます。

@@ -1,4 +1,4 @@
-"""pytest-embedded-arduino-cli peers that are RP2040 boards on an OEP probe's SWD (oep_client.rp2040_peer), enabled by
+"""pytest-embedded-arduino-cli peers that are RP2040 boards on an OEP probe's SWD (oep_client.rp2040_swd), enabled by
 `pytest_plugins = ["oep_client.pytest_rp2040_peer"]` in a conftest.py.
 
 A peer `peer_<name>/` is such a peer when its address, the environment variable `TEST_SERIAL_PORT_PEER_<NAME>` (the
@@ -7,7 +7,7 @@ Then:
 
 - its console: pyserial opens `oep://...` as the RTT console over SWD (oep_client.pyserial is registered);
 - its upload: `interface/cmsis-dap.cfg` and `target/rp2040.cfg` are generated in the peer's directory (keep them out of
-  git), so arduino-pico's OpenOCD hands the ELF to `python -m oep_client.rp2040_peer flash` instead of a CMSIS-DAP;
+  git), so arduino-pico's OpenOCD hands the ELF to `python -m oep_client.rp2040_swd flash` instead of a CMSIS-DAP;
 - its device lock: its own (`rp2040-swd:<address>`), not the probe's - it shares the probe with the DUT through ch32rv's
   broker;
 - the broker: when the DUT is ch32rv's (pytest-embedded-arduino-cli-ch32rv's `ch32rv` fixture), its ch32rv goes to the
@@ -22,7 +22,7 @@ import pathlib
 import pytest
 import serial
 
-from . import rp2040_peer
+from . import rp2040_swd
 
 if "oep_client.pyserial" not in serial.protocol_handler_packages:
     serial.protocol_handler_packages.append("oep_client.pyserial")
@@ -48,7 +48,7 @@ def pytest_collection_modifyitems(session, config, items):
             address = os.environ.get(_env_name(name), "")
             yaml = peer_dir / "sketch.yaml"
             if address.startswith("oep://") and yaml.exists() and "picoprobe_cmsis_dap" in yaml.read_text():
-                rp2040_peer.write_openocd_hook(str(peer_dir), _env_name(name))
+                rp2040_swd.write_openocd_hook(str(peer_dir), _env_name(name))
 
 
 def pytest_arduino_cli_device_lock_key(config, port):

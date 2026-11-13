@@ -62,7 +62,7 @@ names starting with `_`, may change. Check probe/client compatibility using the 
 | `registry` | generated from oep-spec's number table (never edited; copied again from oep-spec). The public way to reach an interface by name is `registry.INTERFACES[name]` (`.revision`, `.op`, `.tlv`, `.enum`, e.g. `INTERFACES["oep.fixture.uart"].enum["role"]`); the module-level names (`FIXTURE_UART`, ...) are the same objects |
 | `arm` | `oep.wire.swd`, `oep.target.arm-adi`, MEM-AP, halting and calling functions on a Cortex-M |
 | `ch32_flash` | writing a CH32 (a RAM loader, page by page) |
-| `ota_broker` | the Arduino IDE's network upload, received and written through an OEP probe; a GDB server too ([docs/swd.md](docs/swd.md)) |
+| `ide` | the Arduino IDE's network upload, received and written through an OEP probe; a GDB server too ([docs/swd.md](docs/swd.md)) |
 | `gdb_server` | GDB's remote protocol for a Cortex-M on an OEP probe's SWD (registers, memory, run / stop / step, FPB breakpoints, load into flash) |
 | `rp2350` | flash and reboot through the RP2350 boot ROM |
 | `uiapduino` | into and out of the UIAPduino bootloader |

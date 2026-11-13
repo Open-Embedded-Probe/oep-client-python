@@ -1,4 +1,4 @@
-"""ota_broker: espota's uploader side against the broker, the writer a fake (no probe)."""
+"""ide: espota's uploader side against the server, the writer a fake (no probe)."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import time
 
 import pytest
 
-from oep_client import ota_broker as ob
+from oep_client import ide as ob
 
 
 def upload(port: int, payload: bytes, piece: int = 1460, command: int = ob.FLASH) -> tuple[bytes, bytes]:
@@ -48,12 +48,12 @@ def upload(port: int, payload: bytes, piece: int = 1460, command: int = ob.FLASH
 
 
 @pytest.fixture
-def broker_with():
+def server_with():
     made = []
 
     def make(writer, board="rpipico"):
         t = ob.Target(address="oep://fafe00000001/pico", board=board, writer=writer)
-        b = ob.Broker([t], announce=False, log=lambda m: None)
+        b = ob.Server([t], announce=False, log=lambda m: None)
         th = threading.Thread(target=b.serve, daemon=True)
         th.start()
         made.append((b, th))
@@ -82,37 +82,37 @@ def test_names_and_writers():
             ob.writer_for(board)
 
 
-def test_upload_written(broker_with):
+def test_upload_written(server_with):
     got = {}
 
     def writer(address, path, log):
         got["address"], got["data"] = address, open(path, "rb").read()
-    t = broker_with(writer)
+    t = server_with(writer)
     payload = os.urandom(5000)
     answer, tail = upload(t.udp_port, payload)
     assert answer == b"OK" and b"OK" in tail
     assert got == {"address": "oep://fafe00000001/pico", "data": payload}
 
 
-def test_write_failure_is_an_error(broker_with):
+def test_write_failure_is_an_error(server_with):
     def writer(address, path, log):
         raise RuntimeError("no target")
-    t = broker_with(writer)
+    t = server_with(writer)
     answer, tail = upload(t.udp_port, b"x" * 100)
     assert answer == b"OK" and tail.startswith(b"ERROR") and b"no target" in tail
 
 
-def test_slow_write_keeps_the_uploader_waiting(broker_with, monkeypatch):
+def test_slow_write_keeps_the_uploader_waiting(server_with, monkeypatch):
     monkeypatch.setattr(ob, "KEEPALIVE", 0.1)
     def writer(address, path, log):
         time.sleep(0.5)
-    t = broker_with(writer)
+    t = server_with(writer)
     answer, tail = upload(t.udp_port, b"y" * 3000)
     assert answer == b"OK" and tail.endswith(b"OK") and tail.count(b"0") >= 2
 
 
-def test_md5_mismatch_and_other_commands(broker_with):
-    t = broker_with(lambda a, p, l: None)
+def test_md5_mismatch_and_other_commands(server_with):
+    t = server_with(lambda a, p, l: None)
     assert upload(t.udp_port, b"z", command=ob.FILESYSTEM)[0].startswith(b"ERR")
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.bind(("127.0.0.1", 0))
@@ -139,10 +139,10 @@ def _core_espota() -> str | None:
 
 
 @pytest.mark.skipif(_core_espota() is None, reason="arduino-pico's espota.py is not installed here")
-def test_the_cores_espota(broker_with, tmp_path):
+def test_the_cores_espota(server_with, tmp_path):
     """arduino-pico's own tools/espota.py, as its uf2conv-network upload pattern runs it."""
     got = {}
-    t = broker_with(lambda a, p, l: got.setdefault("data", open(p, "rb").read()))
+    t = server_with(lambda a, p, l: got.setdefault("data", open(p, "rb").read()))
     image = tmp_path / "sketch.ino.bin"
     image.write_bytes(os.urandom(20000))
     r = subprocess.run([sys.executable, "-I", _core_espota(), "-i", "127.0.0.1", "-p", str(t.udp_port), "--auth=",

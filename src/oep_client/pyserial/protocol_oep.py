@@ -1,5 +1,5 @@
 """pyserial's handler for oep://<probe>/<port>: an RP2040 peer's console over the probe's SWD (SEGGER RTT through the
-MEM-AP, oep_client.rp2040_peer.Console). Baud rate, parity and the control lines mean nothing here and are taken as
+MEM-AP, oep_client.rp2040_swd.Console). Baud rate, parity and the control lines mean nothing here and are taken as
 given. A console that stops (the session lost, the target gone) raises on the next read."""
 
 from __future__ import annotations
@@ -8,7 +8,7 @@ import time
 
 from serial.serialutil import PortNotOpenError, SerialBase, SerialException
 
-from ..rp2040_peer import Console
+from ..rp2040_swd import Console
 
 
 class Serial(SerialBase):

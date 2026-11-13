@@ -2,14 +2,14 @@
 
 The Arduino IDE (arduino-cli) lists a network port for each `_arduino._tcp` service it finds over mDNS, and a core's
 network upload (`upload.tool.network`: arduino-pico's uf2conv-network, arduino-esp32's esp_ota) runs the core's own
-`espota.py` against it. This broker announces one such service per OEP port and answers espota as a board's ArduinoOTA
+`espota.py` against it. This server announces one such service per OEP port and answers espota as a board's ArduinoOTA
 would; what it receives it writes through the probe. Nothing of the core is changed (no platform.local.txt): pick the
-broker's network port in the IDE and press Upload.
+server's network port in the IDE and press Upload.
 
-    python -m oep_client.ota_broker oep://<probe>/<port>[=<board>] ...
+    python -m oep_client.ide oep://<probe>/<port>[=<board>] ...
 
 - `<board>` is the board id put in the TXT `board` (the IDE shows it; default rpipico). The writer is chosen by the
-  board's family (`writer_for`): RP2040 boards are written over SWD by `rp2040_peer.flash`.
+  board's family (`writer_for`): RP2040 boards are written over SWD by `rp2040_swd.flash`.
 - One UDP port per target (`--udp-port` the first, the rest after it; 0: any free one), announced as the service's
   port. The TXT says auth_upload=no, tcp_check=no, ssh_upload=no: espota sends no password.
 
@@ -19,7 +19,7 @@ espota's protocol (the core's tools/espota.py, the uploader's side):
 2. The board connects to the uploader's TCP port (10 s). The uploader sends the file in pieces of 1460 bytes and,
    after each, waits up to 10 s for an answer (the board sends the count received as digits).
 3. After the last piece the uploader reads until it sees `O` (OK) or `E` (ERROR), each read waiting up to 60 s.
-   Digits are neither: the broker sends one every few seconds while the probe writes, so a write longer than a
+   Digits are neither: the server sends one every few seconds while the probe writes, so a write longer than a
    minute still ends in its OK.
 """
 
@@ -78,19 +78,19 @@ def board_family(board: str) -> str:
 
 
 def writer_for(board: str) -> Writer:
-    """The writer for a board id: RP2040 boards over SWD (rp2040_peer.flash, the RP2040's core 0 and boot ROM)."""
+    """The writer for a board id: RP2040 boards over SWD (rp2040_swd.flash, the RP2040's core 0 and boot ROM)."""
     family = board_family(board)
     if family == "rp2040":
         def write(address: str, path: str, log: Callable[[str], None]) -> None:
-            from . import rp2040_peer
-            rp2040_peer.flash(address, path, log=log)
+            from . import rp2040_swd
+            rp2040_swd.flash(address, path, log=log)
         return write
     raise ValueError(f"board {board!r}: no writer for it (RP2040 boards only)")
 
 
 def instance_name(address: str) -> str:
     """oep://<probe>/<port> -> oep-<probe>-<port>, a name the IDE shows ("<name> at <ip>")."""
-    from .rp2040_peer import parse
+    from .rp2040_swd import parse
     unit, port = parse(address)
     safe = "".join(c if c.isalnum() or c == "-" else "-" for c in port.lower())
     return f"oep-{unit}-{safe}"
@@ -188,7 +188,7 @@ def _send(conn: socket.socket, data: bytes) -> None:
         pass
 
 
-class Broker:
+class Server:
     """The UDP ports and the mDNS announcements of the targets; `serve()` answers invitations until `stop()`."""
 
     def __init__(self, targets: list[Target], interfaces: list[str] | None = None, engine: str = "auto",
@@ -301,7 +301,7 @@ def parse_target(text: str) -> Target:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(prog="python -m oep_client.ota_broker",
+    ap = argparse.ArgumentParser(prog="python -m oep_client.ide",
                                  description="Answer Arduino's network upload for boards on OEP probes.")
     ap.add_argument("targets", nargs="+", metavar="oep://PROBE/PORT[=BOARD]",
                     help="an OEP port and the board id the IDE should show (default rpipico)")
@@ -324,16 +324,16 @@ def main(argv=None) -> int:
 
     def log(msg: str) -> None:
         print(time.strftime("%H:%M:%S"), msg, flush=True)
-    broker = Broker(targets, interfaces=args.interface, engine=args.engine, log=log)
+    server = Server(targets, interfaces=args.interface, engine=args.engine, log=log)
     for t in targets:
         log(f"{t.name}: {t.address} as {t.board}, UDP {t.udp_port}" + (f", gdb 127.0.0.1:{t.gdb_port}"
                                                                          if t.gdb_port else ""))
     try:
-        broker.serve()
+        server.serve()
     except KeyboardInterrupt:
         pass
     finally:
-        broker.close()
+        server.close()
     return 0
 
 

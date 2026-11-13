@@ -4,8 +4,8 @@
 
 An Arm board on an OEP probe's SWD is written, run, stopped and inspected. Two ways:
 
-- **From the Arduino IDE**: its Upload and Debug buttons. Neither the core nor the IDE's settings change; one broker is
-  started beforehand.
+- **From the Arduino IDE**: its Upload and Debug buttons. Neither the core nor the IDE's settings change: one IDE server is
+  started beforehand, and Debug takes a `debug_custom.json` in the sketch folder.
 - **From an OEP host directly**: commands, gdb, pytest, Python.
 
 The target is an RP2040 board's core 0 (a Raspberry Pi Pico and the like, arduino-pico).
@@ -25,34 +25,34 @@ The target is an RP2040 board's core 0 (a Raspberry Pi Pico and the like, arduin
 
 ## 2. From the Arduino IDE
 
-### 2.1 Start the broker
+### 2.1 Start the IDE server
 
 ```
 pip install oep-client-python
-python -m oep_client.ota_broker oep://<unit id>/pico=rpipico --gdb-port 3333
+python -m oep_client.ide oep://<unit id>/pico=rpipico --gdb-port 3333
 ```
 
 - `=rpipico` is the board name the IDE is shown (`rpipico` when left out). Give as many ports as you like: each gets a
   network port and a GDB port (from `--gdb-port` on).
-- The broker uses the probe only while an upload comes in and while gdb is connected; other tools have it otherwise.
+- The IDE server uses the probe only while an upload comes in and while gdb is connected; other tools have it otherwise.
 - Its first lines give each port's name, UDP port and GDB port.
 
 ### 2.2 Upload
 
 1. Pick the board (Raspberry Pi Pico or another) in the IDE.
 2. In Tools > Port pick the network port `oep-<unit id>-<port> at <address>`. It may take a few seconds after the
-   broker starts to be listed.
+   IDE server starts to be listed.
 3. Press Upload. Leave the password empty when asked.
 
-The broker checks the `.bin` the IDE sends by its MD5, writes it over SWD, reads it back and restarts the board.
+The IDE server checks the `.bin` the IDE sends by its MD5, writes it over SWD, reads it back and restarts the board.
 
-How: for each port the broker announces `_arduino._tcp` over mDNS (TXT `board`, `auth_upload=no`, `tcp_check=no`,
+How: for each port the IDE server announces `_arduino._tcp` over mDNS (TXT `board`, `auth_upload=no`, `tcp_check=no`,
 `ssh_upload=no`) and answers the core's network upload (arduino-pico's `tools/espota.py`). It announces one address, a
 LAN one (`--interface` picks it).
 
 ### 2.3 Debug
 
-Put `debug_custom.json` in the sketch folder to point the IDE's debugger at the broker's GDB server:
+Put `debug_custom.json` in the sketch folder to point the IDE's debugger at the IDE server's GDB server:
 
 ```json
 [
@@ -69,8 +69,8 @@ Put `debug_custom.json` in the sketch folder to point the IDE's debugger at the 
   way is to copy the value the IDE writes to the sketch folder's `.theia/launch.json` once a debug session has started.
 - Debug writes the sketch (gdb's `load`), resets the core halted and stops at `main`. Breakpoints, stepping, pausing,
   variables and registers work.
-- The GDB server listens on 127.0.0.1 only: run the IDE on the broker's PC.
-- Upload while debugging keeps gdb connected: the broker writes within gdb's session and resets the core alone to run.
+- The GDB server listens on 127.0.0.1 only: run the IDE on the IDE server's PC.
+- Upload while debugging keeps gdb connected: the IDE server writes within gdb's session and resets the core alone to run.
 
 ### 2.4 Console
 
@@ -96,7 +96,7 @@ oep settings set oep://<unit id> oep.fixture.uart/0 passthrough.cdc0.rx=GPIO12 p
 ### 3.1 Write
 
 ```
-python -m oep_client.rp2040_peer flash oep://<unit id>/pico sketch.ino.elf
+python -m oep_client.rp2040_swd flash oep://<unit id>/pico sketch.ino.elf
 ```
 
 An ELF (its loadable parts in flash, laid out) or a `.bin` (the flash from 0x10000000) is written, read back and the
@@ -107,7 +107,7 @@ board restarted.
 Without a UART wire, the board's RTT rings in RAM are read over SWD (when the sketch uses RTT):
 
 ```
-python -m oep_client.rp2040_peer console oep://<unit id>/pico 10       # print the output for 10 s
+python -m oep_client.rp2040_swd console oep://<unit id>/pico 10       # print the output for 10 s
 ```
 
 From pyserial, `oep://` opens once `oep_client.pyserial` is registered:
@@ -120,7 +120,7 @@ port = serial.serial_for_url("oep://<unit id>/pico")
 
 ### 3.3 With gdb
 
-Connect the core's own gdb (arduino-pico's `arm-none-eabi-gdb`) to the broker's GDB server. A broker started for this
+Connect the core's own gdb (arduino-pico's `arm-none-eabi-gdb`) to the IDE server's GDB server. An IDE server started for this
 alone works the same when no upload is needed.
 
 ```
@@ -140,7 +140,7 @@ arm-none-eabi-gdb sketch.ino.elf
 | `halt` | stop |
 | `resume` (`go`) | run |
 
-While gdb is connected the broker holds the probe's lock, a keepalive every 5 s.
+While gdb is connected the IDE server holds the probe's lock, a keepalive every 5 s.
 
 ### 3.4 pytest (a peer board of pytest-embedded-arduino-cli)
 
@@ -153,7 +153,7 @@ pytest_plugins = ["oep_client.pytest_rp2040_peer"]
 - The peer's address comes in the environment variable `TEST_SERIAL_PORT_PEER_<NAME>=oep://<unit id>/<port>`.
 - The peer's profile uses arduino-pico's upload method `uploadmethod=picoprobe_cmsis_dap`. The plugin writes OpenOCD
   files into the peer's folder (`interface/cmsis-dap.cfg`, `target/rp2040.cfg`) that hand the upload to
-  `rp2040_peer flash`. Keep them out of git.
+  `rp2040_swd flash`. Keep them out of git.
 - The peer's device lock is its port's own (`rp2040-swd:<address>`).
 
 ### 3.5 From Python
@@ -183,5 +183,6 @@ hst.link.close()
 
 ### 3.6 Sharing the probe with other tools
 
-When ch32rv's broker has the probe, `rp2040_peer` shares its lock (ch32rv's named extension
-`io.github.ch32-riscv-ug.share`). Without ch32rv running it opens the probe directly.
+When a broker (OEP host guide §7) serves the probe, `rp2040_swd` and the IDE server share its lock (`oep_client.brokers`:
+the environment variable `OEP_BROKER`, the user's `oep/brokers/<unit_id>.json`, the sharing extension
+`oep.probe.share`). Without a broker they open the probe directly.
