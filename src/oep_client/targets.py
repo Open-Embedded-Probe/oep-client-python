@@ -125,9 +125,9 @@ FAMILIES: tuple[Family, ...] = (
     Family("ch32l103", "rvswd", max_speed=1_000_000, idle_clock="low", gpio_ports="ABCD", gpio_pads=16,
            debug_pads=("PA13", "PA14"),
            notes="SWCLK resting high resets the debug link; over 1 MHz fails right after a reset; target_id not recorded"),
-    Family("ch32v20x", "rvswd", ids=((0xFFF00000, 0x20800000),), idle_clock="low", gpio_ports="ABCD", gpio_pads=16,
-           debug_pads=("PA13", "PA14"),
-           notes="the CH32V208 recorded (target_id 0x2080051c, CH32V208WBU6); the CH32V203's not yet"),
+    Family("ch32v20x", "rvswd", ids=((0xFFF00000, 0x20800000), (0xFFF00000, 0x20300000)), idle_clock="low",
+           gpio_ports="ABCD", gpio_pads=16, debug_pads=("PA13", "PA14"),
+           notes="the CH32V208 (target_id 0x2080051c, CH32V208WBU6) and the CH32V203 (0x20310500, CH32V203C8T6)"),
 )
 
 
