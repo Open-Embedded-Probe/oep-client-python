@@ -62,7 +62,7 @@ names starting with `_`, may change. Check probe/client compatibility using the 
 | `registry` | generated from oep-spec's number table (never edited; copied again from oep-spec). The public way to reach an interface by name is `registry.INTERFACES[name]` (`.revision`, `.op`, `.tlv`, `.enum`, e.g. `INTERFACES["oep.fixture.uart"].enum["role"]`); the module-level names (`FIXTURE_UART`, ...) are the same objects |
 | `arm` | `oep.wire.swd`, `oep.target.arm-adi`, MEM-AP, halting and calling functions on a Cortex-M |
 | `ch32_flash` | writing a CH32 (a RAM loader, page by page) |
-| `pytest_plugin` | pytest-embedded-arduino-cli's OEP plugin, loaded by itself with the `pytest` extra: the probe's lock `probe:<unit_id>`, the port's record `port_memo` (`.env`'s `OEP_PORT_MEMO_*`, else the probe's memo), the `oep://` console, an RP2040 board's upload over SWD ([docs/pytest.md](docs/pytest.md)) |
+| `pytest_plugin` | pytest-embedded-arduino-cli's OEP plugin, loaded by itself with the `pytest` extra: the probe's lock `probe:<unit_id>`, the port's record `port_memo` (`.env`'s `OEP_PORT_MEMO_*`, else the probe's memo), the `oep://` console, an RP2040 board's upload over SWD, the session `oep_host` and the UART `oep_uart` ([docs/pytest.md](docs/pytest.md)) |
 | `brokers` | finding the broker that serves a probe (`OEP_BROKER`, the user's `oep/brokers/<unit_id>.json`) and sharing its lock with `oep.probe.share` (OEP host guide §7) |
 | `ide` | the Arduino IDE's network upload, received and written through an OEP probe; a GDB server too ([docs/swd.md](docs/swd.md)) |
 | `gdb_server` | GDB's remote protocol for a Cortex-M on an OEP probe's SWD (registers, memory, run / stop / step, FPB breakpoints, load into flash) |

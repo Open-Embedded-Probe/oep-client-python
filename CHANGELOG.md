@@ -1,6 +1,17 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) The pytest plugin's `oep_host` (an OEP session on the DUT's probe, sharing its broker's lock; behind the
+  platform's own monitor it waits for the broker up to the ini `oep_broker_wait`, 10 s) and `oep_uart` (`open(baud)`:
+  an oep.fixture.uart on the port's `<port>.rx` / `<port>.tx`, a Dut-like channel with expect / expect_exact / write).
+  `link.open_host` reaches an `oep://` probe through its broker when one serves it (host guide §7.2) and its opens
+  carry `oep.probe.share` (`Host.open_extensions`); no session is kept then. `broker=False` opens the probe itself.
+  The `pytest` extra takes pexpect.
+- (JA) pytest のプラグインの `oep_host`（DUT のプローブとの OEP のセッション。broker のロックを分けてもらう。platform 自前のモニタの
+  ときは broker を ini の `oep_broker_wait`（10 秒）まで待つ）と `oep_uart`（`open(baud)`: 口の `<口>.rx` / `<口>.tx` の
+  oep.fixture.uart。expect / expect_exact / write を持つ Dut の形のチャンネル）。`link.open_host` は、broker が受け持つ `oep://` の
+  probe に broker 経由でつなぎ、open に `oep.probe.share` を付ける（`Host.open_extensions`。セッションは持ち越さない）。`broker=False`
+  で probe を直接開く。追加の依存 `pytest` に pexpect を足した。
 - (EN) `oep_client.pytest_plugin`, pytest-embedded-arduino-cli's OEP plugin, loaded by itself (`pytest11`) with the new
   `pytest` extra (pytest-embedded-arduino-cli >= 1.12.0): the lock name `probe:<unit_id>` for every port and route of a
   probe and for its own serial port; `port_memo` / `peer_port_memo(name)` / `port_memo_of(config, port)`, the port's

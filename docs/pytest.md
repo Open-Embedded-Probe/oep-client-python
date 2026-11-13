@@ -78,6 +78,24 @@ For a port `oep://<unit_id>/<port>` whose profile is an RP2040 board (fqbn `rp20
 ELF over the probe's SWD (pytest-embedded-arduino-cli's upload hook), whatever arduino-pico's upload method is.
 Anything else is arduino-cli's upload.
 
-## 6. Sharing with other tools
+## 6. The session and the UART
 
-When a broker (OEP host guide §7) serves the probe, the plugin shares its lock (`oep_client.brokers`).
+The test argument `oep_host` is an OEP session on the probe behind the DUT's port (`oep_host.host` is the Host,
+`oep_host.touch()` keeps the lease); quiet for longer than 60 s, it loses the session.
+
+`oep_uart.open(baud)` plans an `oep.fixture.uart` onto the port's lines labelled `<port>.rx` / `<port>.tx` (OEP host
+guide §5.3) and returns a channel with `expect`, `expect_exact` and `write` (pexpect, like `dut`; 30 s by default).
+
+```python
+def test_uart(dut, oep_uart):
+    ch = oep_uart.open(115200)
+    ch.write("ping\n")
+    ch.expect("pong")
+```
+
+## 7. Sharing with other tools
+
+When a broker (OEP host guide §7) serves the probe, the plugin shares its lock (`oep_client.brokers`). When the DUT's
+console runs through the platform's own monitor (pytest-embedded-arduino-cli wraps the port), that monitor holds the
+probe and publishes its broker a moment later; `oep_host` waits for it up to the ini value `oep_broker_wait` seconds
+(default 10).

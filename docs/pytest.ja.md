@@ -75,6 +75,23 @@ pyserial は `oep://...` を開けます（`oep_client.pyserial`）。RP2040 の
 ポートが `oep://<unit_id>/<口>` で、プロファイルが RP2040 のボード（fqbn が `rp2040:`）のとき、プラグインがビルドの ELF をプローブの SWD で書きます
 （pytest-embedded-arduino-cli の書き込みの hook）。arduino-pico の書き込みの方式は問いません。それ以外は arduino-cli の書き込みのままです。
 
-## 6. ほかの道具との相乗り
+## 6. セッションと UART
+
+試験の引数 `oep_host` は、DUT のポートの先のプローブとの OEP のセッションです（`oep_host.host` が Host、`oep_host.touch()` が lease を保つ）。
+60 秒より長く黙ると、セッションを失います。
+
+`oep_uart.open(baud)` は、口のラベル `<口>.rx` / `<口>.tx`（OEP の host ガイド §5.3）の線に `oep.fixture.uart` を割り当て、`expect`、
+`expect_exact`、`write` を持つチャンネルを返します（`dut` と同じ pexpect の形。既定の待ち時間は 30 秒）。
+
+```python
+def test_uart(dut, oep_uart):
+    ch = oep_uart.open(115200)
+    ch.write("ping\n")
+    ch.expect("pong")
+```
+
+## 7. ほかの道具との相乗り
 
 同じプローブを broker（OEP の host ガイド §7）が受け持っているときは、そのロックを分けてもらいます（`oep_client.brokers`）。
+DUT のコンソールが platform 自前のモニタを通るとき（pytest-embedded-arduino-cli がポートを包むとき）は、そのモニタがプローブを持ち、
+少し遅れて broker を公開します。`oep_host` は、それを ini の `oep_broker_wait` 秒（既定 10）まで待ちます。

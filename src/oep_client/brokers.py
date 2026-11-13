@@ -109,6 +109,8 @@ def connect(broker: Broker, *, timeout: float = 3.0):
             lk = link.SerialLink.on_stream(link.TcpStream(address, port), "length", timeout)
         except OSError:
             continue
+        lk.resend = False                         # the broker retries towards the probe itself (link.open_host)
+        lk.transport = "tcp"
         h = oh.Host(lk.send)
         lk.attach_host(h)
         h.link = lk

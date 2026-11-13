@@ -1604,7 +1604,7 @@ TCP_TIMEOUT = 15.0   # behind a broker: outlast its own 3 s retry towards the pr
 
 def open_host(target: str, timeout: float | None = None, resend: bool | None = None, *, baud: int = BASE_BAUD,
               port_speed=None, flows=None, verify: bool | None = None, record=False, max_tries: int | None = None,
-              lease_ms: int = 3000, owner: str | None = None, keep_session: bool = True):
+              lease_ms: int = 3000, owner: str | None = None, keep_session: bool = True, broker: bool = True):
     """A Host on `target`, with the link's pipelining bound to the probe's limits (core confirm): Host.pipeline and
     everything built on it (flash, capture reads) then keep several requests in flight.
 
@@ -1637,8 +1637,12 @@ def open_host(target: str, timeout: float | None = None, resend: bool | None = N
     keep_session (default on): the host keeps the id of the session it opens in a file per probe (`kept_session`,
     keyed by unit_id), and its first open ends the session a previous run left there (host guide §5: a probe keeps a
     session across a closed transport, transports §3) - so a host run again after a crash or a kill does not meet its
-    own old lock. Off: nothing is read or written."""
-    hst = _open_host(target, timeout, resend, baud=baud, keep_session=keep_session)
+    own old lock. Off: nothing is read or written.
+
+    broker (default on): an oep:// address whose probe a broker serves (host guide §7.2: OEP_BROKER, else the user's
+    oep/brokers/<unit_id>.json) is reached through the broker, and its opens carry the sharing extension it takes
+    (oep.probe.share, §7.1); no session is kept then (the broker drops a client's session when it goes)."""
+    hst = _open_host(target, timeout, resend, baud=baud, keep_session=keep_session, broker=broker)
     if port_speed:
         from . import core
         candidates = DEFAULT_CANDIDATES if port_speed is True else port_speed
@@ -1773,11 +1777,30 @@ def _open_address(addr: Address, timeout: float | None, baud: int = BASE_BAUD):
     return hst
 
 
-def _open_host(target: str, timeout: float | None, resend: bool | None, *, baud: int, keep_session: bool):
+def _through_broker(addr: Address, timeout: float | None):
+    """A Host on the broker that serves addr's probe (host guide §7.2: OEP_BROKER, else the user's file; describe's
+    unit_id checked), its opens carrying the broker's sharing extension; None without one."""
+    from . import brokers
+    b = brokers.find(addr.probe)
+    hst = brokers.connect(b, timeout=TCP_TIMEOUT if timeout is None else timeout) if b else None
+    if hst is None:
+        return None
+    hst.address = addr
+    hst.open_extensions = (brokers.SHARE,) if brokers.SHARE in b.share else ()
+    return hst
+
+
+def _open_host(target: str, timeout: float | None, resend: bool | None, *, baud: int, keep_session: bool,
+               broker: bool = True):
     """open_host without its port_speed step."""
     from . import host
     if target.lower().startswith("oep://"):
         addr = parse_address(target)
+        hst = _through_broker(addr, timeout) if broker else None
+        if hst is not None:
+            if resend is not None:
+                hst.link.resend = resend
+            return hst                                   # the broker keeps the session's life (host guide §7.1)
         hst = _open_address(addr, timeout, baud)
         if resend is not None:
             hst.link.resend = resend

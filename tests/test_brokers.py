@@ -102,3 +102,27 @@ def test_open_host_falls_back_to_the_probe_without_a_broker(monkeypatch):
     monkeypatch.setattr(link, "open_host", lambda target: opened.append(target) or Direct())
     brokers.open_host("30eda0e31108", "me", direct="oep://30eda0e31108?via=usb")
     assert opened == ["oep://30eda0e31108?via=usb", (brokers.LEASE_MS, "me")]
+
+
+def test_open_host_goes_through_the_broker_and_asks_to_share(tcp_probe, monkeypatch):
+    from oep_client import host as oh, message as m
+    unit, port = tcp_probe
+    monkeypatch.setenv(brokers.ENV, f"127.0.0.1:{port}")
+    h = link.open_host(f"oep://{unit}")
+    try:
+        assert h.kept is None and h.open_extensions == (brokers.SHARE,)
+        with pytest.raises(oh.Unsupported) as e:                 # the virtual probe is no broker: it refuses the share
+            h.open(3000, owner="cli")
+        assert e.value.tag == m.TAG_NAMED_EXTENSION | m.TAG_CRITICAL
+    finally:
+        h.link.close()
+
+
+def test_open_host_without_a_broker_is_unchanged(monkeypatch):
+    monkeypatch.setattr(brokers, "find", lambda unit, environ=None: None)
+    seen = []
+    monkeypatch.setattr(link, "_open_address", lambda addr, timeout, baud: seen.append(addr) or (_ for _ in ()).throw(
+        FileNotFoundError("no probe")))
+    with pytest.raises(FileNotFoundError):
+        link.open_host("oep://30eda0e31108")
+    assert seen and seen[0].probe == "30eda0e31108"

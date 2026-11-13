@@ -25,7 +25,7 @@ usb-async = ["libusb1>=3"]   # queued asynchronous IN transfers: streaming near 
 hid = ["hidapi>=0.14"]      # the vendor HID way in through the OS HID driver (Windows without WinUSB, Linux hidraw)
 mdns = ["zeroconf>=0.131"]   # DNS-SD browsing through python-zeroconf (oep find, tcp:UNIT_ID); without it a minimal query of its own
 acquire = ["numpy>=2.0"]   # acquire: streams and capture format 1 blocks put together at once
-pytest = ["pytest-embedded-arduino-cli>=1.12.0"]   # the pytest plugin (oep_client.pytest_plugin): locks, port records, uploads
+pytest = ["pytest-embedded-arduino-cli>=1.12.0", "pexpect>=4.8"]   # the pytest plugin (oep_client.pytest_plugin): locks, port records, uploads
 
 [project.scripts]
 oep = "oep_client.__main__:main"
@@ -46,7 +46,7 @@ packages = ["src/oep_client"]
 only-include = ["src/oep_client", "tests", "docs", "udev", "README.md", "README.ja.md", "CHANGELOG.md", "LICENSE", "pyproject.toml"]
 
 [dependency-groups]
-dev = ["pytest>=8", "pytest-xdist>=3"]
+dev = ["pytest>=8", "pytest-xdist>=3", "pexpect>=4.8"]
 
 [tool.pytest.ini_options]
 markers = ["hw: needs a probe board (OEP_HW_BOARDS=<board-identify ids>); skipped otherwise (tests/hw/README.md)",

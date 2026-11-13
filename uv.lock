@@ -405,6 +405,7 @@ mdns = [
     { name = "zeroconf" },
 ]
 pytest = [
+    { name = "pexpect" },
     { name = "pytest-embedded-arduino-cli" },
 ]
 usb-async = [
@@ -413,6 +414,7 @@ usb-async = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "pexpect" },
     { name = "pytest" },
     { name = "pytest-xdist" },
 ]
@@ -422,6 +424,7 @@ requires-dist = [
     { name = "hidapi", marker = "extra == 'hid'", specifier = ">=0.14" },
     { name = "libusb1", marker = "extra == 'usb-async'", specifier = ">=3" },
     { name = "numpy", marker = "extra == 'acquire'", specifier = ">=2.0" },
+    { name = "pexpect", marker = "extra == 'pytest'", specifier = ">=4.8" },
     { name = "pyserial", specifier = ">=3.5" },
     { name = "pytest-embedded-arduino-cli", marker = "extra == 'pytest'", specifier = ">=1.12.0" },
     { name = "pyusb", specifier = ">=1.3" },
@@ -432,6 +435,7 @@ provides-extras = ["usb-async", "hid", "mdns", "acquire", "pytest"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "pexpect", specifier = ">=4.8" },
     { name = "pytest", specifier = ">=8" },
     { name = "pytest-xdist", specifier = ">=3" },
 ]

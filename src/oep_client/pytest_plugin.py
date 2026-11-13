@@ -12,6 +12,12 @@
 - **The console**: pyserial opens `oep://...` (oep_client.pyserial) - an RP2040's SEGGER RTT over the probe's SWD.
 - **The upload** (`pytest_arduino_cli_upload`): a port `oep://<probe>/<port>` whose profile is an RP2040 board is
   written here over the probe's SWD (oep_client.rp2040_swd); anything else is left to arduino-cli.
+- **The session** (`oep_host`): an OEP session on the probe behind the DUT's port, sharing a broker's lock when one
+  serves it. When the DUT's console runs through the platform's own monitor (pytest-embedded-arduino-cli wraps the port
+  for it), that monitor holds the probe and publishes its broker a moment later: the fixture waits for it, up to the
+  ini value `oep_broker_wait` seconds (default 10). `oep_host.host` is the Host; `oep_host.touch()` keeps the lease.
+- **The UART** (`oep_uart`): `oep_uart.open(baud)` -> a channel with expect / expect_exact / write (pexpect, like the
+  Dut), an oep.fixture.uart planned onto the port's lines labelled `<port>.rx` / `<port>.tx` (host guide §5.3).
 
 A broker that serves the probe is joined (oep_client.brokers, host guide §7).
 """
@@ -35,11 +41,16 @@ if "oep_client.pyserial" not in serial.protocol_handler_packages:
 PROBE_KEY = "probe:"
 MEMO_ENV = "OEP_PORT_MEMO_"
 OWNER_INI = "oep_memo_owner"
+WAIT_INI = "oep_broker_wait"
+LEASE_MS = 60000
+KEEPALIVE_S = 20.0
+EXPECT_TIMEOUT_S = 30.0            # pytest-embedded's Dut default
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addini(OWNER_INI, "The owner of the port records port_memo reads (<owner>/port/<port> on the probe, oep-if-memo "
                              "§4.1), e.g. io.github.example.mylib", default="")
+    parser.addini(WAIT_INI, "Seconds oep_host waits for the broker of a probe the platform's monitor holds", default="10")
 
 
 # ---- addresses --------------------------------------------------------------------------------------------------
@@ -222,3 +233,201 @@ def pytest_arduino_cli_upload(config, role, port, profile, fqbn, sketch_dir, bui
     from . import rp2040_swd
     rp2040_swd.flash(_bare(port), str(elf), log=lambda msg: None)
     return True
+
+
+# ---- the session and the UART -----------------------------------------------------------------------------------
+
+class OepHost:
+    """`oep_host`: a Host in a session on the probe (`host`), sharing a broker's lock when one serves it. `touch()`
+    sends a keepalive when the session has been quiet for a while; a test quiet for longer than the lease (60 s) loses
+    its session."""
+
+    def __init__(self, unit: str, owner: str):
+        import time
+        from . import brokers
+        self.host = brokers.open_host(unit, owner, lease_ms=LEASE_MS)
+        self._last = time.monotonic()
+
+    def touch(self) -> None:
+        import time
+        if time.monotonic() - self._last > KEEPALIVE_S:
+            self.host.keepalive()
+        self._last = time.monotonic()
+
+    def close(self) -> None:
+        try:
+            self.host.end()
+        except Exception:
+            pass
+        finally:
+            self.host.link.close()
+
+
+def _wait_for_broker(unit: str, seconds: float) -> None:
+    """Until the broker of `unit` answers (host guide §7.2), at most `seconds`."""
+    import time
+    from . import brokers
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        b = brokers.find(unit)
+        h = brokers.connect(b) if b else None
+        if h is not None:
+            h.link.close()
+            return
+        time.sleep(0.2)
+
+
+@pytest.fixture
+def oep_host(request: pytest.FixtureRequest):
+    """An OEP session on the probe behind the DUT's port (see the module)."""
+    port = _primary_port(request)
+    parts = oep_parts(port or "")
+    if not parts:
+        raise pytest.UsageError(f"oep_host: the DUT's port is not an OEP probe ({port!r}); name it oep://<unit_id>/<port>")
+    wrapped = port != _bare(port)
+    if wrapped:
+        request.getfixturevalue("dut")                  # its monitor starts first
+        _wait_for_broker(parts[0], float(request.config.getini(WAIT_INI) or 0))
+    session = OepHost(parts[0], owner="pytest oep_host")
+    yield session
+    session.close()
+
+
+class _Stream:
+    """pexpect over a read callback that returns what arrived without waiting (b"" for nothing yet)."""
+
+    def __new__(cls, read, timeout: float):
+        import time
+        import pexpect
+
+        class Stream(pexpect.spawnbase.SpawnBase):
+            def read_nonblocking(self, size: int = 1, timeout: float | None = -1) -> bytes:
+                if timeout == -1:
+                    timeout = self.timeout
+                end = None if timeout is None else time.monotonic() + timeout
+                while True:
+                    data = read()
+                    if data:
+                        self._log(data, "read")
+                        return data
+                    if end is not None and time.monotonic() >= end:
+                        raise pexpect.TIMEOUT("Timeout exceeded.")
+                    time.sleep(0.01)
+        return Stream(timeout=timeout)
+
+
+class Channel:
+    """A byte stream shaped like pytest-embedded's Dut for what a bench test does with it: expect / expect_exact
+    (pexpect's, with the Dut's keywords expect_all, not_matching, return_what_before_match; the default timeout 30 s;
+    pexpect.TIMEOUT when nothing matched) and write."""
+
+    def __init__(self, read, write, name: str):
+        self._write, self.name = write, name
+        self._proc = _Stream(read, EXPECT_TIMEOUT_S)
+
+    def write(self, data) -> None:
+        self._write(data.encode() if isinstance(data, str) else data)
+
+    def expect(self, pattern, **kwargs):
+        return self._expect(self._proc.expect, pattern, **kwargs)
+
+    def expect_exact(self, pattern, **kwargs):
+        return self._expect(self._proc.expect_exact, pattern, **kwargs)
+
+    def _expect(self, func, pattern, *, expect_all: bool = False, not_matching=(), return_what_before_match: bool = False,
+                **kwargs):
+        import re
+        import pexpect
+        if return_what_before_match and expect_all:
+            raise ValueError("`return_what_before_match` and `expect_all` cannot be `True` at the same time.")
+        patterns = list(pattern) if isinstance(pattern, (list, tuple)) else [pattern]
+        res = []
+        while patterns:
+            try:
+                index = func(patterns, **kwargs)
+            except (pexpect.EOF, pexpect.TIMEOUT) as e:
+                tail = bytes((self._proc.before or b"")[-200:])
+                raise e.__class__(f'{self.name}: not found "{pattern!s}"; last bytes: {tail!r}') from e
+            proc = self._proc
+            res.append(proc.before.rstrip() if proc.match in (pexpect.EOF, pexpect.TIMEOUT) else proc.match)
+            for nm in (not_matching if isinstance(not_matching, (list, tuple)) else [not_matching]):
+                rx = re.compile(nm.encode() if isinstance(nm, str) else
+                                nm.pattern.encode() if isinstance(nm.pattern, str) else nm.pattern)
+                if rx.search(proc.before):
+                    raise ValueError(f"The pattern {rx} should not have been matched.")
+            if not expect_all:
+                break
+            patterns.pop(index)
+        if return_what_before_match:
+            return self._proc.before
+        return res[0] if len(res) == 1 else res
+
+
+class OepUart:
+    """`oep_uart`: `open(baud)` (again to change the rate) plans an oep.fixture.uart onto the port's rx / tx lines and
+    returns its Channel. The plan is the oep_host session's."""
+
+    def __init__(self, session: OepHost, port_name: str | None, address: str):
+        self._session, self._port, self._address = session, port_name, address
+        self.channel: Channel | None = None
+        self._fn = None
+
+    def open(self, baud: int) -> Channel:
+        from . import core, fixture, host as oh, registry, settings
+        self.close()
+        h = self._session.host
+        RX, TX = (registry.FIXTURE_UART.enum["role"][r] for r in ("rx", "tx"))
+        labels = settings.labels(h)
+        ports = settings.ports_named(labels)
+        if self._port is None and len(ports) > 1:
+            raise RuntimeError(f"the probe names ports {', '.join(ports)}: give the test's port as oep://<probe>/<port>")
+        port_name = self._port if self._port is not None else (ports[0] if ports else None)
+        rx, tx = (settings.line_from_labels(labels, line, port_name) for line in ("rx", "tx"))
+        if rx is None or tx is None:
+            where = f"{port_name}." if port_name else ""
+            raise RuntimeError(f"no single {where}rx / {where}tx line in the probe's labels (rx {rx}, tx {tx}; ports: "
+                               f"{', '.join(ports) or 'none'})")
+        last = None
+        for fn in core.find_all(h, "oep.fixture.uart"):
+            io = fixture.FixtureUartIO(h, fn)
+            try:
+                core.plan_apply(h, [(fn, RX, rx), (fn, TX, tx)])
+            except oh.Rejected as e:
+                last = e
+                continue
+            try:
+                io.configure(baud)
+            except oh.Rejected as e:
+                last = e
+                core.plan_release(h, [fn])
+                continue
+
+            def read(io=io):
+                self._session.touch()
+                return io.read(io.MAX_READ)
+
+            def write(data: bytes, io=io):
+                self._session.touch()
+                io.write(data)
+            self._fn = fn
+            self.channel = Channel(read, write, f"uart {self._address} @{baud} (fn {fn}, rx {rx}, tx {tx})")
+            return self.channel
+        raise RuntimeError(f"no oep.fixture.uart on this probe takes rx {rx} / tx {tx} at {baud} baud ({last})")
+
+    def close(self) -> None:
+        if self._fn is not None:
+            from . import core
+            try:
+                core.plan_release(self._session.host, [self._fn])
+            except Exception:
+                pass
+        self._fn, self.channel = None, None
+
+
+@pytest.fixture
+def oep_uart(request: pytest.FixtureRequest, oep_host):
+    """The DUT's UART as the probe sees it (see the module)."""
+    port = _bare(_primary_port(request) or "")
+    uart = OepUart(oep_host, oep_parts(port)[1], port)
+    yield uart
+    uart.close()

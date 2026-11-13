@@ -96,3 +96,54 @@ def test_upload_takes_an_rp2040_on_an_oep_port(monkeypatch, tmp_path):
     assert written == [("oep://80f1b2d835d6/rp2040-x035", str(build / "peer_pico.ino.elf"))]
     assert pp.pytest_arduino_cli_upload(port="/dev/ttyACM0", fqbn="rp2040:rp2040:generic", **args) is None
     assert pp.pytest_arduino_cli_upload(port="oep://80f1b2d835d6/x035c8t6-pico", fqbn="ch32:ch32rv:x035", **args) is None
+
+
+def test_a_channel_expects_like_the_dut():
+    import pexpect
+    incoming = [b"boot\r\n", b"", b"ready 42\r\n"]
+    sent = []
+    ch = pp.Channel(lambda: incoming.pop(0) if incoming else b"", sent.append, "uart test")
+    ch.write("ping\n")
+    assert sent == [b"ping\n"]
+    assert ch.expect(r"ready (\d+)").group(1) == b"42"
+    with pytest.raises(pexpect.TIMEOUT, match="uart test: not found"):
+        ch.expect_exact("never", timeout=0.05)
+
+
+def test_oep_host_waits_for_the_broker_only_behind_a_platform_monitor(monkeypatch):
+    waited, opened = [], []
+    monkeypatch.setattr(pp, "_wait_for_broker", lambda unit, seconds: waited.append((unit, seconds)))
+
+    class Session:
+        def __init__(self, unit, owner):
+            opened.append(unit)
+
+        def close(self):
+            pass
+    monkeypatch.setattr(pp, "OepHost", Session)
+
+    class Request:
+        def __init__(self, port):
+            self.port = port
+            self.config = self
+            self.asked = []
+
+        def getoption(self, name, default=None):
+            return self.port if name == "port" else default
+
+        def getini(self, name):
+            return "7"
+
+        def getfixturevalue(self, name):
+            self.asked.append(name)
+            if name == "arduino_combination":
+                raise pytest.FixtureLookupError(name, self)
+
+    run = pp.oep_host.__wrapped__ if hasattr(pp.oep_host, "__wrapped__") else pp.oep_host.__pytest_wrapped__.obj
+    plain = Request("oep://30eda0e31108/x035c8t6-s3")
+    next(run(plain))
+    assert opened == ["30eda0e31108"] and waited == [] and "dut" not in plain.asked
+    monkeypatch.setattr(pp, "_bare", lambda port: "oep://30eda0e31108/x035c8t6-s3")   # as if wrapped for the monitor
+    wrapped = Request("arduinomonitor://wrapped")
+    next(run(wrapped))
+    assert waited == [("30eda0e31108", 7.0)] and "dut" in wrapped.asked

@@ -298,6 +298,9 @@ class Host:
     restart_reopened: bool = False         # the last restart_probe came back only on its reopen_s (the user's reopen)
     # The session id kept per probe for the next run (kept_session.KeptSession; link.open_host sets one): None = not kept
     kept: object | None = None
+    # Named extensions every open carries when the caller gives none (link.open_host sets oep.probe.share when the
+    # address reached the probe through a broker, host guide §7.1)
+    open_extensions: tuple = ()
 
     @contextlib.contextmanager
     def expecting(self, ms: int):
@@ -573,7 +576,7 @@ class Host:
             core.describe(self, m.CORE_FN)                  # max_op_ms before a request that changes state (core §4.4)
         sid = self.rng.randrange(1, 1 << 32)                # random, never 0 (core §6.1)
         tail = m.tlv(OWNER, owner_text(owner)) if owner else b""
-        for item in extensions:
+        for item in (tuple(extensions) or self.open_extensions):
             name, data = (item, b"") if isinstance(item, str) else item
             raw = name.encode("ascii")
             if not 1 <= len(raw) <= 255:
