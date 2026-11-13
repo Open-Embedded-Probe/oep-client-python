@@ -956,9 +956,10 @@ class PinFinder:
                 self.scan()
             if "identify" in steps and self.left() > 4:
                 self.identify()
-            # with an NRST the option bytes turn on, the reset line first: the map drives every channel low in turn
-            # and must know which one would reset the target (4-2, 2026-10-30)
-            reset_first = self.report.nrst_enabled is True
+            # the reset line first unless the option bytes say there is none: the map drives every channel low in turn
+            # and must know which one would reset the target (4-2, 2026-10-30; a CH32V205 whose NRST the client
+            # cannot read lost its debug link on the map's first try of its NRST channel, 5-2, 2026-11-13)
+            reset_first = self.report.nrst_enabled is not False
             if reset_first and "reset" in steps and self.left() > 3:
                 self.confirm_reset()
             if "map" in steps and self.left() > 3:

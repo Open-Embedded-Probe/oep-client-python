@@ -385,3 +385,19 @@ def test_labels_carry_the_target_pin_and_the_lookups_read_them():
     assert settings.parse_label("x035@pb6") == ("x035", None, "pb6") and settings.port_line("x035@pb6") is None
     assert settings.parse_label("rgb_led") is None and settings.parse_label("x035.a@b@c") is None
     assert settings.label_text("x035", None, settings.pin_name("PC16/PC11")) == "x035@pc16-pc11"
+
+
+@pytest.mark.parametrize("enabled, order", [(True, ["reset", "map"]), (None, ["reset", "map"]), (False, ["map", "reset"])])
+def test_the_reset_line_comes_before_the_map_unless_there_is_none(enabled, order):
+    """The map drives every channel low in turn: an NRST it does not know resets the target and cuts the debug link
+    (a CH32V205 whose option bytes the client cannot read, 5-2, 2026-11-13). Only a target whose option bytes say
+    there is no NRST is mapped first."""
+    ep, hst, t = bench()
+    f = finder(hst, t, [], name="v003")
+    seen = []
+    f.classify = f.hold_search = f.scan = f.suggest = lambda: None
+    f.identify = lambda: setattr(f.report, "nrst_enabled", enabled)
+    f.confirm_reset = lambda: seen.append("reset")
+    f.map_pads = lambda: seen.append("map")
+    f.run()
+    assert seen == order
