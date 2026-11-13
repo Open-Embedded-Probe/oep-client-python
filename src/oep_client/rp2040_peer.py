@@ -3,8 +3,8 @@ rings read and written through the MEM-AP while the core runs. For a peer whose 
 so neither the USB writing nor a USB console is there.
 
 The address is `oep://<probe>/<port>`: the probe's channels labelled `<port>.swdio` / `<port>.swclk` are the wire. When
-ch32rv's broker serves that probe (the DUT's monitor started it), the session shares its lock (ch32rv's named extension
-io.github.ch32-riscv-ug.share, as its own tools and pytest's oep_host do); else the probe is opened directly.
+a broker serves that probe, the session shares its lock (oep_client.brokers: OEP host guide §7.1, §7.2); else the probe
+is opened directly.
 
 - `python -m oep_client.rp2040_peer flash oep://<probe>/<port> <image.elf|.bin>`: write, verify, reboot.
 - `python -m oep_client.rp2040_peer console oep://<probe>/<port> [seconds]`: print the RTT output.
@@ -16,19 +16,15 @@ io.github.ch32-riscv-ug.share, as its own tools and pytest's oep_host do); else 
 
 from __future__ import annotations
 
-import json
 import os
-import shutil
 import struct
-import subprocess
 import sys
 import threading
 import time
 import urllib.parse
 
-from . import acquire, arm, core, link, rp2040
+from . import acquire, arm, brokers, core, link, rp2040
 
-SHARE = "io.github.ch32-riscv-ug.share"   # ch32rv's broker: share the lock its tools hold
 LEASE_MS = 60000
 RAM, RAM_END = 0x20000000, 0x20042000
 RTT_ID = b"SEGGER RTT\0\0\0\0\0\0"
@@ -44,39 +40,9 @@ def parse(address: str) -> tuple[str, str]:
     return u.netloc, port
 
 
-def _broker_endpoint(unit: str) -> str | None:
-    """ch32rv's broker for this probe, when one runs (`ch32rv broker endpoint --json`; ch32rv from $CH32RV or PATH)."""
-    exe = os.environ.get("CH32RV") or shutil.which("ch32rv")
-    if not exe:
-        return None
-    try:
-        r = subprocess.run([exe, "broker", "endpoint", "--probe", f"oep://{unit}", "--json"], capture_output=True,
-                           text=True, timeout=20)
-        return (json.loads(r.stdout).get("result") or {}).get("endpoint")
-    except (OSError, ValueError, subprocess.TimeoutExpired):
-        return None
-
-
 def open_host(unit: str, owner: str):
-    """A Host in a session on the probe: through ch32rv's broker sharing its lock when it runs, else directly."""
-    from . import host as oh, message as m
-    endpoint = _broker_endpoint(unit)
-    if endpoint:
-        host_, port = endpoint.rsplit(":", 1)
-        lk = link.SerialLink.on_stream(link.TcpStream(host_, int(port)), "length", 3.0)
-        h = oh.Host(lk.send)
-        lk.attach_host(h)
-        h.link = lk                                   # closed with the session, as a direct one's
-        try:
-            h.open(LEASE_MS, owner=owner, extensions=[SHARE])
-        except oh.Unsupported as e:
-            if e.tag != m.TAG_NAMED_EXTENSION | m.TAG_CRITICAL:
-                raise
-            h.open(LEASE_MS, owner=owner)
-        return h
-    h = link.open_host(f"oep://{unit}?via=usb")
-    h.open(LEASE_MS, owner=owner)
-    return h
+    """A Host in a session on the probe: sharing a broker's lock when one serves it, else directly (oep_client.brokers)."""
+    return brokers.open_host(unit, owner, lease_ms=LEASE_MS, direct=f"oep://{unit}?via=usb")
 
 
 class Target:

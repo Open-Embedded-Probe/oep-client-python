@@ -1,6 +1,16 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) `oep_client.brokers`: finding the broker that serves a probe and sharing its lock, as OEP host guide §7.1 / §7.2
+  have it: `OEP_BROKER` (`<host>:<port>`), else the user's `oep/brokers/<unit_id>.json` (its tcp endpoints; fn 0's
+  describe must name the file's unit_id), else the probe itself; joined with `oep.probe.share`. `rp2040_peer` uses it
+  instead of running `ch32rv broker endpoint` (no ch32rv path, no `io.github.ch32-riscv-ug.share`). The virtual
+  bench's stand-in fn is named under this project (`io.github.open-embedded-probe.stand-in`).
+- (JA) `oep_client.brokers`: probe を受け持つ broker を見つけてロックを分けてもらう（OEP の host ガイド §7.1、§7.2）。`OEP_BROKER`
+  （`<host>:<port>`）、無ければ利用者の `oep/brokers/<unit_id>.json`（tcp の endpoints。fn 0 の describe の unit_id がファイルと同じこと
+  を確かめる）、無ければ probe を直接開く。相乗りは `oep.probe.share`。`rp2040_peer` は `ch32rv broker endpoint` を呼ばずにこれを使う
+  （ch32rv の場所も `io.github.ch32-riscv-ug.share` も要らない）。仮想ベンチの stand-in の fn の名前を、この project の名前空間に
+  （`io.github.open-embedded-probe.stand-in`）。
 - (EN) `oep_client.ota_broker`: the Arduino IDE's Upload button and its Debug for a board on an OEP probe, the core
   unchanged. Each OEP port is announced as a network port (`_arduino._tcp` over mDNS, TXT board / auth_upload=no, one
   LAN address) and the core's network upload (`espota.py`) is answered: the `.bin` checked by its MD5 and written over
