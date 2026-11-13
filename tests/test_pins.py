@@ -245,6 +245,7 @@ def test_target_table():
     assert targets.identify((1, (0x035E0601).to_bytes(4, "little"))).name == "ch32x035"
     assert targets.identify((1, (0x2080051C).to_bytes(4, "little"))).name == "ch32v20x"   # a CH32V208WBU6
     assert targets.identify((1, (0x20310500).to_bytes(4, "little"))).name == "ch32v20x"   # a CH32V203C8T6
+    assert targets.identify((1, (0x20510510).to_bytes(4, "little"))).name == "ch32v20x"   # a CH32V205RCT6
     assert targets.identify((1, b"\x00\x00\x00\x11")) is None and targets.identify(None) is None
     st = targets.v00x_nrst_from_word(OPTION_ON)
     assert st.enabled and "12 ms" in st.detail
