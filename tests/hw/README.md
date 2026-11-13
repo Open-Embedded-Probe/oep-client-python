@@ -22,7 +22,7 @@ OEP_HW_BOARDS="$PROBE_ID" OEP_PROBE_VERSION="$PROBE_VERSION" uv run pytest tests
 OEP_HW_BOARDS=virtual-esp32-v003 uv run pytest tests/hw -m hw
 ```
 
-`OEP_HW_NOFLASH=1` records the installed firmware without flashing it. The config test changes, saves and restores settings; the Wi-Fi test saves the requested networks. Review the lifecycle below and arrange access to shared equipment. The proposed host-wide lock is not integrated into this harness yet.
+`OEP_HW_NOFLASH=1` records the installed firmware without flashing it. The config test changes, saves and restores settings; the Wi-Fi test saves the requested networks. Review the lifecycle below and arrange access to shared equipment with whoever manages it. This harness does not take the `OEP_HW_LOCK` lock.
 
 `OEP_HW_BOARDS=a,b` runs boards in sequence. Record candidate and installed-firmware checks separately. A firmware string alone does not establish compatibility, and a skipped required contract leaves release verification incomplete.
 
@@ -90,6 +90,7 @@ assertion, an exception, a probe that went away:
 
 | Where | What it changes | Put back |
 |---|---|---|
+| `wifi` | the `wifi.<n>.*` values from `OEP_WIFI_*` (set and saved) | not put back: bench settings (to remove them: `oep settings unset <probe> core wifi.<n>.ssid wifi.<n>.passphrase --save`) |
 | `config` | `channel.<pin>.label` and `.disable` (set), the storage (saved twice) | the test unsets both and saves; its `finally` then calls `Run.restore_settings`: each value unset, or set back to the value it had before the run, and the storage saved again (or every user value unset and saved when nothing was saved before: there is no erase) |
 | `capture` (logic, when the probe refuses gpio on the capture's pins) | `channel.<pin>.idle` on the two channels (set, not saved) | `_Pull.release` unsets them, then `restore_settings` in its `finally` |
 | `gpio`, `uart`, `capture*`, `i2c_target`, `spi_target` | plans (oep.probe.plan), session state | `plan_release` in each test's `finally`; a plan is the session's, so the session's end at the end of the run releases what a failure left |
@@ -131,6 +132,8 @@ oep settings save <probe>      # or `oep settings unset --all <probe> --save` wh
 | Variable | Meaning |
 |---|---|
 | `OEP_HW_BOARDS` | comma list of board ids (required; nothing runs without it); `oep://<unit_id>?via=net` / `tcp://<host>[:<port>]` names a TCP probe without a table entry |
+| `OEP_WIFI_SSID_<n>`, `OEP_WIFI_PASS_<n>` | the bench's Wi-Fi the `wifi` test uses (n the entry's index; no PASS for an open network), read from the environment, never shown, recorded as `(set)` only; by hand: `oep settings set <probe> core wifi.<n>.ssid=... wifi.<n>.passphrase=...` (the passphrase is not shown) |
+| `OEP_HW_WIFI_WAIT_S` | seconds the `wifi` test waits for the connection (default 30) |
 | `OEP_HW_ATOM_TCP` | the ATOM's TCP target for `esp32-pico-d4-50029191fe34-tcp` (default `oep://50029191fe34?via=net`, by DNS-SD) |
 | `OEP_PROBE_DIR` / `OEP_PROBE_VERSION` / `OEP_HW_NOFLASH` | the firmware source (one of them) |
 | `OEP_HW_TARGET`, `OEP_HW_RESET`, `OEP_HW_TARGET_ADDR`, `OEP_HW_LOOPS` | the wire test: a target is wired (and where), its reset line, the block address, the loop count |
