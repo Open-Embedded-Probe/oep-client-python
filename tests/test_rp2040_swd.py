@@ -87,16 +87,11 @@ def test_no_control_block_is_an_error():
         rp.Rtt(Mem(), wait=0)
 
 
-def test_address_and_openocd_hook(tmp_path):
+def test_address(tmp_path):
     assert rp.parse("oep://80f1b2d835d6/pico") == ("80f1b2d835d6", "pico")
     for bad in ("oep://80f1b2d835d6", "tcp://x/pico", "oep:///pico"):
         with pytest.raises(ValueError):
             rp.parse(bad)
-    paths = rp.write_openocd_hook(str(tmp_path), "TEST_SERIAL_PORT_PEER_PICO", python="/usr/bin/python3")
-    target = (tmp_path / "target/rp2040.cfg").read_text()
-    assert len(paths) == 2 and (tmp_path / "interface/cmsis-dap.cfg").exists()
-    assert "proc program" in target and "$::env(TEST_SERIAL_PORT_PEER_PICO)" in target
-    assert "/usr/bin/python3 -m oep_client.rp2040_swd flash" in target
 
 
 def test_clear_rtt_ids_wipes_the_old_blocks():

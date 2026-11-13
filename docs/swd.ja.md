@@ -137,19 +137,10 @@ arm-none-eabi-gdb sketch.ino.elf
 
 gdb のつながっている間、IDE のサーバーはプローブのロックを持ち、5 秒ごとに keepalive を送ります。
 
-### 3.4 pytest（pytest-embedded-arduino-cli の相手のボード）
+### 3.4 pytest（pytest-embedded-arduino-cli）
 
-試験の相手（peer）の Pico を SWD で書き、RTT をコンソールにします。conftest.py に 1 行足します。
-
-```python
-pytest_plugins = ["oep_client.pytest_rp2040_peer"]
-```
-
-- 相手のアドレスは環境変数 `TEST_SERIAL_PORT_PEER_<名前>=oep://<unit id>/<口>` で渡します。
-- 相手のプロファイルは、arduino-pico の書き込みの方式を `uploadmethod=picoprobe_cmsis_dap` にします。プラグインが相手のフォルダに
-  OpenOCD の設定（`interface/cmsis-dap.cfg`、`target/rp2040.cfg`）を作り、書き込みを `rp2040_swd flash` に渡します。作られたファイルは
-  git に入れません。
-- 相手の機器のロックは、その口のもの（`rp2040-swd:<アドレス>`）です。
+試験の DUT や相手の Pico は、プラグイン `oep_client.pytest_plugin` が SWD で書き、RTT をコンソールにします。ポートは `.env` の
+`TEST_SERIAL_PORT_*=oep://<unit id>/<口>` です。詳しくは [pytest.ja.md](pytest.ja.md) にあります。
 
 ### 3.5 Python から
 

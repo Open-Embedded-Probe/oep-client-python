@@ -56,6 +56,8 @@ GitHub Release、PyPI（Trusted Publishing）へ出す。変更は CHANGELOG.md 
 | `registry` | oep-spec の番号の表から生成したモジュール（編集しない。oep-spec から写し直す）。名前からインターフェースの番号を引く公開の入口は `registry.INTERFACES[name]`（`.revision`、`.op`、`.tlv`、`.enum`。例 `INTERFACES["oep.fixture.uart"].enum["role"]`）。`FIXTURE_UART` などのモジュールの名前は同じもの |
 | `arm` | `oep.wire.swd`、`oep.target.arm-adi`、MEM-AP、Cortex-M の停止と関数呼び出し |
 | `ch32_flash` | CH32 の書き込み（RAM ローダー、ページ単位の書き直し） |
+| `pytest_plugin` | pytest-embedded-arduino-cli の OEP のプラグイン。`pytest` の追加の依存で自動で読み込まれる。プローブのロック `probe:<unit_id>`、口の記録 `port_memo`（`.env` の `OEP_PORT_MEMO_*`、無ければプローブのメモ欄）、`oep://` のコンソール、RP2040 のボードの SWD での書き込み（[docs/pytest.ja.md](docs/pytest.ja.md)） |
+| `brokers` | probe を受け持つ broker を見つけ（`OEP_BROKER`、利用者の `oep/brokers/<unit_id>.json`）、`oep.probe.share` でロックを分けてもらう（OEP の host ガイド §7） |
 | `ide` | Arduino IDE のネットワーク書き込みを受けて、OEP のプローブ越しに書く。gdb サーバーも持つ（[docs/swd.ja.md](docs/swd.ja.md)） |
 | `gdb_server` | OEP の SWD の Cortex-M に gdb のリモートプロトコルで答える（レジスタ、メモリ、実行・停止・ステップ、FPB のブレークポイント、flash への load） |
 | `rp2350` | RP2350 の boot ROM 経由の flash と reboot |

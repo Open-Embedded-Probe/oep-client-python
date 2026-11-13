@@ -142,19 +142,10 @@ arm-none-eabi-gdb sketch.ino.elf
 
 While gdb is connected the IDE server holds the probe's lock, a keepalive every 5 s.
 
-### 3.4 pytest (a peer board of pytest-embedded-arduino-cli)
+### 3.4 pytest (pytest-embedded-arduino-cli)
 
-A test's peer Pico is written over SWD and its RTT is the console. Add one line to conftest.py:
-
-```python
-pytest_plugins = ["oep_client.pytest_rp2040_peer"]
-```
-
-- The peer's address comes in the environment variable `TEST_SERIAL_PORT_PEER_<NAME>=oep://<unit id>/<port>`.
-- The peer's profile uses arduino-pico's upload method `uploadmethod=picoprobe_cmsis_dap`. The plugin writes OpenOCD
-  files into the peer's folder (`interface/cmsis-dap.cfg`, `target/rp2040.cfg`) that hand the upload to
-  `rp2040_swd flash`. Keep them out of git.
-- The peer's device lock is its port's own (`rp2040-swd:<address>`).
+A test's DUT or peer Pico is written over SWD and its RTT is the console, by the plugin `oep_client.pytest_plugin`.
+The port is `.env`'s `TEST_SERIAL_PORT_*=oep://<unit id>/<port>`. See [pytest.md](pytest.md).
 
 ### 3.5 From Python
 

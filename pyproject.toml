@@ -25,11 +25,15 @@ usb-async = ["libusb1>=3"]   # queued asynchronous IN transfers: streaming near 
 hid = ["hidapi>=0.14"]      # the vendor HID way in through the OS HID driver (Windows without WinUSB, Linux hidraw)
 mdns = ["zeroconf>=0.131"]   # DNS-SD browsing through python-zeroconf (oep find, tcp:UNIT_ID); without it a minimal query of its own
 acquire = ["numpy>=2.0"]   # acquire: streams and capture format 1 blocks put together at once
+pytest = ["pytest-embedded-arduino-cli>=1.12.0"]   # the pytest plugin (oep_client.pytest_plugin): locks, port records, uploads
 
 [project.scripts]
 oep = "oep_client.__main__:main"
 oep-conformance = "oep_client.conformance:main"
 oep-hardware = "oep_client.hardware:main"
+
+[project.entry-points.pytest11]
+oep = "oep_client.pytest_plugin"
 
 [project.urls]
 Homepage = "https://github.com/Open-Embedded-Probe/oep-client-python"

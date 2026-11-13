@@ -1,6 +1,20 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) `oep_client.pytest_plugin`, pytest-embedded-arduino-cli's OEP plugin, loaded by itself (`pytest11`) with the new
+  `pytest` extra (pytest-embedded-arduino-cli >= 1.12.0): the lock name `probe:<unit_id>` for every port and route of a
+  probe and for its own serial port; `port_memo` / `peer_port_memo(name)` / `port_memo_of(config, port)`, the port's
+  record by the ini `oep_memo_owner` - `.env`'s `OEP_PORT_MEMO_<unit_id>[_<PORT>]` whole, else the probe's
+  `<owner>/port/<port>`, else {} (a warning when both differ); the `oep://` pyserial console; an RP2040 board on
+  `oep://<probe>/<port>` written over SWD through the upload hook. Removed: `oep_client.pytest_rp2040_peer` (the
+  conftest line, the OpenOCD files, the `rp2040-swd:` lock key, `CH32RV`) and `rp2040_swd.write_openocd_hook`.
+  Guide: docs/pytest.md.
+- (JA) `oep_client.pytest_plugin`: pytest-embedded-arduino-cli の OEP のプラグイン。新しい追加の依存 `pytest`
+  （pytest-embedded-arduino-cli 1.12.0 以上）で自動で読み込まれる（`pytest11`）。プローブの口と経路と自身のシリアルの口のロックの名前
+  `probe:<unit_id>`。口の記録 `port_memo` / `peer_port_memo(name)` / `port_memo_of(config, port)`（ini の `oep_memo_owner`。`.env` の
+  `OEP_PORT_MEMO_<unit_id>[_<口>]` を丸ごと、無ければプローブの `<持ち主>/port/<口>`、無ければ {}。両方あって違えば警告）。pyserial の
+  `oep://` のコンソール。`oep://<probe>/<口>` の RP2040 のボードを、書き込みの hook で SWD で書く。消したもの: `oep_client.pytest_rp2040_peer`
+  （conftest の 1 行、OpenOCD のファイル、ロックの鍵 `rp2040-swd:`、`CH32RV`）と `rp2040_swd.write_openocd_hook`。ガイド: docs/pytest.ja.md。
 - (EN) Renamed: `oep_client.ota_broker` -> `oep_client.ide` (`python -m oep_client.ide`; its class `Server`): an IDE
   server, not an OEP broker. `oep_client.rp2040_peer` -> `oep_client.rp2040_swd` (`python -m oep_client.rp2040_swd
   flash|console`): an RP2040 over the probe's SWD, for any use. docs/swd: the IDE server, and §3.6 sharing the probe
