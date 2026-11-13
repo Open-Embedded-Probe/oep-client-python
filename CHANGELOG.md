@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 0.0.56
 - (EN) libusb1 and hidapi are dependencies: `pip install oep-client-python` opens a probe over vendor bulk and HID
   without extras. The `usb-async` and `hid` extras stay, empty, so `[usb-async,hid]` still installs.
 - (JA) libusb1 と hidapi を依存に入れた。`pip install oep-client-python` だけで vendor bulk と HID の口が使える。extras の
