@@ -35,8 +35,9 @@ import os
 
 from . import catalog, core, dump, settings, virtual_bench, host, link
 
-USB_HINT = ("install the usb / hid extras (pip install 'oep-client-python[usb-async,hid]') so every way in to the USB "
-            "device can be tried, or name the probe's port (a serial port such as /dev/ttyACM0 or COM3, tcp://HOST:PORT)")
+USB_HINT = ("every way in to the USB device needs python-libusb1 and hidapi (dependencies of oep-client-python: "
+            "reinstall it where they did not install), or name the probe's port (a serial port such as /dev/ttyACM0 "
+            "or COM3, tcp://HOST:PORT)")
 
 
 def _open_host(target: str, **kw):

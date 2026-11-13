@@ -216,7 +216,7 @@ def test_usb_probes_counts_each_device_once_whatever_its_ways_in():
 @pytest.mark.parametrize("command", [["dump", "--port", "usb"], ["settings", "show", "usb"], ["linktest", "usb"],
                                      ["pins", "usb"], ["speed", "usb"]])
 def test_the_oep_command_says_in_one_line_that_no_usb_probe_is_there(monkeypatch, capsys, command):
-    """No device on the project's VID:PID and no hid module: one line, no traceback, with the hint (extras, or name
+    """No device on the project's VID:PID and no hid module: one line, no traceback, with the hint (the USB modules, or name
     the port)."""
     from oep_client import __main__ as cli
 
@@ -231,7 +231,7 @@ def test_the_oep_command_says_in_one_line_that_no_usb_probe_is_there(monkeypatch
         cli.main(command)
     text = str(e.value.code)
     assert "\n" not in text and text.startswith("oep: cannot open usb: no way in to 1209:4f45")
-    assert "No module named 'hid'" in text and "Hint: install the usb / hid extras" in text and "name the probe's port" in text
+    assert "No module named 'hid'" in text and "Hint: every way in to the USB device needs python-libusb1 and hidapi" in text and "name the probe's port" in text
 
 
 def test_the_oep_command_says_in_one_line_that_a_port_is_not_there(capsys):

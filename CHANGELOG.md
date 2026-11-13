@@ -1,6 +1,10 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) libusb1 and hidapi are dependencies: `pip install oep-client-python` opens a probe over vendor bulk and HID
+  without extras. The `usb-async` and `hid` extras stay, empty, so `[usb-async,hid]` still installs.
+- (JA) libusb1 と hidapi を依存に入れた。`pip install oep-client-python` だけで vendor bulk と HID の口が使える。extras の
+  `usb-async` と `hid` は空で残す（`[usb-async,hid]` もそのまま入る）。
 - (EN) `oep pins`: the CH32V203 and CH32V205 (target_id 0x203xxxxx, 0x205xxxxx) are `ch32v20x`, so their pads are
   mapped; the CH32H417 is `ch32h41x`, identified but never mapped (`Family.no_map`: its VIO18 pads rest at 1.2 V).
   The reset line is found before the map unless the option bytes say there is no NRST (an NRST the map did not know
