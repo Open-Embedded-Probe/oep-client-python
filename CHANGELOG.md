@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 0.0.55
 - (EN) The pytest plugin's `oep_host` (an OEP session on the DUT's probe, sharing its broker's lock; behind the
   platform's own monitor it waits for the broker up to the ini `oep_broker_wait`, 10 s) and `oep_uart` (`open(baud)`:
   an oep.fixture.uart on the port's `<port>.rx` / `<port>.tx`, a Dut-like channel with expect / expect_exact / write).
@@ -64,6 +66,7 @@
   いる間の書き込みは gdb のセッションの中で書く。`--dry-run` は書かない。Pico で確認: arduino-pico 6.3.1 の `espota.py`、
   `arduino-cli upload --protocol network`（73240 B で約 13 秒）、arduino-pico の gdb で cortex-debug の MI の手順（load、main でのブレーク、
   ステップ、一時停止、リセット。9 秒）。`virtual_bench_mdns.Announcement` は TXT の項目を受ける（`properties`）。ガイド: docs/swd.ja.md。
+
 ## 0.0.54
 - (EN) Jobs (oep::SimpleInterface::job, the probe's worker): `oep_client.call.call_wait(hst, interface, op, timeout=,
   wait=, **fields)` starts the job and reads its status op until it ends; it returns the status's fields (start_ns,

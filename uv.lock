@@ -384,7 +384,7 @@ wheels = [
 
 [[package]]
 name = "oep-client-python"
-version = "0.0.54"
+version = "0.0.55"
 source = { editable = "." }
 dependencies = [
     { name = "pyserial" },
