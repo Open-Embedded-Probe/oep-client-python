@@ -47,17 +47,26 @@ def test_one_shot_lines_and_the_probes_facts(probe):
 
 
 def test_glitch_filter_on_the_logic_lines(probe):
-    # the virtual bench's counter at 20 MHz: line k changes every 2^k samples (50 ns x 2^k); a 100 ns filter keeps a
-    # level once it has held 2 samples (capture §3.8): line 0's one-sample levels go, line 2's four-sample ones stay
-    req = acquire.Request([("A", "GPIO10"), ("C", "GPIO12")], 20_000_000, 1000, glitch_filter_ns=100)
+    # the virtual bench's P4 has the pin filter only (25 ns, capture §3.8): at 20 MHz shorter than a sample, so the
+    # counter's lines are as they are; its value is in the probe's facts for the analysis. Another width is refused.
+    req = acquire.Request([("A", "GPIO10"), ("C", "GPIO12")], 20_000_000, 1000, glitch_filter_ns=25)
     res = acquire.capture_at(probe(), req)
     a, c = res.all_parts[0].channels
-    assert np.count_nonzero(np.diff(levels(a))) < 10                  # line 0: its 1-sample levels filtered away
-    assert np.count_nonzero(np.diff(levels(c))) > 200                 # line 2: kept
-    assert res.meta["probe"]["glitch_filter_ns"] == 100               # what the probe used, for the analysis
+    assert np.count_nonzero(np.diff(levels(a))) > 900                 # line 0: every sample
+    assert res.meta["probe"]["glitch_filter_ns"] == 25                # what the probe used, for the analysis
     assert "glitch_filter_ns" not in acquire.capture_at(probe(), acquire.Request([("A", "GPIO10")], 20_000_000, 100)).meta["probe"]
+    with pytest.raises(RuntimeError, match="0x13"):
+        acquire.capture_at(probe(), acquire.Request([("A", "GPIO10")], 20_000_000, 1000, glitch_filter_ns=100))
     with pytest.raises(ValueError):
         acquire.Request([("A", "GPIO10")], 20_000_000, 1000, glitch_filter_ns=0)
+
+
+def test_input_hysteresis_on_the_logic_lines(probe):
+    # capture §3.8: unsent, the probe's default (on where it has it); False / True sent; hysteresis_used in the facts
+    run = lambda **kw: acquire.capture_at(probe(), acquire.Request([("A", "GPIO10")], 20_000_000, 100, **kw)).meta["probe"]
+    assert run()["input_hysteresis"] is True
+    assert run(input_hysteresis=False)["input_hysteresis"] is False
+    assert run(input_hysteresis=True)["input_hysteresis"] is True
 
 
 def test_on_a_session_the_caller_holds(probe):

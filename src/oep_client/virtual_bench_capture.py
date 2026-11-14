@@ -36,6 +36,8 @@ external clock, ticks of TIMEBASE_HZ). The optional features of §3.8 exist only
 
 - glitch filter: a level counts once it has held the filter's samples, for the data and the trigger alike (group 0
   holds every channel).
+- input hysteresis: declared states off and on; on unless configure says 0, hysteresis_used in every answer (the
+  bench's signals have no slow edges: it changes nothing in the data).
 - external clock: the clock's role is no sample channel; the samples are a counter of its edges (rising at (n+1)/f,
   falling at (n+1/2)/f, both every 1/(2f) from start; f the configured rate, or the TEST HOOK `clock_hz`); a qualifier
   keeps the edges its channel's level allows.
@@ -100,11 +102,12 @@ LOGIC_A = CAP.tlv["configure_answer"]
 
 @dataclass
 class Options:
-    """The optional capture features a describe declares (§3.8 glitch filter and external clock); a probe without a
+    """The optional capture features a describe declares (§3.8 glitch filter, input hysteresis and external clock); a probe without a
     declaration does not have the feature, and its configure TLV is unknown to it (ignored plain, refused critical,
     core §2.3)."""
     glitch: dict[int, tuple[int, int, int]] = field(default_factory=dict)   # group -> (min_ns, max_ns, step_ns)
     clock: tuple[int, int, int] | None = None                    # external_clock: max_hz, edges, qualifier
+    hysteresis: int = 0                                          # input_hysteresis: states (bit 0 off, bit 1 on)
 
 
 def options_of(decl: list[tuple[int, bytes]], analog: bool) -> Options:
@@ -116,6 +119,8 @@ def options_of(decl: list[tuple[int, bytes]], analog: bool) -> Options:
             o.glitch[group] = (lo, hi, step)
         elif not analog and tag == d["external_clock"]:
             o.clock = struct.unpack("<IBB", v)
+        elif not analog and tag == d["input_hysteresis"] and len(v) == 1:
+            o.hysteresis = v[0]
     return o
 
 
@@ -391,7 +396,7 @@ class VirtualCapture:
     def option_tags(self) -> set[int]:
         """The configure TLVs of the optional features its describe declares (§3.8)."""
         T, o = (ANALOG_T if self.analog else LOGIC_T), self.options
-        have = {"glitch_filter": o.glitch, "clock": o.clock}
+        have = {"glitch_filter": o.glitch, "clock": o.clock, "input_hysteresis": o.hysteresis}
         return {T[k] for k, v in have.items() if v and k in T}
 
     def repeating(self) -> set[int]:
@@ -425,7 +430,7 @@ class VirtualCapture:
         T, o = (ANALOG_T if self.analog else LOGIC_T), self.options
         # the optional TLVs it has (§3.8): the same form rules; the glitch filter twice for one group is malformed,
         # as the frontend (§3.3)
-        for which, size in (("glitch_filter", 5), ("clock", 4)):
+        for which, size in (("glitch_filter", 5), ("clock", 4), ("input_hysteresis", 1)):
             if which in T:
                 t.fixed(got, T[which], size)
         keys = [v[0] for _, v in self._copies(t, T.get("glitch_filter"))]
@@ -543,6 +548,13 @@ class VirtualCapture:
             if d is None or ns and not d[0] <= ns <= d[1]:
                 raise Reject(m.UNSUPPORTED, bytes([raw]))
             glitch[group] = nearest_step(ns, d[0], d[1], d[2]) if ns else 0
+        input_hys = None                                           # not declared: no hysteresis_used (§3.8)
+        if o.hysteresis:
+            hk = T.get("input_hysteresis")
+            want = got[hk][0] if hk in got else 1                  # unsent: on where on is a state (§3.8)
+            if hk in got and (want > 1 or not o.hysteresis >> want & 1):
+                raise t.refuse(hk)
+            input_hys = want if hk in got else (1 if o.hysteresis & 0b10 else 0)
         if not channels:
             raise wrong_state()                                    # no plan (§3.2)
         role_ids = sorted(planned_roles) if planned_roles is not None else list(range(channels))
@@ -627,7 +639,7 @@ class VirtualCapture:
         return {"mode": mode, "rate": rate, "samples": samples, "segments": segs, "trigger": trigger,
                 "pretrigger": pre, "width": width, "channels": channels, "roles": role_ids, "frontends": chosen,
                 "opts": (arm, rearm, when, hysteresis), "format": fmt, "carriages": carried, "block": block,
-                "glitch": glitch, "clock": clock}
+                "glitch": glitch, "clock": clock, "input_hysteresis": input_hys}
 
     @staticmethod
     def _copies(t, tag: int | None) -> list[tuple[int, bytes]]:
@@ -672,6 +684,8 @@ class VirtualCapture:
             out += tlv(LOGIC_A["timebase"], struct.pack("<II", TIMEBASE_HZ, 1))
         for group, ns in sorted(s["glitch"].items()):             # the value in use (§3.8)
             out += tlv(LOGIC_A["glitch_used"], struct.pack("<BI", group, ns))
+        if s.get("input_hysteresis") is not None:                  # every answer of a probe that declares it (§3.8)
+            out += tlv(LOGIC_A["hysteresis_used"], bytes([s["input_hysteresis"]]))
         if s["mode"] == MODE["streaming"]:                         # what it holds unsent: the bench's own (§3.3)
             out += tlv(ANSWER["stream_buffer"], struct.pack("<I", STREAM_BUFFER_BYTES))
         if s["mode"] != MODE["streaming"]:                         # the rows of §3.3: actual_samples in modes 1 / 2,

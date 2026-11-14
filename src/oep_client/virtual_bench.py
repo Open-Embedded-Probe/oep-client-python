@@ -545,9 +545,11 @@ def p4_x035() -> VirtualProbe:
             + _capture_decl(["one_shot", "repeat", "streaming"], 16, 1 << 20, 8, 1_000, 20_000_000, 0b0111, 16,
                             (_FMT["logic_blocks"], _FMT["test_counter"]),
                             (sum(1 << v for v in _CARRIAGE.values()), 2, 4096), linked=True)    # raw and the reductions, D 2-4096
-            # PARLIO's clock input (rising or falling, a qualifier) and the GPIO flex glitch filters (25 - 1600 ns)
+            # PARLIO's clock input (rising or falling, a qualifier), the GPIO pin glitch filter (25 ns only) and the
+            # pads' input hysteresis (off / on)
             + (catalog.tlv(_CAPD["external_clock"], struct.pack("<IBB", 40_000_000, 0b011, 1)),
-               catalog.tlv(_CAPD["glitch_filter"], struct.pack("<BIII", 0, 25, 1600, 25))),
+               catalog.tlv(_CAPD["glitch_filter"], struct.pack("<BIII", 0, 25, 25, 25)),
+               catalog.tlv(_CAPD["input_hysteresis"], bytes([0b11]))),
             inner=_capture_inner([1, 2, 4, 8, 16], 8, 4096)),
         _i2c_target(8, pins, max_length=128, max_hz=1_000_000, features=0, queue_depth=8,
                     max_stretch_us=100_000),                                                       # stretch
@@ -761,14 +763,15 @@ def with_i2c_pullups(probe: VirtualProbe) -> VirtualProbe:
 
 
 def capture_option_decls(analog: bool) -> tuple[bytes, ...]:
-    """The optional capture declarations of capture §3.8 (glitch filter and external clock, logic only) as
-    with_capture_options adds them."""
+    """The optional capture declarations of capture §3.8 (glitch filter, input hysteresis and external clock, logic
+    only) as with_capture_options adds them."""
     if analog:
         return ()
     # a glitch filter 10 ns - 10 us in 10 ns steps (group 0, every channel); an external clock up to 50 MHz on either or
-    # both edges, with a qualifier
+    # both edges, with a qualifier; the input hysteresis off and on
     return (catalog.tlv(_CAPD["glitch_filter"], struct.pack("<BIII", 0, 10, 10_000, 10)),
-            catalog.tlv(_CAPD["external_clock"], struct.pack("<IBB", 50_000_000, 0b111, 1)))
+            catalog.tlv(_CAPD["external_clock"], struct.pack("<IBB", 50_000_000, 0b111, 1)),
+            catalog.tlv(_CAPD["input_hysteresis"], bytes([0b11])))
 
 
 def with_capture_options(probe: VirtualProbe) -> VirtualProbe:

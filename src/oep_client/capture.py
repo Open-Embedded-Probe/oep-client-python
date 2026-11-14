@@ -53,7 +53,7 @@ MODE, RATE, SAMPLES, SEGMENTS, TRIGGER, PRETRIGGER, TRIGGER_OPTS, FORMAT, CARRIA
 ANSWER_FORMAT, ANSWER_BLOCK = _CAP.tlv["configure_answer"]["format"], _CAP.tlv["configure_answer"]["block"]
 # §3.8, optional (a probe declares them in its describe): configure TLVs by name, sent critical
 OPTION_TLV = {**_CAP.tlv["configure"], **_ANA.tlv["configure"]}
-LOGIC_USED = {k: _CAP.tlv["configure_answer"][k] for k in ("glitch_used", "timebase")}
+LOGIC_USED = {k: _CAP.tlv["configure_answer"][k] for k in ("glitch_used", "hysteresis_used", "timebase")}
 NO_QUALIFIER = 0xFF                                        # clock: qualifier_role none (§3.8)
 STREAM_BUFFER = _CAP.tlv["configure_answer"]["stream_buffer"]
 JUDGE_LATENCY = _CAP.tlv["configure_answer"]["judge_latency_ns"]
@@ -459,6 +459,8 @@ def _options(options: dict) -> bytes:
         if name == "glitch_filter":                        # per group (group 0 only, §3.8)
             for group, ns in sorted(value.items()):
                 out += m.tlv(tag, bytes([group]) + struct.pack("<I", ns))
+        elif name == "input_hysteresis":                   # 0 off, 1 on (§3.8)
+            out += m.tlv(tag, bytes([1 if value else 0]))
         elif name == "clock":
             role, edge, qualifier, level = value
             out += m.tlv(tag, bytes([role, edge, NO_QUALIFIER if qualifier is None else qualifier, level]))
@@ -517,6 +519,8 @@ def _config(payload: bytes, analog: bool) -> Config:
         elif not analog and tag == LOGIC_USED["glitch_used"] and len(v) == 5:
             group, ns = struct.unpack("<BI", v)
             c.used.setdefault("glitch_used", {})[group] = ns
+        elif not analog and tag == LOGIC_USED["hysteresis_used"] and len(v) == 1:
+            c.used["hysteresis_used"] = bool(v[0])
         elif tag == REFERENCE and analog and len(v) == 6:
             source, mv, how = struct.unpack("<BIB", v)
             # how: nominal False, measured True; an unknown value is shown as it is, not as nominal (core §2.4)
@@ -561,7 +565,7 @@ class LogicCapture(Interface):
         The others go critical.
 
         `options` (§3.8, critical; a probe without one refuses it): "glitch_filter" group -> ns (group 0 only),
-        "clock" (role, edge, qualifier role or None, qualifier level). The answer's values in use: Config.used, by the
+        "input_hysteresis" (bool), "clock" (role, edge, qualifier role or None, qualifier level). The answer's values in use: Config.used, by the
         answer TLV's name.
 
         §3.3's contract is checked before anything is sent (ValueError): `samples` is needed in one-shot and repeat

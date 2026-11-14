@@ -9,7 +9,7 @@ from pathlib import Path
 from . import require,spec_identity
 
 
-REVIEWED={'docs/oep-core.ja.md':'81cffc532f2626812b109d0aa5eef81636799011f410a8bc2fb9ea520fcbf4bc',
+REVIEWED={'docs/oep-core.ja.md':'7789bcf324dbf0e9f7dc319759b8353fd6c8732efb4107cf894e49fef967df22',
           'docs/oep-transports.ja.md':'a22754ee25997058be0e698bd62ea132537627914f38a06caffd48e3d79f096e'}
 QUICK_MS=1000  # core_quick_op_max_ms
 

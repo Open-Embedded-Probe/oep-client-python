@@ -88,6 +88,8 @@ class Request:
     spool_dir: str | None = None             # stream: where its channels are put together on disk while it runs
     glitch_filter_ns: int | None = None      # logic: pulses shorter than this dropped on every logic line (the probe's
                                              # glitch filter, capture §3.8; a probe without one refuses the capture)
+    input_hysteresis: bool | None = None     # logic: the probe's input hysteresis on every logic line (capture §3.8)
+                                             # on / off; None leaves the probe's default (on where it has it)
     during: Callable[[Callable[[float], None]], None] | None = None   # stream: instead of `seconds`, runs until this
                                              # returns - called with wait(seconds), which collects while it waits;
                                              # wait.beside(fn) collects while fn runs in another thread
@@ -478,16 +480,25 @@ def oc_state(name: str) -> int:
 
 
 def _glitch(req: Request) -> dict:
-    """configure's options for the request's glitch filter on the logic lines (capture §3.8: group 0), or nothing."""
-    return {"options": {"glitch_filter": {0: req.glitch_filter_ns}}} if req.glitch_filter_ns else {}
+    """configure's options for the request's glitch filter (capture §3.8: group 0) and input hysteresis on the logic
+    lines, or nothing."""
+    options = {}
+    if req.glitch_filter_ns:
+        options["glitch_filter"] = {0: req.glitch_filter_ns}
+    if req.input_hysteresis is not None:
+        options["input_hysteresis"] = req.input_hysteresis
+    return {"options": options} if options else {}
 
 
 def _note_glitch(probe: dict, cfg) -> None:
     """The glitch filter the probe used on the logic lines (configure's answer glitch_used, group 0, ns) into the
-    probe's facts, for an analysis that must not judge pulses shorter than it (they never reached the capture)."""
-    used = (getattr(cfg, "used", None) or {}).get("glitch_used", {}) if cfg is not None else {}
-    if 0 in used:
-        probe["glitch_filter_ns"] = used[0]
+    probe's facts, for an analysis that must not judge pulses shorter than it (they never reached the capture), and
+    the input hysteresis (hysteresis_used: edges a little later on slow lines)."""
+    used = (getattr(cfg, "used", None) or {}) if cfg is not None else {}
+    if 0 in used.get("glitch_used", {}):
+        probe["glitch_filter_ns"] = used["glitch_used"][0]
+    if "hysteresis_used" in used:                          # the input hysteresis the probe used (capture §3.8)
+        probe["input_hysteresis"] = used["hysteresis_used"]
 
 
 def _configure(track, oc, oh, target: str, what: str, mode=None, **kw):

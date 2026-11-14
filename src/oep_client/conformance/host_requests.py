@@ -12,11 +12,11 @@ from . import require, spec_identity
 REVIEWED = {
     'interfaces/oep-if-plan.ja.md': 'da8bd60af53499573c07bc33dbd8c4df93eb61a93b91dc57907f26620ae36bbf',
     'interfaces/oep-if-fixture.ja.md': '777a972349a14d1efa6e4575d3118b4e0566b81a6f22320401d529e4dca585f1',
-    'docs/oep-core.ja.md': '81cffc532f2626812b109d0aa5eef81636799011f410a8bc2fb9ea520fcbf4bc',
+    'docs/oep-core.ja.md': '7789bcf324dbf0e9f7dc319759b8353fd6c8732efb4107cf894e49fef967df22',
     'interfaces/oep-if-debug.ja.md': '6f21171b494e67d50bfc78b4da9e16949033c9e24d960efb42887335da021681',
-    'interfaces/oep-if-capture.ja.md': 'f1035dc14cf469d929d782dbe710fc2c1e1567006da41a001abe3c5c25761324',
+    'interfaces/oep-if-capture.ja.md': '8dd5a9d43886566a8654b5ed8c3b8cc73725f2063de5f1af9a7649ed81ba8349',
 }
-REVIEWED_REGISTRY_SHA256='183922c36d78c0173cedece530410478dc3f1de0094d1922d3a960e752863d1e'
+REVIEWED_REGISTRY_SHA256='08ea124e73ba30069556996181f85fd5206d9f5c20256c91cbafe6f3ab20d532'
 
 
 def reviewed_identity(spec):
@@ -78,7 +78,7 @@ def policy():
     for name in ('logic', 'analog'):
         # capture §3.3: the table's TLVs are implemented by every target probe, so they go without the critical bit -
         # but for those the table says to send critical (format, carriage, trigger_opts);
-        # §3.8: the glitch filter and the external clock are optional and critical.
+        # §3.8: the glitch filter, the input hysteresis and the external clock are optional and critical.
         tags = [('mode', b'\x02', False), ('rate', b'\xe8\x03\x00\x00', False),
                 ('samples', b'\x10\x00\x00\x00', False), ('segments', b'\x02\x00\x00\x00', False),
                 ('trigger', b'\x02\x00\x00\x00\x00\x00' if name == 'logic' else b'\x03\x01\xb8\x0b\x00\x00', False),
@@ -87,7 +87,8 @@ def policy():
                 ('trigger_opts', b'\x01\x01\x00\x00\x00\x00\x00', True),
                 ('block_max', b'\x00\x01\x00\x00', False)]
         if name == 'logic':
-            tags.extend([('clock', b'\x00\x00\xff\x00', True), ('glitch_filter', b'\x00\x64\x00\x00\x00', True)])
+            tags.extend([('clock', b'\x00\x00\xff\x00', True), ('glitch_filter', b'\x00\x64\x00\x00\x00', True),
+                         ('input_hysteresis', b'\x01', True)])
         else:
             tags.extend([('frontend', b'\x01\x00', False), ('frontend', b'\x03\x01', False)])
         for op in ('configure', 'query'):

@@ -25,13 +25,13 @@ encoderは文脈の方針に従ってbit7を付け、長さu16 little-endian、�
 | swio attach | reset | — | debug §3 |
 | swd scan | max_speed、targetsel | — | core §2.3、debug §1、§5 |
 | swd attach | targetsel、reset | — | debug §3、§5 |
-| logic configure / query（2文脈） | format、carriage、trigger_opts、clock、glitch_filter | mode、rate、samples、segments、trigger、pretrigger、block_max | capture §3.3、§3.8 |
+| logic configure / query（2文脈） | format、carriage、trigger_opts、clock、glitch_filter、input_hysteresis | mode、rate、samples、segments、trigger、pretrigger、block_max | capture §3.3、§3.8 |
 | analog configure / query（2文脈） | format、carriage、trigger_opts | 上記の基本設定、block_max、frontend | capture §3.3、§3.8 |
 | plan_apply | role_assignment | — | core §2.3、plan §2.1 |
 | uart configure | format | — | fixture §2、Host方針 |
 
 capture §3.3 の表の TLV は、対象の probe がどれも実装するので critical を付けない。表が「critical で送る」とするもの（format、
-carriage、trigger_opts）と、§3.8 の TLV（グリッチフィルタと外部クロック、どれも任意）は critical で送る。format は 0 では
+carriage、trigger_opts）と、§3.8 の TLV（グリッチフィルタ、入力のヒステリシスと外部クロック、どれも任意）は critical で送る。format は 0 では
 critical が要らないが、この方針は値によらず付ける（表の TLV は付いていても probe が同じに扱う、core §2.3）。
 
 core §2.3は「scanのmax_speed」「attachのreset」をcriticalにする例として挙げる。
