@@ -2,9 +2,12 @@
 
 ## Unreleased
 - (EN) `acquire.Request(glitch_filter_ns=...)`: the probe's glitch filter on every logic line (capture §3.8, group 0):
-  pulses shorter than that dropped before the capture keeps them. A probe without one refuses the capture.
+  pulses shorter than that dropped before the capture keeps them. A probe without one refuses the capture. The width the
+  probe used (configure's answer glitch_used) goes into `Result.meta["probe"]["glitch_filter_ns"]` (an analysis does
+  not judge pulses shorter than it).
 - (JA) `acquire.Request(glitch_filter_ns=...)`: ロジックの線すべてにプローブのグリッチフィルタを掛ける（capture §3.8、group 0）。それより短いパルスは
-  取り込む前に捨てる。フィルタの無いプローブは取り込みを断る。
+  取り込む前に捨てる。フィルタの無いプローブは取り込みを断る。プローブが実際に使った幅（configure の応答の glitch_used）は
+  `Result.meta["probe"]["glitch_filter_ns"]` に残す（解析が、それより短いパルスを判定しないように）。
 
 ## 0.0.56
 - (EN) libusb1 and hidapi are dependencies: `pip install oep-client-python` opens a probe over vendor bulk and HID

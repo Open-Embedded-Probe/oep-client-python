@@ -54,6 +54,8 @@ def test_glitch_filter_on_the_logic_lines(probe):
     a, c = res.all_parts[0].channels
     assert np.count_nonzero(np.diff(levels(a))) < 10                  # line 0: its 1-sample levels filtered away
     assert np.count_nonzero(np.diff(levels(c))) > 200                 # line 2: kept
+    assert res.meta["probe"]["glitch_filter_ns"] == 100               # what the probe used, for the analysis
+    assert "glitch_filter_ns" not in acquire.capture_at(probe(), acquire.Request([("A", "GPIO10")], 20_000_000, 100)).meta["probe"]
     with pytest.raises(ValueError):
         acquire.Request([("A", "GPIO10")], 20_000_000, 1000, glitch_filter_ns=0)
 
