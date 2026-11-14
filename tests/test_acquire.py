@@ -46,6 +46,18 @@ def test_one_shot_lines_and_the_probes_facts(probe):
     assert p["unit_id"] and p["address"] == f"oep://{p['unit_id']}" and "boot_id" in p   # the probe, not the route
 
 
+def test_glitch_filter_on_the_logic_lines(probe):
+    # the virtual bench's counter at 20 MHz: line k changes every 2^k samples (50 ns x 2^k); a 100 ns filter keeps a
+    # level once it has held 2 samples (capture §3.8): line 0's one-sample levels go, line 2's four-sample ones stay
+    req = acquire.Request([("A", "GPIO10"), ("C", "GPIO12")], 20_000_000, 1000, glitch_filter_ns=100)
+    res = acquire.capture_at(probe(), req)
+    a, c = res.all_parts[0].channels
+    assert np.count_nonzero(np.diff(levels(a))) < 10                  # line 0: its 1-sample levels filtered away
+    assert np.count_nonzero(np.diff(levels(c))) > 200                 # line 2: kept
+    with pytest.raises(ValueError):
+        acquire.Request([("A", "GPIO10")], 20_000_000, 1000, glitch_filter_ns=0)
+
+
 def test_on_a_session_the_caller_holds(probe):
     hst = link.open_host(probe())
     try:

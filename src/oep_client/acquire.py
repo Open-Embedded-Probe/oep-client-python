@@ -86,6 +86,8 @@ class Request:
     segments: int | None = None              # repeat: how many acquisitions
     on_loss: str = "stop"                    # stream: "stop" at the first loss, or "continue" to the end
     spool_dir: str | None = None             # stream: where its channels are put together on disk while it runs
+    glitch_filter_ns: int | None = None      # logic: pulses shorter than this dropped on every logic line (the probe's
+                                             # glitch filter, capture §3.8; a probe without one refuses the capture)
     during: Callable[[Callable[[float], None]], None] | None = None   # stream: instead of `seconds`, runs until this
                                              # returns - called with wait(seconds), which collects while it waits;
                                              # wait.beside(fn) collects while fn runs in another thread
@@ -116,6 +118,8 @@ class Request:
             raise ValueError("during is for a stream, in place of seconds")
         if self.mode == "stream" and self.during is None and not (self.seconds and self.seconds > 0):
             raise ValueError("a stream needs seconds (how long) or during")
+        if self.glitch_filter_ns is not None and self.glitch_filter_ns < 1:
+            raise ValueError(f"glitch_filter_ns {self.glitch_filter_ns}: 1 or more (None: no filter)")
         if self.arm not in ("pretrigger", "now"):
             raise ValueError(f"arm {self.arm!r}: pretrigger or now")
         logic = {n for n, _ in self.channels}
@@ -473,6 +477,11 @@ def oc_state(name: str) -> int:
     return STATE[name]
 
 
+def _glitch(req: Request) -> dict:
+    """configure's options for the request's glitch filter on the logic lines (capture §3.8: group 0), or nothing."""
+    return {"options": {"glitch_filter": {0: req.glitch_filter_ns}}} if req.glitch_filter_ns else {}
+
+
 def _configure(track, oc, oh, target: str, what: str, mode=None, **kw):
     """configure; a refusal (unsupported, naming the TLV) in one line. Every probe knows the configure TLVs of OEP
     v1 (capture §3.3), so one it cannot honour is refused, not ignored."""
@@ -728,7 +737,7 @@ def _capture(link, core, oc, oh, message, target: str, req: Request, ids: list[i
                         raise ValueError("--arm now needs an oep-client-python with trigger_opts")
                     blocks["trigger_opts"] = oc.TriggerOpts(arm=0)
                 if req.mode == "stream":
-                    cfg = _configure(cap, oc, oh, target, "logic", oc.STREAMING, rate=req.rate, **blocks)
+                    cfg = _configure(cap, oc, oh, target, "logic", oc.STREAMING, rate=req.rate, **blocks, **_glitch(req))
                     if an:                     # logic and analog: both streamed in one group (capture §4.1)
                         arate = req.analog_rate or req.rate
                         fes = {k: fe for k, (_, _, fe) in enumerate(req.analog) if fe is not None}
@@ -741,7 +750,7 @@ def _capture(link, core, oc, oh, message, target: str, req: Request, ids: list[i
                 if req.mode == "repeat":       # with a trigger, one per segment (rearm 1, capture §2.1 / §3.3)
                     if trigger:
                         blocks["trigger_opts"] = oc.TriggerOpts(arm=0 if req.arm == "now" else 1, rearm=1)
-                    cfg = _configure(cap, oc, oh, target, "logic in repeat", oc.REPEAT, rate=req.rate, samples=req.samples,
+                    cfg = _configure(cap, oc, oh, target, "logic in repeat", oc.REPEAT, **_glitch(req), rate=req.rate, samples=req.samples,
                                      segments=req.segments, trigger=trigger, pretrigger=req.pretrigger, **blocks)
                     return _repeat_result(cap, hst, cfg, req, names, ids, probe, fast, open_s, clock_before, oc, oh)
                 lkw = dict(rate=req.rate, samples=req.samples, trigger=trigger, pretrigger=req.pretrigger, **blocks)
@@ -750,7 +759,7 @@ def _capture(link, core, oc, oh, message, target: str, req: Request, ids: list[i
                     lrate = Fraction(lq.rate) if getattr(lq, "rate", None) else Fraction(req.rate)
                     lsamples = getattr(lq, "samples", None) or req.samples
                 else:
-                    cfg = _configure(cap, oc, oh, target, "logic", **lkw)
+                    cfg = _configure(cap, oc, oh, target, "logic", **lkw, **_glitch(req))
                     lrate, lsamples = Fraction(cfg.rate), getattr(cfg, "samples", None) or req.samples
             if an and req.mode == "stream":           # analog alone (Request refuses it beside logic, for now)
                 arate = req.analog_rate or req.rate
@@ -802,7 +811,7 @@ def _capture(link, core, oc, oh, message, target: str, req: Request, ids: list[i
                                                if isinstance(r, oh.Unsupported) else f"{w}: {r}"
                                                for w, r in refused)) from refused[0][1]
                     if cap:
-                        cfg = _configure(cap, oc, oh, target, "logic", **lkw)
+                        cfg = _configure(cap, oc, oh, target, "logic", **lkw, **_glitch(req))
                 acfg = _configure(an, oc, oh, target, what, **akw)
             group = None
             if an and (cap or grouped):
