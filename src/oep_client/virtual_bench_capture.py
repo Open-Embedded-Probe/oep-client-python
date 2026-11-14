@@ -36,7 +36,7 @@ external clock, ticks of TIMEBASE_HZ). The optional features of §3.8 exist only
 
 - glitch filter: a level counts once it has held the filter's samples, for the data and the trigger alike (group 0
   holds every channel).
-- input hysteresis: declared states off and on; on unless configure says 0, hysteresis_used in every answer (the
+- input hysteresis: declared states off and on; on when configure says 1, hysteresis_used in every answer (the
   bench's signals have no slow edges: it changes nothing in the data).
 - external clock: the clock's role is no sample channel; the samples are a counter of its edges (rising at (n+1)/f,
   falling at (n+1/2)/f, both every 1/(2f) from start; f the configured rate, or the TEST HOOK `clock_hz`); a qualifier
@@ -551,10 +551,10 @@ class VirtualCapture:
         input_hys = None                                           # not declared: no hysteresis_used (§3.8)
         if o.hysteresis:
             hk = T.get("input_hysteresis")
-            want = got[hk][0] if hk in got else 1                  # unsent: on where on is a state (§3.8)
+            want = got[hk][0] if hk in got else 0                  # unsent: off where off is a state (§3.8)
             if hk in got and (want > 1 or not o.hysteresis >> want & 1):
                 raise t.refuse(hk)
-            input_hys = want if hk in got else (1 if o.hysteresis & 0b10 else 0)
+            input_hys = want if hk in got else (0 if o.hysteresis & 0b01 else 1)
         if not channels:
             raise wrong_state()                                    # no plan (§3.2)
         role_ids = sorted(planned_roles) if planned_roles is not None else list(range(channels))

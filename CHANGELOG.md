@@ -2,11 +2,11 @@
 
 ## Unreleased
 - (EN) `acquire.Request(input_hysteresis=True / False)`: the probe's input hysteresis on every logic line (capture §3.8);
-  None (the default) leaves the probe's own (on where it has it). What the probe used (configure's answer
+  None (the default) leaves the probe's own (off where off is a state: on a slow line it hides short real pulses). What the probe used (configure's answer
   hysteresis_used) goes into `Result.meta["probe"]["input_hysteresis"]`. capture.configure takes it as the option
   "input_hysteresis"; the virtual bench's P4 declares it (and the glitch filter as 25 ns only, as the probe now does).
 - (JA) `acquire.Request(input_hysteresis=True / False)`: ロジックの線すべてのプローブの入力のヒステリシス（capture §3.8）。None（既定）は
-  プローブに任せる（持っていれば入り）。プローブが使った状態（configure の応答の hysteresis_used）は `Result.meta["probe"]["input_hysteresis"]`
+  プローブに任せる（切れるなら切り。遅い線では、入れると短い本物のパルスが写らない）。プローブが使った状態（configure の応答の hysteresis_used）は `Result.meta["probe"]["input_hysteresis"]`
   に残す。capture.configure では option の "input_hysteresis"。仮想ベンチの P4 はこれを宣言する（グリッチフィルタは、今のプローブと同じく 25 ns だけ）。
 - (EN) `acquire.Request(glitch_filter_ns=...)`: the probe's glitch filter on every logic line (capture §3.8, group 0):
   pulses shorter than that dropped before the capture keeps them. A probe without one refuses the capture. The width the

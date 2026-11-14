@@ -89,7 +89,7 @@ class Request:
     glitch_filter_ns: int | None = None      # logic: pulses shorter than this dropped on every logic line (the probe's
                                              # glitch filter, capture §3.8; a probe without one refuses the capture)
     input_hysteresis: bool | None = None     # logic: the probe's input hysteresis on every logic line (capture §3.8)
-                                             # on / off; None leaves the probe's default (on where it has it)
+                                             # on / off; None leaves the probe's default (off where off is a state)
     during: Callable[[Callable[[float], None]], None] | None = None   # stream: instead of `seconds`, runs until this
                                              # returns - called with wait(seconds), which collects while it waits;
                                              # wait.beside(fn) collects while fn runs in another thread
@@ -493,7 +493,7 @@ def _glitch(req: Request) -> dict:
 def _note_glitch(probe: dict, cfg) -> None:
     """The glitch filter the probe used on the logic lines (configure's answer glitch_used, group 0, ns) into the
     probe's facts, for an analysis that must not judge pulses shorter than it (they never reached the capture), and
-    the input hysteresis (hysteresis_used: edges a little later on slow lines)."""
+    the input hysteresis (hysteresis_used: on slow lines fewer ripples, a short real pulse unseen, edges a little later)."""
     used = (getattr(cfg, "used", None) or {}) if cfg is not None else {}
     if 0 in used.get("glitch_used", {}):
         probe["glitch_filter_ns"] = used["glitch_used"][0]

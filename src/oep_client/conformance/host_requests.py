@@ -14,7 +14,7 @@ REVIEWED = {
     'interfaces/oep-if-fixture.ja.md': '777a972349a14d1efa6e4575d3118b4e0566b81a6f22320401d529e4dca585f1',
     'docs/oep-core.ja.md': '7789bcf324dbf0e9f7dc319759b8353fd6c8732efb4107cf894e49fef967df22',
     'interfaces/oep-if-debug.ja.md': '6f21171b494e67d50bfc78b4da9e16949033c9e24d960efb42887335da021681',
-    'interfaces/oep-if-capture.ja.md': '8dd5a9d43886566a8654b5ed8c3b8cc73725f2063de5f1af9a7649ed81ba8349',
+    'interfaces/oep-if-capture.ja.md': '9d4e7c28467f00871e9be4a46903d385ae1179dc4dbd6ff9b3b2d449167394d5',
 }
 REVIEWED_REGISTRY_SHA256='08ea124e73ba30069556996181f85fd5206d9f5c20256c91cbafe6f3ab20d532'
 

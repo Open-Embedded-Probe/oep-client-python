@@ -62,9 +62,9 @@ def test_glitch_filter_on_the_logic_lines(probe):
 
 
 def test_input_hysteresis_on_the_logic_lines(probe):
-    # capture §3.8: unsent, the probe's default (on where it has it); False / True sent; hysteresis_used in the facts
+    # capture §3.8: unsent, the probe's default (off where off is a state); False / True sent; hysteresis_used in the facts
     run = lambda **kw: acquire.capture_at(probe(), acquire.Request([("A", "GPIO10")], 20_000_000, 100, **kw)).meta["probe"]
-    assert run()["input_hysteresis"] is True
+    assert run()["input_hysteresis"] is False
     assert run(input_hysteresis=False)["input_hysteresis"] is False
     assert run(input_hysteresis=True)["input_hysteresis"] is True
 
