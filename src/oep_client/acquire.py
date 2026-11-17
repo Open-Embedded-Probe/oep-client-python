@@ -388,13 +388,42 @@ def _run(target: str, req: Request, fast, hst, owner, link) -> Result:
         res = _capture(link, core, oc, oh, message, target, req, None, None, fast, hst,
                        owner or "oep_client.acquire")
         if isinstance(res, (_Streamed, _GroupStreamed)):   # put together after the session closed: it may take a while
-            res = res.result()
+            res = _put_together(res, hst)
         return res
     except oh.OepError as e:        # the probe refused or failed: say what, not where
         hint = ""
         if "(storage)" in str(e):     # capture §2.2: data lost inside a segment stops the track with error 2
             hint = " - the probe lost data inside a segment: try a lower rate or fewer channels"
         raise RuntimeError(f"probe {target}: {e}{hint}") from e
+
+
+def _put_together(res, hst):
+    """A stream's result put together. On the caller's session (capture(hst, ...)) the session is still open: its lease
+    is kept (keepalive at a third of it) while the parts are put together - a long stream's took a minute, past the
+    lease, and the caller's next request found no session. Putting together reads nothing from the probe."""
+    if hst is None or not getattr(hst, "session", None):
+        return res.result()
+    import threading
+    out, err = [], []
+
+    def work():
+        try:
+            out.append(res.result())
+        except BaseException as e:               # noqa: BLE001 - raised in the caller's thread
+            err.append(e)
+    t = threading.Thread(target=work, name="oep-acquire-put-together", daemon=True)
+    t.start()
+    every = max(0.5, (getattr(hst, "lease_ms", None) or 30000) / 3000)
+    while t.is_alive():
+        t.join(every)
+        if t.is_alive():
+            try:
+                hst.keepalive()
+            except Exception:                    # noqa: BLE001 - the lease is the caller's; the result still comes
+                pass
+    if err:
+        raise err[0]
+    return out[0]
 
 
 def _trigger_source(oc, req: Request, cap, an, names: list[str], acfg):

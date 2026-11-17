@@ -1,6 +1,11 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) acquire.capture(hst, ...) keeps the caller's lease while a stream is put together (keepalive at a third of the
+  lease): a 120 s stream at 20 MS/s x 2 took about a minute to put together, past a 30 s lease, and the caller's next
+  request (its end) found no session.
+- (JA) acquire.capture(hst, ...) は、流し続けを組み立てるあいだ呼んだ側の lease を保つ（lease の 3 分の 1 ごとに keepalive）。20 MS/s × 2 本を
+  120 秒流すと組み立てに約 1 分かかり、30 秒の lease が切れて、呼んだ側の次の要求（end）がセッションなしで断られていた。
 - (EN) Breaking (oep-spec 1c80768, transports §1): HID reports carry first(u16) after count - where the first frame
   starting in the report begins, hid_no_frame_start when none. HidReportStream writes it, and reads by it: a report
   whose first disagrees with its own reading means one went missing (an OS HID driver drops what is read too late), so

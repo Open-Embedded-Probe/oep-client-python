@@ -50,3 +50,23 @@ def test_a_worker_that_failed_does_not_keep_the_caller_waiting():
     t0 = time.monotonic()
     sp.take(got)
     assert time.monotonic() - t0 < 0.5
+
+
+def test_putting_a_stream_together_keeps_the_callers_lease():
+    """capture(hst, ...): the session is the caller's and still open while the parts are put together - keepalive at a
+    third of the lease meanwhile; with no session of the caller's, nothing is sent."""
+    class Slow:
+        def result(self):
+            time.sleep(1.2)
+            return "parts"
+
+    class Host:
+        session, lease_ms, sent = 0x1234, 1500, 0
+
+        def keepalive(self):
+            self.sent += 1
+    h = Host()
+    assert acquire._put_together(Slow(), h) == "parts" and h.sent >= 2
+    h2 = Host()
+    h2.session = None
+    assert acquire._put_together(Slow(), h2) == "parts" and h2.sent == 0
