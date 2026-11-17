@@ -398,9 +398,10 @@ def _uart(fn: int, instance: int, channels: list[int], max_hz: int, formats=FORM
 def _i2c_target(fn: int, channels: list[int], max_length: int, max_hz: int, features: int, queue_depth: int,
                 max_stretch_us: int = 0) -> Offered:
     """oep.fixture.i2c-target (fixture §3): SDA / SCL on `channels`, max_length (bytes a frame), max_clock_hz, features
-    (bit2 internal pull-ups), queue_depth (frames it keeps and preload slots, tag 0x40 u8), max_stretch_us (tag 0x41
-    u32: the most stretch accepts) - declared exactly when the optional op stretch is offered (its ops tag)."""
-    assert not features & 0b11, "features bit0 / bit1 are reserved (stretch is an op, declared by ops)"
+    (the enum features: internal_pullups, nack_from), queue_depth (frames it keeps and preload slots, tag 0x40 u8),
+    max_stretch_us (tag 0x41 u32: the most stretch accepts) - declared exactly when the optional op stretch is offered
+    (its ops tag)."""
+    assert not features & ~sum(reg.FIXTURE_I2C_TARGET.enum["features"].values()), "features: only the enum's bits"
     ops = ops_of("oep.fixture.i2c-target") if max_stretch_us else ops_of("oep.fixture.i2c-target", "stretch")
     return Offered(fn, 0, "oep.fixture.i2c-target", ops + _roles({1: channels, 2: channels}) + (
         catalog.u16(MAX_LENGTH, max_length), catalog.u32(MAX_CLOCK_HZ, max_hz), catalog.u32(FEATURES, features),
@@ -551,8 +552,9 @@ def p4_x035() -> VirtualProbe:
                catalog.tlv(_CAPD["glitch_filter"], struct.pack("<BIII", 0, 25, 25, 25)),
                catalog.tlv(_CAPD["input_hysteresis"], bytes([0b11]))),
             inner=_capture_inner([1, 2, 4, 8, 16], 8, 4096)),
-        _i2c_target(8, pins, max_length=128, max_hz=1_000_000, features=0, queue_depth=8,
-                    max_stretch_us=100_000),                                                       # stretch
+        _i2c_target(8, pins, max_length=128, max_hz=1_000_000,
+                    features=reg.FIXTURE_I2C_TARGET.enum["features"]["nack_from"], queue_depth=8,
+                    max_stretch_us=100_000),                                                       # stretch, nack_from
         Offered(9, 0, "oep.fixture.spi-target", _roles({1: pins, 2: pins, 3: pins, 4: pins})
                 + _spi_decl(max_length=64, max_hz=3_000_000, features=0b1, queue_depth=8)),             # LSB first
         # fn 10: the settings' interface before they moved into the core (core §13); its number left unused
@@ -755,7 +757,7 @@ I2C_INTERNAL_PULLUPS = reg.FIXTURE_I2C_TARGET.enum["features"]["internal_pullups
 
 def with_i2c_pullups(probe: VirtualProbe) -> VirtualProbe:
     """The profile with its oep.fixture.i2c-target enabling pull-ups of its own on SDA / SCL while configured,
-    declared as fixture §3 says: features bit2. VIRTUAL BENCH ONLY (the profiles declare none)."""
+    declared as fixture §3 says: features internal_pullups. VIRTUAL BENCH ONLY (the profiles declare none)."""
     def decl(o: Offered) -> Offered:
         return _with(o, (catalog.u32(FEATURES, struct.unpack_from("<I", t, 3)[0] | I2C_INTERNAL_PULLUPS)
                          if t[0] == FEATURES else t for t in o.tlvs))

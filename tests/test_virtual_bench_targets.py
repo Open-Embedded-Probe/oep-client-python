@@ -135,17 +135,17 @@ def test_i2c_arm_rx_and_reset_are_gone(probe, sda, scl):
 def test_i2c_declarations():
     _, hst, _ = bench(virtual_bench.p4_x035())
     t = fixture.I2cTarget(hst)
-    assert (t.max_length, t.max_clock_hz, t.features, t.queue_depth, t.max_stretch_us) == (128, 1_000_000, 0, 8,
-                                                                                           100_000)
-    assert t.offers(t.STRETCH) and not t.internal_pullups          # stretch: an optional op, in the ops tag (§3)
+    assert (t.max_length, t.max_clock_hz, t.features, t.queue_depth, t.max_stretch_us) == (
+        128, 1_000_000, t.FEATURE_NACK_FROM, 8, 100_000)
+    assert t.offers(t.STRETCH) and not t.internal_pullups and t.nack_from   # stretch: an optional op, in the ops tag (§3)
     _, hst, _ = bench(virtual_bench.esp32_v003())
     t = fixture.I2cTarget(hst)
     assert (t.max_length, t.max_clock_hz, t.features, t.queue_depth, t.max_stretch_us) == (16, 100_000, 0, 4, None)
     assert not t.offers(t.STRETCH) and t.offers(t.CONFIGURE) and t.offers(t.PRELOAD_TX)
-    assert "pullup_ohms" not in reg.FIXTURE_I2C_TARGET.tlv["describe"]   # no pullup_ohms (§3: features bit2 only)
+    assert "pullup_ohms" not in reg.FIXTURE_I2C_TARGET.tlv["describe"]   # no pullup_ohms (§3: the features bit only)
     ep, hst, _ = bench(virtual_bench.with_i2c_pullups(virtual_bench.p4_x035()))
     t = fixture.I2cTarget(hst)
-    assert t.internal_pullups and t.features == t.FEATURE_INTERNAL_PULLUPS
+    assert t.internal_pullups and t.features == t.FEATURE_INTERNAL_PULLUPS | t.FEATURE_NACK_FROM
     assert not [tag for tag, _ in core.describe(hst, t.fn) if tag & 0x7F == 0x42]
 
 
@@ -251,6 +251,26 @@ def test_i2c_stretch_and_plan_release(i2c):
     assert not ep.i2c_write(t.fn, b"\x01")
     with pytest.raises(host.Unavailable):
         t.configure(0x42)
+
+
+def test_i2c_nack_from(i2c):
+    """fixture §3 nack_from (features bit1): from the n-th data byte of each write NACKed, the bytes before ACKed, every
+    byte still in the frame; configure without it ACKs all again. A probe that does not declare it refuses the
+    (critical) TLV unsupported."""
+    ep, t, _ = i2c
+    assert t.nack_from
+    t.configure(0x42, nack_from=3)
+    assert ep.i2c_write(P4_I2C, b"abcd") and ep.i2c_last_nack == 3
+    assert ep.i2c_write(P4_I2C, b"xy") and ep.i2c_last_nack is None          # shorter than n: every byte ACKed
+    assert t.read_rx()[1] == b"abcd" and t.read_rx()[1] == b"xy"
+    t.configure(0x42)
+    assert ep.i2c_write(P4_I2C, b"abcd") and ep.i2c_last_nack is None
+    _, hst, _ = bench(virtual_bench.esp32_v003())
+    other = fixture.I2cTarget(hst)
+    core.plan_apply(hst, other.assignments(4, 5))
+    assert not other.nack_from
+    with pytest.raises(host.Unsupported):
+        other.configure(0x42, nack_from=2)
 
 
 def test_i2c_status_is_lock_free(i2c):

@@ -529,6 +529,7 @@ class I2cState:
     errors: int = 0
     tx: list = field(default_factory=list)      # preloaded, unread
     stretch_us: int = 0
+    nack_from: int = 0                   # configure's nack_from: NACK the n-th data byte of a write and after (0: none)
 
 
 @dataclass
@@ -3118,9 +3119,12 @@ class Endpoint(FixtureDrive):
         st, (max_length, features, depth, max_stretch) = self.i2c[fn], self.target_decl[fn]
         ops = _I2C.op
         planned = any(a[0] == fn for a in self.plan)
-        if op == ops["configure"]:                                 # address(u8) [TLV]; every check before any change
+        if op == ops["configure"]:                                 # address(u8) [TLV nack_from]; every check before any change
             address = t.take("B")
-            t.tail()
+            nack_tag = _I2C.tlv["configure"]["nack_from"]
+            got = t.tail({nack_tag} if features & _I2C.enum["features"]["nack_from"] else set())   # undeclared: unsupported
+            nack = t.fixed(got, nack_tag, 2)                       # another length: malformed (core §2.3)
+            nack_from = struct.unpack("<H", nack)[0] if nack is not None else 0
             if address > 0x7F:
                 raise Reject(m.MALFORMED)                          # a 7-bit address (excluded for every revision)
             if address <= 0x07 or address >= 0x78:
@@ -3131,7 +3135,8 @@ class Endpoint(FixtureDrive):
                 self.target_fail_configure.discard(fn)             # and counters gone, stretch kept (fixture §3)
                 self.i2c[fn] = I2cState(stretch_us=st.stretch_us)
                 return self._answer(b"", m.FAILED)
-            self.i2c[fn] = I2cState(state=1, address=address, stretch_us=st.stretch_us)   # made anew, stretch kept
+            self.i2c[fn] = I2cState(state=1, address=address, stretch_us=st.stretch_us,   # made anew, stretch kept
+                                    nack_from=nack_from)
             return self._answer(b"")
         if op == ops["read_rx"]:
             t.tail()
@@ -3173,14 +3178,18 @@ class Endpoint(FixtureDrive):
 
     def i2c_write(self, fn: int, data: bytes, address: int | None = None) -> bool:
         """TEST HOOK: a bus controller writes `data` to i2c-target `fn` in one transaction (START, address + W, data,
-        STOP). -> whether the target ACKed its address (configured, and `address` None or its own). A write with data
+        STOP). -> whether the target ACKed its address (configured, and `address` None or its own); i2c_last_nack: the
+        first data byte it NACKed (configure's nack_from; 1 = the first), else None. A write with data
         is one frame (fixture §3): more than max_length bytes are cut to max_length; a full queue drops the frame. errors
         grows by 1 at most per write (cut and dropped alike: 1). An address-only write (empty data) counts nothing."""
         st, (max_length, _, depth, _) = self.i2c[fn], self.target_decl[fn]
+        self.i2c_last_nack = None
         if st.state == 0 or (address is not None and address != st.address):
             return False
         if not data:
             return True                                            # address only: nothing counts
+        if st.nack_from and len(data) >= st.nack_from:             # NACKed from that byte on; still in the frame
+            self.i2c_last_nack = st.nack_from
         over = len(data) > max_length
         data = data[:max_length]
         if len(st.queue) >= depth:

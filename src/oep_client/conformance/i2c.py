@@ -6,7 +6,7 @@ from .registered_ops import RegisteredOpsChecks, refusal_carries
 
 
 class I2cChecks:
-    cases=('STATE0','PLAN-SHAPE','PLAN-TAGS','RUNNING-PLAN','CONFIGURE','CONFIGURE-FAIL','ADDRESS','MISMATCH','TLV','WRITE','EMPTY','TRUNCATE','OVERFLOW','DOUBLE-ERROR','READ-FIFO','PRELOAD','PRELOAD-LENGTH','SLOTS','READ-LENGTH','RECONFIGURE','STRETCH','PULLUPS','REPLAY-RX','REPLAY-TX','REPLAY-CONFIG','RELEASE','END','EXPIRY','FORCE','SESSION','COUNTS')
+    cases=('STATE0','PLAN-SHAPE','PLAN-TAGS','RUNNING-PLAN','CONFIGURE','CONFIGURE-FAIL','ADDRESS','MISMATCH','TLV','WRITE','EMPTY','TRUNCATE','OVERFLOW','DOUBLE-ERROR','READ-FIFO','PRELOAD','PRELOAD-LENGTH','SLOTS','READ-LENGTH','RECONFIGURE','STRETCH','PULLUPS','NACK-FROM','REPLAY-RX','REPLAY-TX','REPLAY-CONFIG','RELEASE','END','EXPIRY','FORCE','SESSION','COUNTS')
     def __init__(self,checks,adapter):self.c,self.a=checks,adapter
     @staticmethod
     def tlv(tag,value):return bytes((tag,))+struct.pack('<H',len(value))+value
@@ -48,6 +48,12 @@ class I2cChecks:
             elif kind=='RUNNING-PLAN':
                 self.written(b'keep');self.preload(sid,b'tx');before=self.a.state();self.ok(self.plan_request(sid));require(self.a.state()==before,'the same set changed a running target')
                 self.refused(self.plan_request(sid,((1,1),(2,0))),'unavailable',self.tlv(1,b'\6'))
+            elif kind=='NACK-FROM':                                   # fixture §3 nack_from (features bit1), critical
+                tag=self.nack_tag|128;extra=self.tlv(tag,struct.pack('<H',2))
+                if not self.nack_available:self.refused(self.req(2,'configure',sid,bytes((0x42,))+extra),'unsupported',bytes((tag,)));return
+                self.configure(sid,extra=extra);r=self.a.write(0x42,b'abcd','stop');require(r['ack'] and r['acked_bytes']==1,'nack_from 2: the second data byte and after NACKed, the first ACKed')
+                require(self.rx(sid)[1]==b'abcd','nack_from: the NACKed bytes are in the frame');require(self.written(b'x')['acked_bytes']==1,'nack_from 2: a 1-byte write all ACKed')
+                self.configure(sid);require(self.written(b'abcd')['acked_bytes']==4,'configure without nack_from ACKs every byte')
             elif kind=='CONFIGURE-FAIL':
                 self.written(b'keep');self.preload(sid,b'tx');self.a.fail_configure();before=self.a.state()
                 reply=self.c.exchange(self.req(2,'configure',sid,b'B'));require(reply[3:5]==b'\1\1','failed configure must be completed failed');tlvs(reply[5:])
@@ -131,7 +137,7 @@ class I2cChecks:
     def run(self):
         start=len(self.c.results)
         def context():
-            require(self.a.reset_scope=='logical-model' and self.a.selection=={1:'oep.probe.plan',2:'oep.fixture.i2c-target'},'explicit I2C fixture');base=RegisteredOpsChecks(self.c,self.a.selection);require(base.run()['status']=='passed','registered I2C ops');self.codes={fn:{r['name']:r['code'] for r in base.specs[name]['op']} for fn,name in self.a.selection.items()};self.assignment=base.specs['oep.probe.plan']['tlv']['plan_apply']['role_assignment'];spec=base.specs['oep.fixture.i2c-target'];self.ns=spec['tlv']['read_rx_answer']['ns'];require({'sda','scl'}<=set(spec['enum']['role']) and {'unconfigured','running'}<=set(spec['enum']['state']) and 'internal_pullups' in spec['enum']['features'],'selected I2C roles/states/features missing');self.pullup_bit=spec['enum']['features']['internal_pullups'];gpio=next(i for i in self.c.reg['interface'] if i['name']=='oep.fixture.gpio');self.pin_mode=gpio['enum']['mode'];values=dict(reversed(self.c.describe(2)));common=self.c.reg['describe_common'];self.maximum=struct.unpack('<H',values[common['max_length']])[0];self.depth=values[spec['tlv']['describe']['queue_depth']][0];self.internal_pullups=bool(struct.unpack('<I',values.get(common['features'],b'\0'*4))[0]&self.pullup_bit);self.stretch_available=self.codes[2]['stretch'] in ops(values[common['ops']]);self.max_stretch=struct.unpack('<I',values[spec['tlv']['describe']['max_stretch_us']])[0] if self.stretch_available else 0
+            require(self.a.reset_scope=='logical-model' and self.a.selection=={1:'oep.probe.plan',2:'oep.fixture.i2c-target'},'explicit I2C fixture');base=RegisteredOpsChecks(self.c,self.a.selection);require(base.run()['status']=='passed','registered I2C ops');self.codes={fn:{r['name']:r['code'] for r in base.specs[name]['op']} for fn,name in self.a.selection.items()};self.assignment=base.specs['oep.probe.plan']['tlv']['plan_apply']['role_assignment'];spec=base.specs['oep.fixture.i2c-target'];self.ns=spec['tlv']['read_rx_answer']['ns'];require({'sda','scl'}<=set(spec['enum']['role']) and {'unconfigured','running'}<=set(spec['enum']['state']) and 'internal_pullups' in spec['enum']['features'],'selected I2C roles/states/features missing');self.pullup_bit=spec['enum']['features']['internal_pullups'];gpio=next(i for i in self.c.reg['interface'] if i['name']=='oep.fixture.gpio');self.pin_mode=gpio['enum']['mode'];values=dict(reversed(self.c.describe(2)));common=self.c.reg['describe_common'];self.maximum=struct.unpack('<H',values[common['max_length']])[0];self.depth=values[spec['tlv']['describe']['queue_depth']][0];self.internal_pullups=bool(struct.unpack('<I',values.get(common['features'],b'\0'*4))[0]&self.pullup_bit);self.stretch_available=self.codes[2]['stretch'] in ops(values[common['ops']]);self.max_stretch=struct.unpack('<I',values[spec['tlv']['describe']['max_stretch_us']])[0] if self.stretch_available else 0;self.nack_tag=spec['tlv']['configure']['nack_from'];self.nack_available=bool(struct.unpack('<I',values.get(common['features'],b'\0'*4))[0]&spec['enum']['features']['nack_from'])
             require(self.maximum==8 and self.depth==3 and self.a.state()['clock_scope']=='explicit-logical-ms','logical fixture geometry/clock')
         self.c.check('OEP-I2C-CONTEXT','fixture §3; plan §2',context)
         if self.c.results[-1]['status']!='passed':self.c.abort=True

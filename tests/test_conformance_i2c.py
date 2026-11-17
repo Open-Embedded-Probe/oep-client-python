@@ -20,11 +20,11 @@ def setup(**kwargs):
     model=I2cModel(boot_id=17,**kwargs);return model,Checks(model.handle,reg,'virtual-resource-1')
 
 
-@pytest.mark.parametrize('stretch,pullups',[(True,True),(False,True),(True,False),(False,False)])
-def test_i2c_contract(stretch,pullups):
-    model,c=setup(stretch=stretch,pullups=pullups);r=I2cChecks(c,SampleI2cAdapter(model)).run()
+@pytest.mark.parametrize('stretch,pullups,nack',[(True,True,False),(False,True,False),(True,False,True),(False,False,True)])
+def test_i2c_contract(stretch,pullups,nack):
+    model,c=setup(stretch=stretch,pullups=pullups,nack=nack);r=I2cChecks(c,SampleI2cAdapter(model)).run()
     assert r['status']=='passed',[(x['id'],x.get('error')) for x in r['checks'] if x['status']!='passed']
-    assert len(r['checks'])==35 and not r['full_conformance']
+    assert len(r['checks'])==36 and not r['full_conformance']
 
 
 def test_common_declarations():
@@ -55,9 +55,10 @@ def test_bad_wire_results_detected(kind):
     ('no_error','TRUNCATE'),('double_error','DOUBLE-ERROR'),('drop_ack','TRUNCATE'),
     ('keep_config','RECONFIGURE'),('stretch_address','STRETCH'),('keep_plan','RELEASE'),
     ('keep_slot','READ-LENGTH'),('wrong_timestamp','WRITE'),('push_high','PULLUPS'),('wrong_address','MISMATCH'),
+    ('ack_all','NACK-FROM'),('nack_dropped','NACK-FROM'),
 ])
 def test_side_effect_faults_detected(fault,case):
-    model,c=setup();install=model.install
+    model,c=setup(nack=fault in ('ack_all','nack_dropped'));install=model.install
     def faulty_install():
         install();e=model.extension;dispatch=e.dispatch_request;write=e.write;read=e.read;release=e.release_plans
         def broken_dispatch(fn,op,payload,tags):
@@ -74,6 +75,9 @@ def test_side_effect_faults_detected(fault,case):
             if fault=='no_error':e.errors=0
             if fault=='double_error' and len(data)>8:e.errors+=1
             if fault=='drop_ack' and len(data)>8:result['acked_bytes']=8
+            if fault=='ack_all':result['acked_bytes']=len(data) if result['ack'] else 0   # nack_from taken, not acted on
+            if fault=='nack_dropped' and e.nack_from and e.rx and len(data)>=e.nack_from:   # the NACKed bytes left out
+                kept,ns=e.rx[-1];e.rx[-1]=(kept[:e.nack_from-1],ns)
             if fault=='stretch_address' and e.stretch_us:result['stretches'].insert(0,e.stretch_us)
             if fault=='wrong_timestamp' and e.rx:
                 data,ns=e.rx[-1];e.rx[-1]=(data,ns+1)

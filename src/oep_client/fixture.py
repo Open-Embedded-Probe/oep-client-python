@@ -218,6 +218,8 @@ class I2cTarget(_TargetDeclarations, Interface):
     ROLE_SDA, ROLE_SCL = _I2C.enum["role"]["sda"], _I2C.enum["role"]["scl"]
     TAG_QUEUE_DEPTH, TAG_MAX_STRETCH_US = _I2C.tlv["describe"]["queue_depth"], _I2C.tlv["describe"]["max_stretch_us"]
     FEATURE_INTERNAL_PULLUPS = _I2C.enum["features"]["internal_pullups"]
+    FEATURE_NACK_FROM = _I2C.enum["features"]["nack_from"]
+    TAG_NACK_FROM = _I2C.tlv["configure"]["nack_from"]
 
     def __init__(self, hst: h.Host, fn: int | None = None, name: str | None = None):
         super().__init__(hst, name, fn=fn)
@@ -228,13 +230,18 @@ class I2cTarget(_TargetDeclarations, Interface):
 
     RESERVED_ADDRESSES = (range(0x00, 0x08), range(0x78, 0x80))   # I2C's own (general call, 10-bit prefix, ...)
 
-    def configure(self, address: int) -> None:
+    def configure(self, address: int, nack_from: int | None = None) -> None:
         """Answer at `address` (7 bits), the target made anew (the queue, the slots and the counts emptied; stretch
         kept). 0x00-0x07 and 0x78-0x7F are the I2C specification's reserved addresses, which a probe refuses
-        unsupported (fixture §3) - refused here before anything is sent."""
+        unsupported (fixture §3) - refused here before anything is sent. nack_from (optional, `nack_from` true): NACK
+        the n-th data byte of each write and every one after (1 = the first; the bytes before and the address are
+        ACKed, the NACKed ones still go into the frame); sent critical, so a probe without it refuses unsupported."""
         if any(address in r for r in self.RESERVED_ADDRESSES):
             raise ValueError(f"I2C address 0x{address:02x} is reserved (0x00-0x07, 0x78-0x7F; fixture §3)")
-        self._call(self.CONFIGURE, struct.pack("<B", address))
+        body = struct.pack("<B", address)
+        if nack_from is not None:
+            body += m.tlv(self.TAG_NACK_FROM, struct.pack("<H", nack_from), critical=True)
+        self._call(self.CONFIGURE, body)
 
     TAG_NS = _I2C.tlv["read_rx_answer"]["ns"]
 
@@ -271,6 +278,11 @@ class I2cTarget(_TargetDeclarations, Interface):
         """Whether the probe enables pull-ups of its own on SDA / SCL while configured (describe features bit2, fixture
         §3); without them the bus needs its own."""
         return bool(self.features & self.FEATURE_INTERNAL_PULLUPS)
+
+    @property
+    def nack_from(self) -> bool:
+        """configure takes nack_from (features bit1, fixture §3)."""
+        return bool(self.features & self.FEATURE_NACK_FROM)
 
     def stretch(self, stretch_us: int) -> None:
         """Hold SCL low for stretch_us after each received byte (0 = off); an optional op, offered when the describe's

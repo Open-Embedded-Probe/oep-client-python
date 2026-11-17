@@ -1,6 +1,16 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) fixture.I2cTarget.configure(address, nack_from=None) and the nack_from property (oep-spec 1b5d056, fixture §3):
+  NACK the n-th data byte of each write and every one after, sent critical (a probe without it refuses unsupported).
+  The virtual bench's P4 profile declares it (its endpoint model: i2c_last_nack), conformance OEP-I2C-NACK-FROM (the
+  bytes before ACKed, the NACKed ones in the frame, an undeclared probe refusing the TLV); registry synced, reviewed
+  pins moved. The virtual bench's i2c-target and a trace test no longer take features bit0 / bit1 as reserved.
+- (JA) fixture.I2cTarget.configure(address, nack_from=None) と nack_from の属性（oep-spec 1b5d056、fixture §3）: 書き込みごとに n 番目の
+  データの byte から NACK を返させる。critical で送る（持たない probe は unsupported で断る）。仮想ベンチの P4 のプロファイルが宣言し
+  （endpoint のモデルは i2c_last_nack）、適合の検査に OEP-I2C-NACK-FROM を足した（それより前は ACK、NACK した byte もフレームに入る、宣言しない
+  probe は TLV を断る）。registry を同期し、見直しの控えを移した。仮想ベンチの i2c-target と trace の試験は、features の bit0 / bit1 を
+  予約として扱わなくなった。
 - (EN) rp2040_swd on an RP2350 (Pico 2, through an RP2040 OEP probe): its MEM-AP clears CSW bit 30 (the AHB-AP comes
   up non-secure and SRAM / flash faulted), and the ROM's functions are called only once the RCP is on and salted
   (CPACR CP7, then the salts unless set - OpenOCD's rp2xxx order: a core stopped by reset_halt has neither, and the

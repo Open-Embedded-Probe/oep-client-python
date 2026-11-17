@@ -695,7 +695,7 @@ def test_i2c_counts_stop_at_their_limits_and_go_with_configure_or_release(i2c):
 
 
 def test_i2c_describe_declares_its_limits():
-    """fixture §3 describe: ops, role_channels, max_length, max_clock_hz, features (bit2 only), queue_depth (0x40 u8),
+    """fixture §3 describe: ops, role_channels, max_length, max_clock_hz, features (the enum's bits only), queue_depth (0x40 u8),
     max_stretch_us (0x41 u32, at least 1) exactly when stretch is offered; the client reads them."""
     for profile in (virtual_bench.p4_x035, virtual_bench.esp32_v003):
         ep, h = bench(profile)
@@ -703,7 +703,7 @@ def test_i2c_describe_declares_its_limits():
         d = decl(ep, h, fn)
         assert {catalog.OPS, catalog.ROLE_CHANNELS, catalog.MAX_LENGTH, catalog.MAX_CLOCK_HZ, catalog.FEATURES, 0x40} <= set(d)
         assert len(d[0x40]) == 1 and d[0x40][0] >= 1
-        assert not struct.unpack("<I", d[catalog.FEATURES])[0] & ~0x04
+        assert not struct.unpack("<I", d[catalog.FEATURES])[0] & ~sum(reg.FIXTURE_I2C_TARGET.enum["features"].values())
         stretch = ep.offers(fn, 0x14)
         assert (0x41 in d) == stretch and (not stretch or struct.unpack("<I", d[0x41])[0] >= 1)
         t = fixture.I2cTarget(host.Host(ep.handle, rng=random.Random(1)), fn)

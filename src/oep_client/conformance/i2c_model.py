@@ -17,9 +17,9 @@ UNSUPPORTED_FIXED = b'\0'                                 # the unsupported payl
 
 class I2c(Gpio):
     functions=(1,2)
-    def __init__(self,ep,stretch=True,pullups=True):
-        super().__init__();self.ep=ep;self.stretch_available=stretch;self.internal_pullups=pullups;self.idle={ch:0 for ch in range(8)};self.pins=dict(self.idle);self.fail_next=False;self.reset()
-    def reset(self):self.configured=False;self.address=None;self.rx=[];self.tx=[];self.rx_frames=0;self.errors=0;self.stretch_us=0;self.pullups=False
+    def __init__(self,ep,stretch=True,pullups=True,nack=False):
+        super().__init__();self.ep=ep;self.stretch_available=stretch;self.internal_pullups=pullups;self.nack_available=nack;self.idle={ch:0 for ch in range(8)};self.pins=dict(self.idle);self.fail_next=False;self.reset()
+    def reset(self):self.configured=False;self.address=None;self.rx=[];self.tx=[];self.rx_frames=0;self.errors=0;self.stretch_us=0;self.pullups=False;self.nack_from=0
     def list_page(self,first,limit):
         rows=[struct.pack('<HHBB',fn,0,1,len(name))+name for fn,name in ((1,b'oep.probe.plan'),(2,b'oep.fixture.i2c-target'))];page=bytearray(struct.pack('<HB',2,0))
         for row in rows[first:]:
@@ -29,17 +29,21 @@ class I2c(Gpio):
     def describe(self,fn):
         if fn==1:return super().describe(1)
         ops=pack_ops({OP[k] for k in ('configure','read_rx','preload_tx','status')}|({OP['stretch']} if self.stretch_available else set()))
-        rows=(tlv(DC['ops'],ops),tlv(DC['role_channels'],bytes((ROLE['sda'],0,0,3))),tlv(DC['role_channels'],bytes((ROLE['scl'],0,0,3))),tlv(DC['max_clock_hz'],struct.pack('<I',400000)),tlv(DC['max_length'],struct.pack('<H',8)),tlv(DC['features'],struct.pack('<I',FEAT['internal_pullups'] if self.internal_pullups else 0)),tlv(D['queue_depth'],b'\3'))
+        rows=(tlv(DC['ops'],ops),tlv(DC['role_channels'],bytes((ROLE['sda'],0,0,3))),tlv(DC['role_channels'],bytes((ROLE['scl'],0,0,3))),tlv(DC['max_clock_hz'],struct.pack('<I',400000)),tlv(DC['max_length'],struct.pack('<H',8)),tlv(DC['features'],struct.pack('<I',(FEAT['internal_pullups'] if self.internal_pullups else 0)|(FEAT['nack_from'] if self.nack_available else 0))),tlv(D['queue_depth'],b'\3'))
         return rows+((tlv(D['max_stretch_us'],struct.pack('<I',1000)),) if self.stretch_available else ())
     def request_tags(self,fn,op,data):
         if fn==1:return super().request_tags(fn,op,data)
+        out=[]
         while data:
             if len(data)<3:raise Reject(R['malformed'])
             raw,size=struct.unpack_from('<BH',data);key=raw&127
             if not key or len(data)<3+size:raise Reject(R['malformed'])
-            data=data[3+size:]
-            if raw&128:raise Reject(R['unsupported'],bytes((raw,)))   # no request TLV defined: every copy, a later one too (core §2.3)
-        return []
+            value=data[3:3+size];data=data[3+size:]
+            if op==OP['configure'] and key==_I.tlv['configure']['nack_from'] and self.nack_available:   # declared: features bit1
+                if size!=2:raise Reject(R['malformed'])
+                out.append((raw,value));continue
+            if raw&128:raise Reject(R['unsupported'],bytes((raw,)))   # no other request TLV: every copy, a later one too (core §2.3)
+        return out
     def release_plans(self,functions):
         if 2 in functions:self.reset();self.events.append(('i2c-stop',))
         super().release_plans(functions)
@@ -77,7 +81,7 @@ class I2c(Gpio):
                 self.fail_next=False;stretch=self.stretch_us;self.reset();self.stretch_us=stretch   # gone, stretch kept
                 for ch in self.plans[2]:self.pins[ch]=self.idle[ch]
                 self.events.append(('configure-failed',address));return Completed(b'',1)
-            stretch=self.stretch_us;self.reset();self.stretch_us=stretch;self.configured=True;self.address=address;self.pullups=self.internal_pullups
+            stretch=self.stretch_us;self.reset();self.stretch_us=stretch;self.configured=True;self.address=address;self.pullups=self.internal_pullups;self.nack_from=next((struct.unpack('<H',v)[0] for _,v in tags),0)
             for ch in self.plans[2]:self.pins[ch]=MODE['input_pullup'] if self.pullups else MODE['open_drain_release']
             self.events.append(('configure',address));return b''
         if not self.configured:raise Reject(R['unavailable'],cause('wrong_state'))
@@ -90,7 +94,7 @@ class I2c(Gpio):
         if len(self.tx)>=3:raise Reject(R['unavailable'],cause('limit'))
         self.tx.append(payload[2:]);return b''
     def write(self,address,data,end):
-        ack=self.configured and address==self.address;ns=self.ep.now_ns();result={'ack':ack,'acked_bytes':len(data) if ack else 0,'stretches':[self.stretch_us]*len(data) if ack and self.stretch_us else [],'ended_ns':ns}
+        ack=self.configured and address==self.address;ns=self.ep.now_ns();result={'ack':ack,'acked_bytes':(len(data) if not self.nack_from or len(data)<self.nack_from else self.nack_from-1) if ack else 0,'stretches':[self.stretch_us]*len(data) if ack and self.stretch_us else [],'ended_ns':ns}
         self.events.append(('write',address,data,end,ack,ns))
         if not ack or not data:return result
         overflow=len(self.rx)>=3;long=len(data)>8
@@ -105,9 +109,9 @@ class I2c(Gpio):
 
 
 class I2cModel(GpioModel):
-    def __init__(self,boot_id=None,*,stretch=True,pullups=True):
-        self.milliseconds=0;self.i2c_stretch=stretch;self.i2c_pullups=pullups;super().__init__(lambda:self.milliseconds,boot_id=boot_id)
-    def install(self):self.extension=I2c(self.ep,self.i2c_stretch,self.i2c_pullups);self.ep.current_core=Core(self.ep,self.extension)
+    def __init__(self,boot_id=None,*,stretch=True,pullups=True,nack=False):
+        self.milliseconds=0;self.i2c_stretch=stretch;self.i2c_pullups=pullups;self.i2c_nack=nack;super().__init__(lambda:self.milliseconds,boot_id=boot_id)
+    def install(self):self.extension=I2c(self.ep,self.i2c_stretch,self.i2c_pullups,self.i2c_nack);self.ep.current_core=Core(self.ep,self.extension)
     def i2c_fail_configure(self):self.extension.fail_next=True   # the next accepted configure does not come up
     def handle(self,request):
         e=self.extension;fixed,free=e.fixed,e.free
