@@ -2,6 +2,7 @@
 port)."""
 
 import struct
+import threading
 
 import pytest
 
@@ -147,19 +148,23 @@ def test_an_impossible_length_resyncs():
     assert lk.resyncs == 1 and [op for _, _, op in sent(s)] == [m.OP_LOCK_STATE, m.OP_CONFIRM, m.OP_LOCK_STATE]
 
 
-def test_a_frame_that_stops_half_way_resyncs(monkeypatch):
-    monkeypatch.setattr(frames, "STALL_S", 0.02)
-    s = Stream(answering())
+def test_a_frame_that_pauses_half_way_is_read_on():
+    """A pause inside a frame is no lost boundary (frames' note): the answer is read whole once the rest comes."""
+    s = Stream()
     lk = make_link(s)
-    s.rx += struct.pack("<H", 10) + b"\x02\x05"                   # 2 of 10 bytes, then nothing
-    lk.send(m.Request(4, 1, 0x01, b"", session=1).pack())            # sent again with corr 4 after the resync
-    assert lk.resyncs == 1 and [op for _, _, op in sent(s)] == [0x01, m.OP_CONFIRM, 0x01]
+    lk.timeout = 2.0                                                  # the answer's wait outlasts the pause
+    answer = frame(result(4, b"late"))
+    threading.Timer(0.05, lambda: s.rx.extend(answer[:3])).start()   # part of the answer, the rest 300 ms later
+    threading.Timer(0.35, lambda: s.rx.extend(answer[3:])).start()
+    got = lk.send(m.Request(4, 1, 0x01, b"", session=1).pack())
+    assert lk.resyncs == 0 and [op for _, _, op in sent(s)] == [0x01] and m.Result.unpack(got).payload == b"late"
 
 
 def test_pushes_that_never_stop_reopen_the_transport_and_send_no_state_change(monkeypatch):
     """transports §5: "静かにできなければ経路を閉じて開き直す" - no unsubscribe or end goes out blind (core §5.1: "boot_id
     を確認し、状態を読んでから次の状態変更を判断する"); the session stays the host's."""
     monkeypatch.setattr(link.SerialLink, "NOISY_S", 0.05)
+    monkeypatch.setattr(link.SerialLink, "PUSHES_END_S", 0.05)   # the longest lease, shortened
     s = Stream()
     s.close = lambda: None
     lk = make_link(s)
@@ -265,3 +270,13 @@ def test_find_is_cached_until_the_probe_reboots_and_an_empty_page_ends_the_searc
     assert hst.epoch == epoch + 1                                 # ... and every connection and the plan are gone
     core.find(hst, "oep.wire.swd")
     assert len(lists) == 6
+
+
+def test_a_resync_on_usb_waits_for_quiet_as_long_as_a_lease_lasts():
+    """Pushes stop with their session's lock (core §10.3) - on vendor bulk / HID nothing else stops them (a transport
+    opened again is not seen by the probe): the quiet is waited for up to lease_max_ms and the gap; TCP's new connection
+    carries none of the old one's pushes."""
+    lk = make_link(Stream())
+    assert lk._quiet_limit_s() == pytest.approx(60.2)
+    lk.stream.keeps_boundaries = True
+    assert lk._quiet_limit_s() == link.SerialLink.NOISY_S

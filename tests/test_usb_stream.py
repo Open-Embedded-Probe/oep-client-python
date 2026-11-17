@@ -147,8 +147,8 @@ def test_the_process_stream_reads_what_its_process_sends_and_writes_through_it()
     written = []
 
     def child():
-        data_child.send_bytes(b"\x03\0\0\0abc")         # each chunk: what is still behind it (u32), then the bytes
-        data_child.send_bytes(b"\0\0\0\0def")
+        data_child.send_bytes(b"abc")
+        data_child.send_bytes(b"def")
         while True:
             kind, arg = cmd_child.recv()
             if kind == "close":
@@ -167,7 +167,7 @@ def test_the_process_stream_reads_what_its_process_sends_and_writes_through_it()
     got = b""
     while len(got) < 6:
         got += s.read(10)
-    assert got == b"abcdef" and not s.behind and s.write(b"xy") == 2 and written == [b"xy"] and s.stats() == {"callbacks": 7}
+    assert got == b"abcdef" and s.write(b"xy") == 2 and written == [b"xy"] and s.stats() == {"callbacks": 7}
     s.close()
     assert not t.is_alive()
     with pytest.raises(OSError):
@@ -195,6 +195,14 @@ def test_the_process_side_sends_what_came_in_and_answers_requests(monkeypatch):
         def stats(self):
             return {"callbacks": 1}
 
+        def take_locked(self, n):
+            out = bytes(self._buffer[:n])
+            del self._buffer[:n]
+            return out
+
+        def release_held(self):
+            pass
+
         def close(self):
             self.closed = True
 
@@ -211,8 +219,7 @@ def test_the_process_side_sends_what_came_in_and_answers_requests(monkeypatch):
             fake._cond.notify_all()
     got = b""
     while len(got) < 5:
-        chunk = data_parent.recv_bytes()
-        got += chunk[4:]                                   # after the u32 of what is still behind it
+        got += data_parent.recv_bytes()
     assert got == b"abcde"
     cmd_parent.send(("write", b"xyz"))
     assert cmd_parent.recv() == ("ok", 3)
@@ -287,31 +294,66 @@ def test_the_usb_stream_is_a_process_by_default_and_a_thread_when_asked(monkeypa
     assert opened == ["process"]
 
 
-def test_a_pause_while_the_process_is_behind_is_not_a_frame_that_stopped():
-    """LengthFrames' stall rule (a frame whose bytes stop probe_frame_gap_ms) is the probe's pause: while the USB
-    stream's process still holds bytes (behind), a pause is this host's and the frame is waited for; without it the
-    frame is lost as before."""
-    from oep_client import frames
 
-    class Slow:
-        keeps_boundaries, timeout = False, 0.0
+def test_a_full_backlog_holds_the_transfers_until_read_takes_it_under_half(monkeypatch):
+    """Past backlog_max a transfer back with data is held, not sent out again (the kernel then takes no more and the
+    probe drops whole frames, core §10.4); read() taking the backlog under half sends the held ones out again. Close
+    with some held still ends with nothing out."""
+    monkeypatch.setitem(sys.modules, "usb1", usb1)
+    from oep_client import usb_stream
+    ctx = Context()
+    h = Handle(ctx)
+    s = usb_stream.UsbAsyncStream(ctx, h, 0x81, 0x01, 0, depth=4, backlog_max=8)
 
-        def __init__(self, behind):
-            self.behind, self.parts = behind, [b"\x08\0abcd"]
+    def back(t, data):
+        t.status, t.out = usb1.TRANSFER_COMPLETED, False
+        t.getActualLength = lambda: len(data)
+        t.getBuffer = lambda: bytearray(data)
+        t.callback(t)
+    a, b, c, d = h.transfers
+    back(a, b"12345")                                  # 5 waiting: out again
+    back(b, b"6789")                                   # 9 > 8: held
+    back(c, b"x")                                      # still full: held
+    assert a.out and not b.out and not c.out and s.stats()["holds"] == 2 and s.stats()["held_max"] == 2
+    s.timeout = 0.1
+    assert s.read(4) == b"1234"                         # 6 waiting: not under half yet
+    assert not b.out and not c.out
+    assert s.read(4) == b"5678"                         # 2 waiting: out again
+    assert b.out and c.out and s._held == []
+    back(b, b"y")
+    back(c, b"z")                                       # 4 waiting
+    back(d, b"123456")                                  # 10: held
+    assert not d.out
+    s.close()
+    assert h.closed_with_out == 0 and not s._events.is_alive()
 
-        @property
-        def in_waiting(self):
-            return 0
 
-        def read(self, n=1):
-            if self.parts:
-                return self.parts.pop(0)
-            time.sleep(min(self.timeout, 0.05))
-            return b""
-    f = frames.LengthFrames(Slow(True))
-    f.stall_s = 0.05
-    assert f.recv(0.3) is None and len(f._buffer) == 6           # kept: the rest comes later
-    f = frames.LengthFrames(Slow(False))
-    f.stall_s = 0.05
-    with pytest.raises(frames.FramingLost):
-        f.recv(0.3)
+def test_the_process_stream_stops_taking_the_pipe_while_its_buffer_is_full(monkeypatch):
+    """UsbProcessStream holds BUFFER_MAX at most: past it the pipe waits (the process then holds the bytes, then its
+    transfers), and read() taking some lets it go on."""
+    import multiprocessing as mp
+    from oep_client import usb_stream
+    data_parent, data_child = mp.Pipe(duplex=False)
+    cmd_parent, cmd_child = mp.Pipe()
+
+    def child():
+        for _ in range(4):
+            data_child.send_bytes(b"x" * 10)
+        while True:
+            kind, _ = cmd_child.recv()
+            if kind == "close":
+                data_child.close()
+                return
+    monkeypatch.setattr(usb_stream.UsbProcessStream, "BUFFER_MAX", 15)   # before its reader starts
+    t = threading.Thread(target=child, daemon=True)
+    t.start()
+    s = usb_stream.UsbProcessStream(FakeProcess(t), data_parent, cmd_parent, 512)
+    time.sleep(0.3)
+    assert s.in_waiting == 20                           # two taken (10, then 20 > 15): the rest waits in the pipe
+    s.timeout = 1.0
+    assert s.read(15) == b"x" * 15
+    deadline = time.monotonic() + 2
+    while s.in_waiting < 25 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert s.in_waiting == 25                           # 5 left, under 15: two more taken
+    s.close()

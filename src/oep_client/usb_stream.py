@@ -11,7 +11,6 @@ transfer; if its timeout hits first, pyusb raises and the bytes already received
 from __future__ import annotations
 
 import atexit
-import struct
 import threading
 import time
 
@@ -123,9 +122,14 @@ class UsbAsyncStream:
     # refuses (its memory, another device's transfers in this process) leaves the depth at what it took.
     URB_SIZE = 32 * 1024
     DEPTH = 480
+    # The bytes waiting for read() at most: past it, a transfer that comes back is held, not sent out again, until read()
+    # takes them under half - the kernel then takes no more, the probe's own buffer fills and it drops whole frames,
+    # which the stream's positions show (core §10.4). Without it a host slower than the stream grew without end (a
+    # P4X at 40 MB/s: the process killed out of memory, 2026-11-17). 64 MiB: 1.6 s at 40 MB/s.
+    BACKLOG_MAX = 64 * 1024 * 1024
 
     def __init__(self, context, handle, endpoint_in: int, endpoint_out: int, interface: int, out_packet: int = 512,
-                 urb_size: int | None = None, depth: int | None = None):
+                 urb_size: int | None = None, depth: int | None = None, backlog_max: int | None = None):
         import usb1
         self._usb1 = usb1
         self.context, self.handle, self.ep_in, self.ep_out, self.interface = context, handle, endpoint_in, endpoint_out, interface
@@ -136,13 +140,16 @@ class UsbAsyncStream:
         self._closed = False           # no more resubmits (close() started)
         self._stop = False             # the event thread ends (every transfer is back)
         self.urb_size, self.depth = urb_size or self.URB_SIZE, depth or self.DEPTH
+        self.backlog_max = backlog_max or self.BACKLOG_MAX
+        self._held = []                # transfers back while the backlog was full: out again when it drains
         self._transfers = []
         self._active = 0               # transfers submitted and not yet back for good
         # what stats() reports: the transfers out at a callback's start (the fewest seen: how near the queue came to
         # empty - the kernel takes the stream only into transfers that are out), the longest between two callbacks,
         # the most bytes waiting for read()
         self._inflight = 0
-        self._stats = {"callbacks": 0, "inflight_min": None, "gap_max_s": 0.0, "buffered_max": 0, "bytes": 0}
+        self._stats = {"callbacks": 0, "inflight_min": None, "gap_max_s": 0.0, "buffered_max": 0, "bytes": 0,
+                       "holds": 0, "held_max": 0}
         self._last_cb = None
         for _ in range(self.depth):
             t = handle.getTransfer()
@@ -212,24 +219,33 @@ class UsbAsyncStream:
             n = transfer.getActualLength()
             if n:
                 data = bytes(transfer.getBuffer()[:n])   # copied out: the transfer goes back out at once
-        # out again before the lock: a read() holding it does not keep the transfer back
+        # out again before the lock: a read() holding it does not keep the transfer back - unless the backlog is full
+        held = False
         if not self._closed and status in (usb1.TRANSFER_COMPLETED, usb1.TRANSFER_TIMED_OUT):
-            try:
-                transfer.submit()
-                self._inflight += 1
-                resubmitted = True
-            except usb1.USBError:
+            if len(self._buffer) + len(data) > self.backlog_max:
+                held = True
                 resubmitted = False
+            else:
+                try:
+                    transfer.submit()
+                    self._inflight += 1
+                    resubmitted = True
+                except usb1.USBError:
+                    resubmitted = False
         else:
             resubmitted = False
         with self._cond:
+            if held:
+                self._held.append(transfer)
+                st["holds"] += 1
+                st["held_max"] = max(st["held_max"], len(self._held))
             if data:
                 self._buffer += data
                 st["bytes"] += len(data)
                 if len(self._buffer) > st["buffered_max"]:
                     st["buffered_max"] = len(self._buffer)
-            if not resubmitted:
-                self._active -= 1      # back for good (cancelled, failed, or closing)
+            if not resubmitted and not held:
+                self._active -= 1      # back for good (cancelled, failed, or closing); a held one is still the stream's
             self._cond.notify_all()
 
     def stats(self) -> dict:
@@ -261,9 +277,32 @@ class UsbAsyncStream:
                 if left <= 0:
                     return b""
                 self._cond.wait(left)
-            out = bytes(self._buffer[:n])
-            del self._buffer[:n]
-            return out
+            out = self.take_locked(n)
+        self.release_held()
+        return out
+
+    def take_locked(self, n: int) -> bytes:
+        """Up to n bytes off the front; the caller holds self._cond (then calls release_held() without it)."""
+        out = bytes(self._buffer[:n])
+        del self._buffer[:n]
+        return out
+
+    def release_held(self) -> None:
+        """The held transfers out again once the backlog is under half of backlog_max (outside self._cond)."""
+        with self._cond:
+            if not self._held or self._closed or len(self._buffer) > self.backlog_max // 2:
+                return
+            held, self._held = self._held, []
+        for t in held:
+            try:
+                t.submit()
+            except self._usb1.USBError:
+                with self._cond:
+                    self._active -= 1          # back for good
+                    self._cond.notify_all()
+                continue
+            with self._cond:
+                self._inflight += 1
 
     def write(self, data: bytes) -> int:
         n = self.handle.bulkWrite(self.ep_out, data, timeout=2000)
@@ -274,6 +313,7 @@ class UsbAsyncStream:
     def reset_input_buffer(self) -> None:
         with self._cond:
             self._buffer.clear()
+        self.release_held()
 
     def close(self) -> None:
         """Cancel the IN transfers and let the event thread take them back before the handle and the context go
@@ -282,6 +322,9 @@ class UsbAsyncStream:
             return
         self._closed = True
         atexit.unregister(self.close)
+        with self._cond:
+            self._active -= len(self._held)    # not out: nothing to cancel
+            self._held = []
         for t in self._transfers:
             try:
                 t.cancel()
@@ -319,15 +362,13 @@ def _child(vid: int, pid: int, serial: str | None, urb_size: int | None, depth: 
                 if not s._buffer:
                     s._cond.wait(0.05)
                 # one chunk at a time off the front (a bytearray drops its front without moving the rest): a backlog
-                # copied whole at each send held the host's bytes back while it copied - tens of MB beside a host
-                # swapping took over probe_frame_gap_ms, and the host read a frame in its middle as stopped (P4X
-                # e8f60ae84dd7 at 160 MS/s x 2, 40 MB/s, 2026-11-17)
-                data = bytes(s._buffer[:ProcessStreamChunk])
-                del s._buffer[:len(data)]
-                behind = len(s._buffer)
+                # copied whole at each send held every byte back while it copied - tens of MB beside a host swapping
+                # (P4X e8f60ae84dd7 at 160 MS/s x 2, 40 MB/s, 2026-11-17)
+                data = s.take_locked(ProcessStreamChunk)
+            s.release_held()
             try:
-                if data:   # each chunk says how much is still here behind it (UsbProcessStream.behind)
-                    data_conn.send_bytes(struct.pack("<I", min(behind, 0xFFFFFFFF)) + data)
+                if data:
+                    data_conn.send_bytes(data)
             except (OSError, EOFError):
                 return
 
@@ -387,14 +428,14 @@ class UsbProcessStream:
     thread stopped longer than the probe's ring holds (26 ms; 6 s once beside a host under load, wireskein
     2026-10-20). What came in waits in that process until this one reads it."""
     READER = "usb-process"
+    # The bytes waiting for read() here at most: past it this process stops taking the pipe, so the stream's process
+    # holds them, then its transfers (UsbAsyncStream.BACKLOG_MAX) - memory stays bounded whatever the host keeps up with
+    BUFFER_MAX = 64 * 1024 * 1024
 
     def __init__(self, process, data_conn, cmd_conn, out_packet: int):
         self.process, self._data, self._cmd, self.out_packet = process, data_conn, cmd_conn, out_packet
         self.timeout = 0.05
         self._buffer = bytearray()
-        # True while the process still holds bytes it has not sent here: a pause in what arrives is then this host's
-        # (the process or this one behind), not the probe's - LengthFrames does not take it for a frame that stopped
-        self.behind = False
         self._cond = threading.Condition()
         self._cmd_lock = threading.Lock()
         self._closed = False
@@ -456,14 +497,15 @@ class UsbProcessStream:
 
     def _take(self) -> None:
         while not self._closed:
+            with self._cond:
+                while len(self._buffer) > self.BUFFER_MAX and not self._closed:
+                    self._cond.wait(0.1)           # read() takes some, then the pipe again
             try:
                 data = self._data.recv_bytes()
             except (EOFError, OSError):
                 break
-            behind, = struct.unpack_from("<I", data)
             with self._cond:
-                self._buffer += memoryview(data)[4:]
-                self.behind = behind > 0
+                self._buffer += data
                 self._cond.notify_all()
 
     def _request(self, kind: str, arg=None):
@@ -494,6 +536,7 @@ class UsbProcessStream:
                 self._cond.wait(left)
             out = bytes(self._buffer[:n])
             del self._buffer[:n]
+            self._cond.notify_all()                # _take may wait for room
             return out
 
     def write(self, data: bytes) -> int:
@@ -502,6 +545,7 @@ class UsbProcessStream:
     def reset_input_buffer(self) -> None:
         with self._cond:
             self._buffer.clear()
+            self._cond.notify_all()
 
     def stats(self) -> dict:
         """The process's UsbAsyncStream.stats()."""

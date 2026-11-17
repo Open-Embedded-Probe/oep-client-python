@@ -197,14 +197,15 @@ class Paused(Stream):
         return super().read(n)
 
 
-def test_on_tcp_a_pause_inside_a_frame_is_read_on():
+def test_a_pause_inside_a_frame_is_read_on_whatever_the_stream():
+    """transports §2's gap is the probe reader's rule: a host cannot tell the probe's pause from its own, and none of
+    the bytes a host's reader drops is found by a pause - so no stream takes a pause for a lost boundary."""
     msg = result(7, b"abc")
-    f = frames.LengthFrames(Paused(frame(msg)))
-    assert f.stall_s is None and f.recv(1.0) == msg
-    g = frames.LengthFrames(Paused(frame(msg)))
-    g.stall_s = frames.STALL_S                                         # vendor bulk / HID: a lost boundary
-    with pytest.raises(frames.FramingLost):
-        g.recv(1.0)
+    for keeps in (True, False):                                        # TCP, and vendor bulk / HID
+        stream = Paused(frame(msg))
+        stream.keeps_boundaries = keeps
+        f = frames.LengthFrames(stream)
+        assert f.stall_s is None and f.recv(1.0) == msg
     assert link.TcpStream.keeps_boundaries
 
 

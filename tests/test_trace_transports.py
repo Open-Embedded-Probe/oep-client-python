@@ -682,6 +682,7 @@ def test_a_length_port_that_never_goes_quiet_is_closed_and_opened_again(monkeypa
     quiet it closes the transport and opens it again (nothing that changes state goes out blind), then confirms with
     its own corr there; with no way to open it again it says so."""
     monkeypatch.setattr(link.SerialLink, "NOISY_S", 0.05)
+    monkeypatch.setattr(link.SerialLink, "PUSHES_END_S", 0.05)   # the longest lease, shortened
     s = Noisy(lambda msg: [])
     lk = link.SerialLink.on_stream(s, "length", 0.3)
     hst = h.Host(lk.send)

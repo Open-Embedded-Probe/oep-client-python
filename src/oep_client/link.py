@@ -281,6 +281,10 @@ class TcpStream:
 
 class SerialLink:
     NOISY_S = 1.0          # a resync that is still not quiet after this closes the transport and opens it again
+    # vendor bulk / HID: pushes that keep coming are a session's (core §10.3: a subscription ends with the lock), and a
+    # transport opened again does not stop them - the probe does not see a USB interface closed. With no request from
+    # this host they stop when that lease ends, lease_max_ms at the most: wait that long for quiet (transports §5)
+    PUSHES_END_S = reg.LIMITS["lease_max_ms"] / 1000 + reg.TIMING["probe_frame_gap_ms"] / 1000
 
     def __init__(self, port: str, timeout: float = 3.0, baud: int = BASE_BAUD):
         self._setup(open_serial(port, baud), "cobs", timeout)
@@ -553,7 +557,8 @@ class SerialLink:
 
     def resync(self, tries: int = 3) -> None:
         """transports §5: read and discard until the input is quiet for 50 ms, then prove the link with a confirm (a read,
-        safe to send), then go on. When the input does not go quiet (pushes keep coming), the transport is closed and
+        safe to send), then go on. Pushes keep the input busy until their session's lease ends (no request goes out
+        meanwhile), so on vendor bulk / HID it waits up to PUSHES_END_S; still not quiet, the transport is closed and
         opened again ("静かにできなければ経路を閉じて開き直す"), once - ConnectionError when it cannot be opened again or
         stays noisy. Nothing that changes state goes out before the confirm (core §5.1: "boot_id を確認し、状態を読んでから
         次の状態変更を判断する"). TCP: the connection is closed and opened again first (`_reopen`)."""
@@ -564,7 +569,7 @@ class SerialLink:
             self._reopen()
         reopened = False
         for _ in range(tries):
-            while not self.frames.discard_until_quiet(RESYNC_QUIET_S, self.NOISY_S):
+            while not self.frames.discard_until_quiet(RESYNC_QUIET_S, self._quiet_limit_s()):
                 if reopened or self.reopener is None:
                     raise ConnectionError("resync: the input never went quiet - close the transport and open it "
                                           "again (transports §5)")
@@ -598,6 +603,11 @@ class SerialLink:
             return
         if self.framing == "length" and not getattr(self, "_probing", False):
             self.resync()
+
+    def _quiet_limit_s(self) -> float:
+        """How long a length-framed resync reads and discards for quiet: TCP's new connection carries no pushes of the
+        old one (NOISY_S); on vendor bulk / HID they stop with their session's lease (PUSHES_END_S)."""
+        return self.NOISY_S if self._keeps_boundaries() else max(self.NOISY_S, self.PUSHES_END_S)
 
     def _keeps_boundaries(self) -> bool:
         """A length-framed stream that never loses a boundary (TCP, transports §2)."""
@@ -1286,7 +1296,7 @@ class SerialLink:
             if self.framing == "length":
                 # transports §5: the first confirm on a length-prefixed port waits for quiet input and longer than
                 # probe_frame_gap_ms since this host last wrote there
-                self.frames.discard_until_quiet(RESYNC_QUIET_S, self.NOISY_S)
+                self.frames.discard_until_quiet(RESYNC_QUIET_S, self._quiet_limit_s())
                 self._settle_before_confirm()
             return hst.confirm()
         except Exception as e:

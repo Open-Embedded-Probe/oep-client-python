@@ -1,17 +1,30 @@
 # Changelog / 変更履歴
 
 ## Unreleased
-- (EN) The USB stream's process (UsbProcessStream) hands its bytes over 1 MiB at a time off the front, each chunk with
-  how much it still holds behind it; while it holds some, LengthFrames does not take a pause for a frame that stopped
-  (probe_frame_gap_ms is the probe's pause, and this one was the host's). Before, it copied its whole backlog at each
-  hand-over: at 160 MS/s x 2 on a P4X (40 MB/s) beside a loaded host the backlog reached tens of MB, the copy held the
-  bytes back past 200 ms, a frame was read as stopped half way, and the stream ended in a resync that could not quiet
-  a streaming probe. With it, the same stream ran on until the hub disabled the port (a USB link error).
-- (JA) USB の流れの子プロセス（UsbProcessStream）は、手元のバイトを前から 1 MiB ずつ渡し、そのたびに後ろにまだ持っている量を添える。
-  持っている間は、LengthFrames は途切れをフレームの途中の止まりとみなさない（probe_frame_gap_ms はプローブの止まりで、これはホストの遅れ）。
-  前は渡すたびに手元を丸ごと複製していた: P4X の 160 MS/s × 2（40 MB/s）を負荷の高いホストで流すと、手元が数十 MB になり、複製の間
-  200 ms を超えて届かず、フレームが途中で止まったと読まれ、流しているプローブを静かにできない立て直しで終わっていた。直した後は、同じ流れが
-  ハブがポートを切る（USB の線の誤り）まで続いた。
+- (EN) A stream faster than this host fills no memory: acquire's spool queue (QUEUE_MAX, 256 MiB), UsbProcessStream's
+  buffer (BUFFER_MAX, 64 MiB) and UsbAsyncStream's backlog (BACKLOG_MAX, 64 MiB: its IN transfers are held, not sent
+  out again, until read() takes it under half) are bounded; past them each waits for the next, the kernel takes no
+  more, and the probe drops whole frames (core §10.4), which the stream's positions show as a loss. Unbounded, a P4X's
+  160 MS/s x 2 (40 MB/s) for 240 s queued gigabytes behind the spool's worker until the process was killed out of
+  memory (23.8 GB virtual, 2026-11-17).
+- (JA) ホストより速い流れでもメモリを使い切らない: acquire の書き手への列（QUEUE_MAX、256 MiB）、UsbProcessStream の手元（BUFFER_MAX、64 MiB）、
+  UsbAsyncStream の手元（BACKLOG_MAX、64 MiB。超えたら IN の転送を出し直さずに取っておき、read() が半分の下まで取ったら出し直す）に上限を
+  置いた。超えるとそれぞれ次を待ち、カーネルが受け取りをやめ、プローブはフレームを丸ごと捨て（core §10.4）、流れの位置の飛びで抜けと分かる。
+  上限がないと、P4X の 160 MS/s × 2（40 MB/s）を 240 秒流したとき、書き手の列に数 GB たまり、メモリ不足で殺された（仮想 23.8 GB、2026-11-17）。
+- (EN) A pause inside a frame is read on, on every stream (LengthFrames.stall_s is None by default): transports §2's
+  gap is the probe reader's rule, a host cannot tell the probe's pause from its own, and no byte a host's reader drops
+  is found by a pause. Taken for a lost boundary, a host's own delay ended a P4X's 160 MS/s x 2 stream (40 MB/s) beside
+  a loaded host in 2-4 minutes - and the resync's discarding cut the healthy stream for real. The USB stream's process
+  also hands its bytes over 1 MiB at a time off the front, not its whole backlog copied at each hand-over (tens of MB
+  then). A resync on vendor bulk / HID now waits for quiet as long as a lease lasts (lease_max_ms and the gap,
+  SerialLink.PUSHES_END_S), not 1 s: pushes stop only with their session's lock (core §10.3), and the probe does not
+  see a USB transport opened again. With these, the stream ran until the hub disabled the port (a USB link error; measured before the stall rule was dropped, with the process telling its backlog).
+- (JA) フレームの途中の休みは、どの流れでも読み続ける（LengthFrames.stall_s の既定は None）。transports §2 の途切れの規則はプローブが読む側の
+  もので、host にはプローブの休みと自分の遅れの区別がつかず、host の受け取りが落とすバイトも休みでは見つからない。区切りを失ったとみなすと、
+  負荷の高いホストで P4X の 160 MS/s × 2（40 MB/s）が 2〜4 分で終わり、立て直しの読み捨てが健全な流れを本当に切っていた。USB の流れの
+  子プロセスは、手元を渡すたびに丸ごと複製せず、前から 1 MiB ずつ渡す（手元は数十 MB になっていた）。vendor bulk / HID の立て直しは、静かになるのを
+  1 秒ではなく lease の最長まで待つ（lease_max_ms と途切れ、SerialLink.PUSHES_END_S）: 通知は購読したセッションのロックと一緒にしか止まらず
+  （core §10.3）、USB の経路を開き直してもプローブには分からない。直した後は、ハブがポートを切る（USB の線の誤り）まで流れが続いた（止まりの規則を外す前の、子が手元の量を伝える版で測った）。
 - (EN) `rp2040_swd` (flash, console), the IDE server's writer and gdb server, and the pytest plugin's upload also take an
   RP2350 board (issue oep-probe-arduino#2): `rp2040_swd.Target` tells the chip by its DPIDR - an RP2040 through core
   0's TARGETSEL first, then an RP2350 without TARGETSEL (ADIv6, the Arm core 0's MEM-AP at 0x2000, SRAM to 0x20082000,

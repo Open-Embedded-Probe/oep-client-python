@@ -1486,7 +1486,12 @@ class _Spool:
     """A stream put together while it comes (parts and losses parts on a timeline): after each poll the bytes
     that arrived are taken out of the client's Received (its start moved on, so it goes on counting positions), the
     channels' bits appended to files by the output and the events kept; a skipped position ends the part (a loss)
-    and the next part starts where the bytes do again. Memory holds about a poll's worth, whatever the length."""
+    and the next part starts where the bytes do again. The worker's queue holds QUEUE_MAX bytes at most: past it the
+    caller's thread waits for the worker, the transport's buffers fill (each bounded: usb_stream) and the probe drops
+    whole frames, which the positions show as a loss - a stream faster than this host fills no memory (a P4X at 40 MB/s
+    queued gigabytes until the process was killed, 2026-11-17)."""
+
+    QUEUE_MAX = 256 * 1024 * 1024
 
     def __init__(self, cap, cfg, names, ids, req: Request):
         import tempfile
@@ -1508,10 +1513,11 @@ class _Spool:
         import queue
         import threading
         self._queue, self._error = queue.Queue(), None
+        self._queued, self._room = 0, threading.Condition()   # bytes in the queue; the caller waits on _room
         self._worker = threading.Thread(target=self._drain, name="oep-acquire-spool", daemon=True)
         self._worker.start()
 
-    # -- taking what arrived (the caller's thread: O(1), so its polls keep coming) --
+    # -- taking what arrived (the caller's thread: no copy; it waits only while the worker's queue is full) --
     def give(self, got, write_pos: int | None = None) -> None:
         """The last of the stream: handed over with the end mark, not waited for (finish() waits)."""
         self.take(got)
@@ -1536,6 +1542,10 @@ class _Spool:
             got.start = start + len(data) + sum(n for _, n in gaps)
             self.received += len(data)
             self.end = got.start                 # the position just past what arrived
+        with self._room:
+            while self._queued > self.QUEUE_MAX and self._worker.is_alive() and self._error is None:
+                self._room.wait(0.1)
+            self._queued += len(data)
         self._queue.put((segs, start, data, gaps))
         if final:
             self._queue.put(("final", write_pos))
@@ -1560,6 +1570,9 @@ class _Spool:
                         pos += index - i + skipped
                         i = index
                 self._work(False, None)
+                with self._room:
+                    self._queued -= len(data)
+                    self._room.notify_all()
         except BaseException as e:               # noqa: BLE001 - raised in the caller's thread at the end
             self._error = e
 

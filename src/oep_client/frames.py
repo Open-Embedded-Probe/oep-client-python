@@ -1,7 +1,11 @@
 """Length-prefixed frames on a reliable byte stream (USB vendor bulk, HID, TCP): u16 length, then the message (oep-spec
-oep-core §3). No CRC: a length that cannot be right, or a frame that stops half way, means the boundaries are lost -
-FramingLost, and the link resyncs. Not on TCP (transports §5): a pause inside a frame is normal there and the
-frame is read on; a stream that keeps its boundaries says so with `keeps_boundaries = True`."""
+oep-core §3). No CRC: a length that cannot be right means the boundaries are lost - FramingLost, and the link resyncs
+(a result for another request is found lost by the link). A pause inside a frame is read on, on every stream: the
+gap rule (transports §2) is the probe's reader's, and a host cannot tell the probe's pause from its own (its reader
+behind, its process not scheduled) - nor is a byte the host's reader drops ever found by a pause (an OS HID queue drops
+reports without one; a sync USB read that times out drops what came before the pause, whole frames). `stall_s` stays
+for a test that makes a pause a lost boundary; a stream that keeps its boundaries (TCP) says so with
+`keeps_boundaries = True`."""
 
 from __future__ import annotations
 
@@ -10,7 +14,7 @@ import time
 
 from . import registry as reg
 
-STALL_S = reg.TIMING["probe_frame_gap_ms"] / 1000   # a frame whose bytes stop this long is not coming
+STALL_S = reg.TIMING["probe_frame_gap_ms"] / 1000   # transports §2's gap (the probe's rule; stall_s None by default)
 
 
 class FramingLost(ConnectionError):
@@ -24,8 +28,8 @@ class LengthFrames:
         self._buffer = bytearray()
         self._last_rx = time.monotonic()
         self.max_frame = max_frame
-        # TCP keeps the boundaries: a frame that pauses is read on, never taken for a lost one (transports §5)
-        self.stall_s: float | None = None if getattr(stream, "keeps_boundaries", False) else STALL_S
+        # a frame that pauses is read on, never taken for a lost one (the module's note): None on every stream
+        self.stall_s: float | None = None
 
     def send_many(self, messages) -> None:
         """Several frames in one write. A frame may be split over writes (transports §2), but no sender pauses
@@ -76,9 +80,7 @@ class LengthFrames:
                     if time.monotonic() >= deadline:
                         return None                                # TCP: the rest comes later, the buffer is kept
                     continue
-                # a stream whose own process still holds bytes (UsbProcessStream.behind): the pause is this host's
-                if (self._buffer and time.monotonic() - self._last_rx >= self.stall_s
-                        and not getattr(self._stream, "behind", False)):
+                if self._buffer and time.monotonic() - self._last_rx >= self.stall_s:
                     raise FramingLost(f"a frame stopped after {len(self._buffer)} bytes")
                 if time.monotonic() >= deadline:
                     # a frame still coming (its bytes stopped for less than stall_s) is kept for the next call: the
