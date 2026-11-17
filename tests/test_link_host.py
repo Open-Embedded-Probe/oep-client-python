@@ -2,6 +2,7 @@
 port)."""
 
 import struct
+import time
 import threading
 
 import pytest
@@ -284,3 +285,15 @@ def test_a_resync_on_usb_waits_for_quiet_as_long_as_a_lease_lasts():
     assert lk._quiet_limit_s() == pytest.approx(60.2)
     lk.stream.keeps_boundaries = True
     assert lk._quiet_limit_s() == link.SerialLink.NOISY_S
+
+
+def test_a_resync_on_a_stream_of_whole_frames_reads_nothing_past():
+    """HID (transports §5: "静かになるのを待たない"): its stream hands whole frames, so a resync confirms at once - pushes
+    that keep coming do not hold it up to the lease."""
+    s = Stream(answering())
+    s.whole_frames = True
+    s.noise = frame(bytes([m.ROLE_DATA]) + struct.pack("<HHQ", 5, 0, 0) + b"x" * 8)   # pushes that never stop
+    lk = make_link(s)
+    t0 = time.monotonic()
+    lk.resync()
+    assert time.monotonic() - t0 < 2 and [op for _, _, op in sent(s)] == [m.OP_CONFIRM]

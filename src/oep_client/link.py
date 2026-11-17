@@ -569,7 +569,8 @@ class SerialLink:
             self._reopen()
         reopened = False
         for _ in range(tries):
-            while not self.frames.discard_until_quiet(RESYNC_QUIET_S, self._quiet_limit_s()):
+            while not self._whole_frames() and not self.frames.discard_until_quiet(RESYNC_QUIET_S,
+                                                                                   self._quiet_limit_s()):
                 if reopened or self.reopener is None:
                     raise ConnectionError("resync: the input never went quiet - close the transport and open it "
                                           "again (transports §5)")
@@ -608,6 +609,11 @@ class SerialLink:
         """How long a length-framed resync reads and discards for quiet: TCP's new connection carries no pushes of the
         old one (NOISY_S); on vendor bulk / HID they stop with their session's lease (PUSHES_END_S)."""
         return self.NOISY_S if self._keeps_boundaries() else max(self.NOISY_S, self.PUSHES_END_S)
+
+    def _whole_frames(self) -> bool:
+        """A stream that hands whole frames only (HID: its reports' first, transports §1 / §5 - "静かになるのを待たない"):
+        nothing to read past before a confirm."""
+        return getattr(self.stream, "whole_frames", False)
 
     def _keeps_boundaries(self) -> bool:
         """A length-framed stream that never loses a boundary (TCP, transports §2)."""
@@ -1296,7 +1302,8 @@ class SerialLink:
             if self.framing == "length":
                 # transports §5: the first confirm on a length-prefixed port waits for quiet input and longer than
                 # probe_frame_gap_ms since this host last wrote there
-                self.frames.discard_until_quiet(RESYNC_QUIET_S, self._quiet_limit_s())
+                if not self._whole_frames():
+                    self.frames.discard_until_quiet(RESYNC_QUIET_S, self._quiet_limit_s())
                 self._settle_before_confirm()
             return hst.confirm()
         except Exception as e:

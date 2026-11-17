@@ -121,6 +121,8 @@ class HidReportStream:
     the link's reading never loses a boundary - the frames lost show as an answer that does not come or a push's seq
     (core §10.2). `report_losses`: reports found missing or broken."""
 
+    whole_frames = True    # read() gives whole frames only: a resync reads nothing past (link, transports §5)
+
     def __init__(self, backend, input_size: int, output_size: int):
         self.backend = backend
         self.input_size, self.output_size = input_size, output_size
