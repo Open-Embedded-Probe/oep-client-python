@@ -26,7 +26,7 @@ class Stream:
         if self.noise and not self.rx:
             self.rx += self.noise
         out = bytes(self.rx[:n])
-        del self.rx[:n]
+        del self.rx[:len(out)]                     # what was copied (a thread may append meanwhile)
         return out
 
     def write(self, data):
@@ -150,12 +150,16 @@ def test_an_impossible_length_resyncs():
 
 def test_a_frame_that_pauses_half_way_is_read_on():
     """A pause inside a frame is no lost boundary (frames' note): the answer is read whole once the rest comes."""
-    s = Stream()
-    lk = make_link(s)
-    lk.timeout = 2.0                                                  # the answer's wait outlasts the pause
     answer = frame(result(4, b"late"))
-    threading.Timer(0.05, lambda: s.rx.extend(answer[:3])).start()   # part of the answer, the rest 300 ms later
-    threading.Timer(0.35, lambda: s.rx.extend(answer[3:])).start()
+    s = Stream()
+
+    def respond(msg):                                                  # part of the answer at once, the rest after
+        threading.Timer(0.25, lambda: s.rx.extend(answer[3:])).start()  # more than probe_frame_gap_ms
+        return []
+    s.respond = respond
+    orig_write = s.write
+    s.write = lambda data: (orig_write(data), s.rx.extend(answer[:3]))[0]
+    lk = link.SerialLink.on_stream(s, "length", 2.0)                  # an answer's wait well past the pause
     got = lk.send(m.Request(4, 1, 0x01, b"", session=1).pack())
     assert lk.resyncs == 0 and [op for _, _, op in sent(s)] == [0x01] and m.Result.unpack(got).payload == b"late"
 
