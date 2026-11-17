@@ -9,7 +9,7 @@ server's network port in the IDE and press Upload.
     python -m oep_client.ide oep://<probe>/<port>[=<board>] ...
 
 - `<board>` is the board id put in the TXT `board` (the IDE shows it; default rpipico). The writer is chosen by the
-  board's family (`writer_for`): RP2040 boards are written over SWD by `rp2040_swd.flash`.
+  board's family (`writer_for`): RP2040 and RP2350 boards are written over SWD by `rp2040_swd.flash`.
 - One UDP port per target (`--udp-port` the first, the rest after it; 0: any free one), announced as the service's
   port. The TXT says auth_upload=no, tcp_check=no, ssh_upload=no: espota sends no password.
 
@@ -78,14 +78,15 @@ def board_family(board: str) -> str:
 
 
 def writer_for(board: str) -> Writer:
-    """The writer for a board id: RP2040 boards over SWD (rp2040_swd.flash, the RP2040's core 0 and boot ROM)."""
+    """The writer for a board id: RP2040 and RP2350 boards over SWD (rp2040_swd.flash, the chip's core 0 and boot
+    ROM; the chip is told by its DPIDR)."""
     family = board_family(board)
-    if family == "rp2040":
+    if family in ("rp2040", "rp2350"):
         def write(address: str, path: str, log: Callable[[str], None]) -> None:
             from . import rp2040_swd
             rp2040_swd.flash(address, path, log=log)
         return write
-    raise ValueError(f"board {board!r}: no writer for it (RP2040 boards only)")
+    raise ValueError(f"board {board!r}: no writer for it (RP2040 and RP2350 boards only)")
 
 
 def instance_name(address: str) -> str:

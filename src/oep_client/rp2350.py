@@ -82,6 +82,10 @@ class Flash:
         return struct.pack(f"<{len(words)}I", *words)[:length]
 
 
+def core_of(mem) -> CortexM:
+    return CortexM(mem, bkpt_at=BKPT_AT, stack_top=STACK_TOP)
+
+
 def program_and_verify(core: CortexM, image: bytes, offset: int = 0, log=lambda s: None, flash: Flash | None = None) -> bool:
     flash = flash or Flash(core)
     padded = flash.program(offset, image, log)

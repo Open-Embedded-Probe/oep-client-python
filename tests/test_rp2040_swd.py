@@ -100,3 +100,60 @@ def test_clear_rtt_ids_wipes_the_old_blocks():
     assert rp.clear_rtt_ids(m) == 2
     with pytest.raises(RuntimeError):
         rp.Rtt(m, wait=0)
+
+
+# ---- RP2040 or RP2350: told by the DPIDR, each chip's way in ----------------------------------------------------
+
+class FakeWire:
+    """SwdWire.attach: answers the way `chip` would (an RP2040 only to its TARGETSEL, an RP2350 only without)."""
+
+    def __init__(self, chip, dpidr=None):
+        self.chip, self.dpidr, self.calls, self.detached = chip, dpidr, [], []
+
+    def attach(self, targetsel=None, pins=None):
+        self.calls.append(targetsel)
+        if self.chip is rp.RP2040 and targetsel == rp.RP2040.targetsel:
+            return 1, self.dpidr or rp.RP2040.dpidr, False
+        if self.chip is not rp.RP2040 and targetsel is None:
+            return 2, self.dpidr or rp.RP2350.dpidr, True
+        raise RuntimeError("failed")
+
+    def detach(self, conn):
+        self.detached.append(conn)
+
+
+def attach_with(wire):
+    t = rp.Target.__new__(rp.Target)
+    t.wire = wire
+    return t._attach((10, 8))
+
+
+def test_an_rp2040_is_reached_by_its_targetsel_first():
+    w = FakeWire(rp.RP2040)
+    conn, dpidr, chip = attach_with(w)
+    assert chip is rp.RP2040 and w.calls == [rp.RP2040.targetsel]          # never the bare attach: 3 DPs at once
+
+
+def test_an_rp2350_answers_without_targetsel_and_is_adiv6_at_0x2000():
+    w = FakeWire(rp.RP2350, dpidr=0x2C013477)                              # another REVISION: same chip
+    conn, dpidr, chip = attach_with(w)
+    assert chip is rp.RP2350 and w.calls == [rp.RP2040.targetsel, None]
+    assert chip.adiv6 and chip.ap == 0x2000 and chip.ram_end == 0x20082000
+
+
+def test_another_chip_is_named_and_let_go():
+    w = FakeWire("other", dpidr=0x6BA02477)
+    with pytest.raises(RuntimeError, match="neither an RP2040"):
+        attach_with(w)
+    assert w.detached == [2]
+
+
+def test_rtt_searches_the_chips_ram():
+    m = Mem()
+    m.put(0x20070000, rp.RTT_ID)                                          # above the RP2040's SRAM
+    m.put(0x20070000 + 16, struct.pack("<II", 1, 0))
+    m.put(0x20070000 + 24, struct.pack("<6I", 0, 0x20071000, 16, 0, 0, 0))
+    with pytest.raises(RuntimeError):
+        rp.Rtt(m, wait=0)
+    assert rp.Rtt(m, wait=0, ram_end=rp.RP2350.ram_end).cb == 0x20070000
+    assert rp.clear_rtt_ids(m, rp.RP2350.ram_end) == 1 and m.read32(0x20070000) == 0

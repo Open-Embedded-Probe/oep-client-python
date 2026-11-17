@@ -1,5 +1,5 @@
-"""An RP2040 board as a test's peer over an OEP probe's SWD alone: written over SWD (rp2040), its console the SEGGER RTT
-rings read and written through the MEM-AP while the core runs. For a peer whose native USB goes to the device under test,
+"""An RP2040 or RP2350 board as a test's peer over an OEP probe's SWD alone: written over SWD (rp2040 / rp2350), its
+console the SEGGER RTT rings read and written through the MEM-AP while the core runs. The chip is told by its DPIDR. For a peer whose native USB goes to the device under test,
 so neither the USB writing nor a USB console is there.
 
 The address is `oep://<probe>/<port>`: the probe's channels labelled `<port>.swdio` / `<port>.swclk` are the wire. When
@@ -22,12 +22,49 @@ import threading
 import time
 import urllib.parse
 
-from . import acquire, arm, brokers, core, rp2040
+from dataclasses import dataclass
+from typing import Callable
+
+from . import acquire, arm, brokers, core, rp2040, rp2350
 
 LEASE_MS = 60000
-RAM, RAM_END = 0x20000000, 0x20042000
+RAM, RAM_END = 0x20000000, 0x20042000     # the RP2040's SRAM (Chip.ram_end: the chip's own)
 RTT_ID = b"SEGGER RTT\0\0\0\0\0\0"
 FLASH_BASE, FLASH_END = 0x10000000, 0x11000000
+
+
+@dataclass(frozen=True)
+class Chip:
+    """What differs between the RP2 chips on the SWD side. RP2040: a multidrop DP per core (TARGETSEL picks core 0),
+    ADIv5, the MEM-AP at APSEL 0, SRAM to 0x20042000. RP2350 (OpenOCD's target/rp2350.cfg): one ADIv6 DP that answers
+    without TARGETSEL (multidrop is optional there), the Arm core 0's MEM-AP at 0x2000, SRAM to 0x20082000."""
+    name: str
+    dpidr: int                      # the DPIDR it answers with (REVISION, bits 31:28, not compared: DPIDR_MASK)
+    targetsel: int | None
+    adiv6: bool
+    ap: int
+    ram_end: int
+    core_of: Callable
+    program_and_verify: Callable
+    rom: Callable                   # Rom(core): its reboot()
+
+
+RP2040 = Chip("rp2040", 0x0BC12477, rp2040.TARGETSEL_CORE0, False, 0, 0x20042000, rp2040.core_of,
+              rp2040.program_and_verify, rp2040.Rom)
+RP2350 = Chip("rp2350", 0x4C013477, None, True, 0x2000, 0x20082000, rp2350.core_of,
+              rp2350.program_and_verify, rp2350.Rom)
+CHIPS = (RP2040, RP2350)       # tried in this order: TARGETSEL first, so an RP2040's three DPs never answer at once
+
+
+DPIDR_MASK = 0x0FFFFFFF
+
+
+def chip_of(dpidr: int) -> Chip:
+    for c in CHIPS:
+        if c.dpidr & DPIDR_MASK == dpidr & DPIDR_MASK:
+            return c
+    raise RuntimeError(f"DPIDR {dpidr:#010x}: neither an RP2040 ({RP2040.dpidr:#010x}) nor an RP2350 "
+                       f"({RP2350.dpidr:#010x})")
 
 
 def parse(address: str) -> tuple[str, str]:
@@ -45,16 +82,32 @@ def open_host(unit: str, owner: str):
 
 
 class Target:
-    """The RP2040's core 0 on the port's SWD pair: wire, connection, MEM-AP, CortexM."""
+    """The chip's (Arm) core 0 on the port's SWD pair: wire, connection, MEM-AP, CortexM, and which chip (`chip`)."""
 
     def __init__(self, h, port: str):
         swdio, swclk = acquire._channels(core, h, [f"{port}.swdio", f"{port}.swclk"])
         self.host, self.wire = h, arm.SwdWire(h)
-        self.conn, self.dpidr, _ = self.wire.attach(targetsel=rp2040.TARGETSEL_CORE0, pins=(swdio, swclk))
-        adi = arm.ArmAdi(h, self.conn)
+        self.conn, self.dpidr, self.chip = self._attach((swdio, swclk))
+        adi = arm.ArmAdi(h, self.conn, adiv6=self.chip.adiv6)
         adi.power_up()
-        self.mem = arm.MemAp(adi, 0)
-        self.core = rp2040.core_of(self.mem)
+        self.mem = arm.MemAp(adi, self.chip.ap)
+        self.core = self.chip.core_of(self.mem)
+
+    def _attach(self, pins):
+        """Each chip's way in, in CHIPS order; the DPIDR that answers says which chip it is."""
+        failure = None
+        for c in CHIPS:
+            try:
+                conn, dpidr, _ = self.wire.attach(targetsel=c.targetsel, pins=pins)
+            except Exception as e:             # no answer that way: the next chip's
+                failure = e
+                continue
+            try:
+                return conn, dpidr, chip_of(dpidr)
+            except RuntimeError:
+                self.wire.detach(conn)
+                raise
+        raise failure
 
     def close(self) -> None:
         try:
@@ -86,13 +139,13 @@ def image_of(path: str) -> bytes:
     return bytes(image)
 
 
-def clear_rtt_ids(mem) -> int:
+def clear_rtt_ids(mem, ram_end: int = RAM_END) -> int:
     """Wipe every SEGGER RTT control block's ID left in RAM (RAM outlives a reboot): a console opened after the reboot
     then finds only the block the new image writes, never the old one - whose offsets, written back while the new
     image set them up again, lost its first lines. The core must be halted. -> how many were wiped."""
     n, chunk = 0, 16 * 1024
-    for at in range(RAM, RAM_END, chunk):
-        words = mem.read_block(at, min(chunk, RAM_END - at) // 4)
+    for at in range(RAM, ram_end, chunk):
+        words = mem.read_block(at, min(chunk, ram_end - at) // 4)
         raw = struct.pack(f"<{len(words)}I", *words)
         i = raw.find(RTT_ID)
         while i >= 0:
@@ -107,17 +160,17 @@ def flash(address: str, path: str, log=print) -> None:
     """Write the image over SWD, verify it, reboot the chip. Raises on a mismatch."""
     unit, port = parse(address)
     image = image_of(path)
-    h = open_host(unit, f"rp2040 flash {port}")
+    h = open_host(unit, f"rp2 flash {port}")
     try:
         t = Target(h, port)
         try:
             t.core.halt()
             t.core.reset_halt()                       # a clean core to call the ROM from
-            if not rp2040.program_and_verify(t.core, image, 0, log=log):
+            if not t.chip.program_and_verify(t.core, image, 0, log=log):
                 raise RuntimeError(f"{address}: the flash did not read back as written ({len(image)} B)")
-            log(f"{address}: {len(image)} B written and verified")
-            clear_rtt_ids(t.mem)
-            rp2040.Rom(t.core).reboot()
+            log(f"{address}: {t.chip.name}, {len(image)} B written and verified")
+            clear_rtt_ids(t.mem, t.chip.ram_end)
+            t.chip.rom(t.core).reboot()
         finally:
             t.close()
     finally:
@@ -131,8 +184,8 @@ class Rtt:
     """SEGGER RTT's up buffer 0 (target -> host) and down buffer 0 (host -> target) through the MEM-AP, the core
     running. The control block is found by its ID in RAM (it is written at run time; `wait` seconds for it)."""
 
-    def __init__(self, mem, wait: float = 5.0):
-        self.mem = mem
+    def __init__(self, mem, wait: float = 5.0, ram_end: int = RAM_END):
+        self.mem, self.ram_end = mem, ram_end
         self.cb = self._find(wait)
         nup, ndown = mem.read_block(self.cb + 16, 2)
         self.up = self.cb + 24                        # aUp[0]: sName pBuffer SizeOfBuffer WrOff RdOff Flags
@@ -144,8 +197,8 @@ class Rtt:
         deadline = time.monotonic() + wait
         chunk = 16 * 1024
         while True:
-            for at in range(RAM, RAM_END, chunk):
-                words = self.mem.read_block(at, min(chunk, RAM_END - at) // 4)
+            for at in range(RAM, self.ram_end, chunk):
+                words = self.mem.read_block(at, min(chunk, self.ram_end - at) // 4)
                 raw = struct.pack(f"<{len(words)}I", *words)
                 i = raw.find(RTT_ID)
                 while i >= 0:
@@ -192,9 +245,9 @@ class Console:
     def __init__(self, address: str, wait: float = 10.0):
         unit, port = parse(address)
         self.address = address
-        self.host = open_host(unit, f"rp2040 console {port}")
+        self.host = open_host(unit, f"rp2 console {port}")
         self.target = Target(self.host, port)
-        self.rtt = Rtt(self.target.mem, wait)
+        self.rtt = Rtt(self.target.mem, wait, self.target.chip.ram_end)
         self._buf = bytearray()
         self._out = bytearray()
         self._lock = threading.Lock()

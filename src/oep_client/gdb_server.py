@@ -56,10 +56,12 @@ def _locked(fn):
 
 
 class Rp2040Debug:
-    """An RP2040's core 0 on an OEP port (`oep://<probe>/<port>`), for the server. Opens the probe on `open()`."""
+    """An RP2040's or RP2350's (Arm) core 0 on an OEP port (`oep://<probe>/<port>`), for the server. Opens the probe on
+    `open()`; the chip is the one rp2040_swd.Target tells by its DPIDR."""
 
     FLASH, FLASH_SIZE, SECTOR = 0x10000000, 2 * 1024 * 1024, 4096
-    RAM, RAM_SIZE = 0x20000000, 0x42000
+    RAM, RAM_SIZE = 0x20000000, 0x42000            # RAM_SIZE / ROM_SIZE: the chip's, set on open()
+    ROM_SIZE = 0x4000
     FP_CTRL, FP_COMP0 = 0xE0002000, 0xE0002008
     C_STEP = 4
 
@@ -76,8 +78,12 @@ class Rp2040Debug:
         self.host = rp.open_host(unit, self.owner)
         self.t = rp.Target(self.host, port)
         self.core, self.mem = self.t.core, self.t.mem
+        self.RAM_SIZE = self.t.chip.ram_end - self.RAM
+        self.ROM_SIZE = 0x8000 if self.t.chip.name == "rp2350" else 0x4000
         self.mem.write32(self.FP_CTRL, 3)          # FPB on (KEY | ENABLE)
-        n = (self.mem.read32(self.FP_CTRL) >> 4) & 0xF
+        ctrl = self.mem.read32(self.FP_CTRL)
+        self.fpb_v2 = (ctrl >> 28) & 0xF == 1      # REV: 0 the M0+'s FPB (v1), 1 the M33's (v2)
+        n = ((ctrl >> 8) & 0x70) | ((ctrl >> 4) & 0xF)   # NUM_CODE: bits 14:12 and 7:4
         self.comparators = n or 4
         for i in range(self.comparators):
             self.mem.write32(self.FP_COMP0 + 4 * i, 0)
@@ -164,7 +170,7 @@ class Rp2040Debug:
     def memory_map(self) -> str:
         return ('<?xml version="1.0"?>\n<!DOCTYPE memory-map PUBLIC "+//IDN gnu.org//DTD GDB Memory Map V1.0//EN" '
                 '"http://sourceware.org/gdb/gdb-memory-map.dtd">\n<memory-map>\n'
-                '<memory type="rom" start="0x0" length="0x4000"/>\n'
+                f'<memory type="rom" start="0x0" length="{self.ROM_SIZE:#x}"/>\n'
                 f'<memory type="flash" start="{self.FLASH:#x}" length="{self.FLASH_SIZE:#x}">'
                 f'<property name="blocksize">{self.SECTOR:#x}</property></memory>\n'
                 f'<memory type="ram" start="{self.RAM:#x}" length="{self.RAM_SIZE:#x}"/>\n'
@@ -183,23 +189,26 @@ class Rp2040Debug:
 
     @_locked
     def write_flash(self, address: int, image: bytes, log: Callable[[str], None]) -> None:
-        from . import rp2040
-        if not rp2040.program_and_verify(self.core, image, address - self.FLASH, log=log):
+        if not self.t.chip.program_and_verify(self.core, image, address - self.FLASH, log=log):
             raise RuntimeError("the flash did not read back as written")
 
-    # breakpoints (the FPB, v1: an address below 0x20000000, the half-word picked by REPLACE)
+    # breakpoints (the FPB. v1: an address below 0x20000000, the half-word picked by REPLACE; v2: BPADDR is the
+    # address itself, any address, bit 0 BE)
     @_locked
     def set_breakpoint(self, address: int) -> bool:
         if address in self.bp:
             return True
-        if address >= 0x20000000:
+        if address >= 0x20000000 and not getattr(self, "fpb_v2", False):
             return False
         free = [i for i in range(self.comparators) if i not in self.bp.values()]
         if not free:
             return False
         i = free[0]
-        replace = 2 if address & 2 else 1
-        self.mem.write32(self.FP_COMP0 + 4 * i, (replace << 30) | (address & 0x1FFFFFFC) | 1)
+        if getattr(self, "fpb_v2", False):
+            self.mem.write32(self.FP_COMP0 + 4 * i, (address & ~1) | 1)
+        else:
+            replace = 2 if address & 2 else 1
+            self.mem.write32(self.FP_COMP0 + 4 * i, (replace << 30) | (address & 0x1FFFFFFC) | 1)
         self.bp[address] = i
         return True
 

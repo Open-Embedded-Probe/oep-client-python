@@ -9,8 +9,8 @@
   ports) or `OEP_PORT_MEMO_<id>_<PORT>` (upper case, `-` as `_`) as a whole, else the probe's memo object
   `<owner>/port/<port>` (oep-if-memo §4), else {}. When both are there and differ, a warning. The record's shape is the
   owner's: this plugin does not check it.
-- **The console**: pyserial opens `oep://...` (oep_client.pyserial) - an RP2040's SEGGER RTT over the probe's SWD.
-- **The upload** (`pytest_arduino_cli_upload`): a port `oep://<probe>/<port>` whose profile is an RP2040 board is
+- **The console**: pyserial opens `oep://...` (oep_client.pyserial) - an RP2040's or RP2350's SEGGER RTT over the probe's SWD.
+- **The upload** (`pytest_arduino_cli_upload`): a port `oep://<probe>/<port>` whose profile is an RP2040 or RP2350 board (FQBN rp2040:...) is
   written here over the probe's SWD (oep_client.rp2040_swd); anything else is left to arduino-cli.
 - **The session** (`oep_host`): an OEP session on the probe behind the DUT's port, sharing a broker's lock when one
   serves it. When the DUT's console runs through the platform's own monitor (pytest-embedded-arduino-cli wraps the port
@@ -221,7 +221,7 @@ def peer_port_memo(request: pytest.FixtureRequest):
 
 @pytest.hookimpl(optionalhook=True)
 def pytest_arduino_cli_upload(config, role, port, profile, fqbn, sketch_dir, build_path):
-    """An RP2040 board on `oep://<probe>/<port>`: its ELF written over the probe's SWD. Anything else: None."""
+    """An RP2040 or RP2350 board on `oep://<probe>/<port>`: its ELF written over the probe's SWD. Anything else: None."""
     if not port or not fqbn or not str(fqbn).startswith("rp2040:"):
         return None
     parts = oep_parts(port)

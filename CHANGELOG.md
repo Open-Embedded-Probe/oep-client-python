@@ -1,6 +1,17 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) `rp2040_swd` (flash, console), the IDE server's writer and gdb server, and the pytest plugin's upload also take an
+  RP2350 board (issue oep-probe-arduino#2): `rp2040_swd.Target` tells the chip by its DPIDR - an RP2040 through core
+  0's TARGETSEL first, then an RP2350 without TARGETSEL (ADIv6, the Arm core 0's MEM-AP at 0x2000, SRAM to 0x20082000,
+  `rp2350.core_of`) - so the RP2350 is no longer read through APSEL 0 (a halt that timed out on DHCSR 0x00007003).
+  The gdb server follows the FPB's version (v2 on the M33: a breakpoint anywhere) and the chip's RAM and ROM in its
+  memory map. Checked on the host's models only so far; no RP2350 is wired to a probe's SWD on the bench.
+- (JA) `rp2040_swd`（書き込み、コンソール）、IDE のサーバーの書き込みと gdb サーバー、pytest のプラグインの書き込みが RP2350 のボードも
+  受ける（oep-probe-arduino の issue #2）。`rp2040_swd.Target` が DPIDR で石を見分ける: まず RP2040 のコア 0 の TARGETSEL、次に
+  TARGETSEL なしで RP2350（ADIv6、Arm のコア 0 の MEM-AP は 0x2000、SRAM は 0x20082000 まで、`rp2350.core_of`）。RP2350 を
+  APSEL 0 で読んで halt が DHCSR 0x00007003 で時間切れになることはなくなった。gdb サーバーは FPB の版（M33 の v2 はどこにでも置ける）と、
+  石の RAM と ROM をメモリマップに使う。今はホストの模型でだけ確かめた。ベンチには、プローブの SWD につないだ RP2350 がない。
 - (EN) `acquire.Request(input_hysteresis=True / False)`: the probe's input hysteresis on every logic line (capture §3.8);
   None (the default) leaves the probe's own (off where off is a state: on a slow line it hides short real pulses). What the probe used (configure's answer
   hysteresis_used) goes into `Result.meta["probe"]["input_hysteresis"]`. capture.configure takes it as the option

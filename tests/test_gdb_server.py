@@ -200,3 +200,22 @@ def _tiny_elf() -> bytes:
           struct.pack("<10I", 7, 3, 0, 0, str_off, len(shstr), 0, 0, 1, 0))                # .shstrtab
     body = eh + ph + code + shstr
     return body + b"\0" * (sh_off - len(body)) + sh
+
+
+def test_breakpoints_follow_the_fpb_version():
+    """v1 (the RP2040's M0+): REPLACE picks the half-word, no breakpoint at 0x20000000 and up; v2 (the RP2350's M33):
+    the address itself, anywhere."""
+    class M:
+        def __init__(self):
+            self.w = {}
+
+        def write32(self, a, v):
+            self.w[a] = v
+    for v2, address, want in ((False, 0x10000102, (2 << 30) | 0x10000100 | 1), (True, 0x10000102, 0x10000103),
+                              (True, 0x20001000, 0x20001001)):
+        d = gs.Rp2040Debug("oep://fafe00000001/pico")
+        d.mem, d.comparators, d.fpb_v2 = M(), 8, v2
+        assert d.set_breakpoint(address) and d.mem.w[d.FP_COMP0] == want
+    d = gs.Rp2040Debug("oep://fafe00000001/pico")
+    d.mem, d.comparators, d.fpb_v2 = M(), 4, False
+    assert not d.set_breakpoint(0x20001000)

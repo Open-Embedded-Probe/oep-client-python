@@ -8,7 +8,7 @@ An Arm board on an OEP probe's SWD is written, run, stopped and inspected. Two w
   started beforehand, and Debug takes a `debug_custom.json` in the sketch folder.
 - **From an OEP host directly**: commands, gdb, pytest, Python.
 
-The target is an RP2040 board's core 0 (a Raspberry Pi Pico and the like, arduino-pico).
+The target is an RP2040 or RP2350 board's Arm core 0 (a Raspberry Pi Pico, Pico 2 and the like, arduino-pico). The chip is told by the DPIDR it answers with on attach (the RP2040: core 0 picked by TARGETSEL; the RP2350: ADIv6, the MEM-AP at 0x2000).
 
 ## 1. Wiring
 
@@ -88,7 +88,8 @@ oep settings set oep://<unit id> oep.fixture.uart/0 passthrough.cdc0.rx=GPIO12 p
 ### 2.5 Limits
 
 - Core 1 is not handled (core 0 only).
-- Four hardware breakpoints (the RP2040's FPB). gdb makes breakpoints in flash hardware ones by itself.
+- As many hardware breakpoints as the FPB has comparators (four on the RP2040). gdb makes breakpoints in flash hardware ones by itself. On the RP2040 none at 0x20000000 and up (RAM).
+- The RP2350's RISC-V cores are not handled.
 - No watchpoints.
 
 ## 3. From an OEP host directly
@@ -170,7 +171,9 @@ hst.link.close()
 
 - `oep_client.arm`: `SwdWire` (`oep.wire.swd`), `ArmAdi` (`oep.target.arm-adi`), `MemAp`, `CortexM` (halt, registers,
   calling a function).
-- `oep_client.rp2040`: writing the flash through the boot ROM (`program_and_verify`) and restarting.
+- `oep_client.rp2040`, `oep_client.rp2350`: writing the flash through the boot ROM (`program_and_verify`) and restarting.
+- An RP2350 is attached without TARGETSEL: `arm.ArmAdi(hst, conn, adiv6=True)`, `arm.MemAp(adi, 0x2000)`,
+  `rp2350.core_of(mem)`. `rp2040_swd.Target` tells the chip and opens it (`.chip`: which one).
 
 ### 3.6 Sharing the probe with other tools
 

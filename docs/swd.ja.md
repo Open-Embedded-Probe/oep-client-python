@@ -7,7 +7,7 @@ OEP のプローブの SWD につないだ Arm のボードを、書いて、動
 - **Arduino IDE から**: 「書き込み」ボタンと「デバッグ」ボタン。コアにも IDE の設定にも手を入れません。IDE のサーバーを 1 つ起動しておき、デバッグにはスケッチのフォルダに `debug_custom.json` を置きます。
 - **OEP のホストから直接**: コマンド、gdb、pytest、Python。
 
-対象は RP2040 のボード（Raspberry Pi Pico など、arduino-pico）のコア 0 です。
+対象は RP2040 と RP2350 のボード（Raspberry Pi Pico、Pico 2 など、arduino-pico）の Arm のコア 0 です。どちらの石かは、つないだときの DPIDR で見分けます（RP2040 は TARGETSEL でコア 0 を選び、RP2350 は ADIv6 の MEM-AP 0x2000）。
 
 ## 1. つなぐ
 
@@ -84,7 +84,8 @@ oep settings set oep://<unit id> oep.fixture.uart/0 passthrough.cdc0.rx=GPIO12 p
 ### 2.5 できないこと
 
 - コア 1 は扱いません（コア 0 だけ）。
-- ハードウェアのブレークポイントは 4 つまでです（RP2040 の FPB）。flash の中のブレークポイントは、gdb が自動でハードウェアのものにします。
+- ハードウェアのブレークポイントは FPB の比較器の数までです（RP2040 は 4 つ）。flash の中のブレークポイントは、gdb が自動でハードウェアのものにします。RP2040 では 0x20000000 から上（RAM）に置けません。
+- RP2350 の RISC-V のコアは扱いません。
 - ウォッチポイントはありません。
 
 ## 3. OEP のホストから直接
@@ -164,7 +165,9 @@ hst.link.close()
 ```
 
 - `oep_client.arm`: `SwdWire`（`oep.wire.swd`）、`ArmAdi`（`oep.target.arm-adi`）、`MemAp`、`CortexM`（停止、レジスタ、関数の呼び出し）。
-- `oep_client.rp2040`: boot ROM での flash の書き込み（`program_and_verify`）と再起動。
+- `oep_client.rp2040`、`oep_client.rp2350`: boot ROM での flash の書き込み（`program_and_verify`）と再起動。
+- RP2350 は TARGETSEL なしで attach し、`arm.ArmAdi(hst, conn, adiv6=True)`、`arm.MemAp(adi, 0x2000)`、`rp2350.core_of(mem)` です。
+  石を見分けて開くのは `rp2040_swd.Target`（`.chip` が見分けた石）です。
 
 ### 3.6 ほかの道具とプローブを分ける
 
