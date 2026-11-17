@@ -11,6 +11,7 @@ transfer; if its timeout hits first, pyusb raises and the bytes already received
 from __future__ import annotations
 
 import atexit
+import struct
 import threading
 import time
 
@@ -317,12 +318,16 @@ def _child(vid: int, pid: int, serial: str | None, urb_size: int | None, depth: 
             with s._cond:
                 if not s._buffer:
                     s._cond.wait(0.05)
-                data = bytes(s._buffer)              # all of it: no memmove of a backlog at every send
-                s._buffer.clear()
-            view = memoryview(data)
+                # one chunk at a time off the front (a bytearray drops its front without moving the rest): a backlog
+                # copied whole at each send held the host's bytes back while it copied - tens of MB beside a host
+                # swapping took over probe_frame_gap_ms, and the host read a frame in its middle as stopped (P4X
+                # e8f60ae84dd7 at 160 MS/s x 2, 40 MB/s, 2026-11-17)
+                data = bytes(s._buffer[:ProcessStreamChunk])
+                del s._buffer[:len(data)]
+                behind = len(s._buffer)
             try:
-                for at in range(0, len(data), ProcessStreamChunk):
-                    data_conn.send_bytes(view[at:at + ProcessStreamChunk])
+                if data:   # each chunk says how much is still here behind it (UsbProcessStream.behind)
+                    data_conn.send_bytes(struct.pack("<I", min(behind, 0xFFFFFFFF)) + data)
             except (OSError, EOFError):
                 return
 
@@ -387,6 +392,9 @@ class UsbProcessStream:
         self.process, self._data, self._cmd, self.out_packet = process, data_conn, cmd_conn, out_packet
         self.timeout = 0.05
         self._buffer = bytearray()
+        # True while the process still holds bytes it has not sent here: a pause in what arrives is then this host's
+        # (the process or this one behind), not the probe's - LengthFrames does not take it for a frame that stopped
+        self.behind = False
         self._cond = threading.Condition()
         self._cmd_lock = threading.Lock()
         self._closed = False
@@ -452,8 +460,10 @@ class UsbProcessStream:
                 data = self._data.recv_bytes()
             except (EOFError, OSError):
                 break
+            behind, = struct.unpack_from("<I", data)
             with self._cond:
-                self._buffer += data
+                self._buffer += memoryview(data)[4:]
+                self.behind = behind > 0
                 self._cond.notify_all()
 
     def _request(self, kind: str, arg=None):

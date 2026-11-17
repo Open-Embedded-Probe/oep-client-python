@@ -76,7 +76,9 @@ class LengthFrames:
                     if time.monotonic() >= deadline:
                         return None                                # TCP: the rest comes later, the buffer is kept
                     continue
-                if self._buffer and time.monotonic() - self._last_rx >= self.stall_s:
+                # a stream whose own process still holds bytes (UsbProcessStream.behind): the pause is this host's
+                if (self._buffer and time.monotonic() - self._last_rx >= self.stall_s
+                        and not getattr(self._stream, "behind", False)):
                     raise FramingLost(f"a frame stopped after {len(self._buffer)} bytes")
                 if time.monotonic() >= deadline:
                     # a frame still coming (its bytes stopped for less than stall_s) is kept for the next call: the

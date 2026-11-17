@@ -1,6 +1,17 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) The USB stream's process (UsbProcessStream) hands its bytes over 1 MiB at a time off the front, each chunk with
+  how much it still holds behind it; while it holds some, LengthFrames does not take a pause for a frame that stopped
+  (probe_frame_gap_ms is the probe's pause, and this one was the host's). Before, it copied its whole backlog at each
+  hand-over: at 160 MS/s x 2 on a P4X (40 MB/s) beside a loaded host the backlog reached tens of MB, the copy held the
+  bytes back past 200 ms, a frame was read as stopped half way, and the stream ended in a resync that could not quiet
+  a streaming probe. With it, the same stream ran on until the hub disabled the port (a USB link error).
+- (JA) USB の流れの子プロセス（UsbProcessStream）は、手元のバイトを前から 1 MiB ずつ渡し、そのたびに後ろにまだ持っている量を添える。
+  持っている間は、LengthFrames は途切れをフレームの途中の止まりとみなさない（probe_frame_gap_ms はプローブの止まりで、これはホストの遅れ）。
+  前は渡すたびに手元を丸ごと複製していた: P4X の 160 MS/s × 2（40 MB/s）を負荷の高いホストで流すと、手元が数十 MB になり、複製の間
+  200 ms を超えて届かず、フレームが途中で止まったと読まれ、流しているプローブを静かにできない立て直しで終わっていた。直した後は、同じ流れが
+  ハブがポートを切る（USB の線の誤り）まで続いた。
 - (EN) `rp2040_swd` (flash, console), the IDE server's writer and gdb server, and the pytest plugin's upload also take an
   RP2350 board (issue oep-probe-arduino#2): `rp2040_swd.Target` tells the chip by its DPIDR - an RP2040 through core
   0's TARGETSEL first, then an RP2350 without TARGETSEL (ADIv6, the Arm core 0's MEM-AP at 0x2000, SRAM to 0x20082000,

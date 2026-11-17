@@ -4,6 +4,7 @@ the context go (closing with transfers out hung the process at exit or aborted l
 import atexit
 import sys
 import threading
+import time
 import types
 
 import pytest
@@ -146,8 +147,8 @@ def test_the_process_stream_reads_what_its_process_sends_and_writes_through_it()
     written = []
 
     def child():
-        data_child.send_bytes(b"abc")
-        data_child.send_bytes(b"def")
+        data_child.send_bytes(b"\x03\0\0\0abc")         # each chunk: what is still behind it (u32), then the bytes
+        data_child.send_bytes(b"\0\0\0\0def")
         while True:
             kind, arg = cmd_child.recv()
             if kind == "close":
@@ -166,7 +167,7 @@ def test_the_process_stream_reads_what_its_process_sends_and_writes_through_it()
     got = b""
     while len(got) < 6:
         got += s.read(10)
-    assert got == b"abcdef" and s.write(b"xy") == 2 and written == [b"xy"] and s.stats() == {"callbacks": 7}
+    assert got == b"abcdef" and not s.behind and s.write(b"xy") == 2 and written == [b"xy"] and s.stats() == {"callbacks": 7}
     s.close()
     assert not t.is_alive()
     with pytest.raises(OSError):
@@ -210,7 +211,8 @@ def test_the_process_side_sends_what_came_in_and_answers_requests(monkeypatch):
             fake._cond.notify_all()
     got = b""
     while len(got) < 5:
-        got += data_parent.recv_bytes()
+        chunk = data_parent.recv_bytes()
+        got += chunk[4:]                                   # after the u32 of what is still behind it
     assert got == b"abcde"
     cmd_parent.send(("write", b"xyz"))
     assert cmd_parent.recv() == ("ok", 3)
@@ -283,3 +285,33 @@ def test_the_usb_stream_is_a_process_by_default_and_a_thread_when_asked(monkeypa
     with pytest.raises(FileNotFoundError):
         link._open_usb_stream("vendor", 1, 2, None)
     assert opened == ["process"]
+
+
+def test_a_pause_while_the_process_is_behind_is_not_a_frame_that_stopped():
+    """LengthFrames' stall rule (a frame whose bytes stop probe_frame_gap_ms) is the probe's pause: while the USB
+    stream's process still holds bytes (behind), a pause is this host's and the frame is waited for; without it the
+    frame is lost as before."""
+    from oep_client import frames
+
+    class Slow:
+        keeps_boundaries, timeout = False, 0.0
+
+        def __init__(self, behind):
+            self.behind, self.parts = behind, [b"\x08\0abcd"]
+
+        @property
+        def in_waiting(self):
+            return 0
+
+        def read(self, n=1):
+            if self.parts:
+                return self.parts.pop(0)
+            time.sleep(min(self.timeout, 0.05))
+            return b""
+    f = frames.LengthFrames(Slow(True))
+    f.stall_s = 0.05
+    assert f.recv(0.3) is None and len(f._buffer) == 6           # kept: the rest comes later
+    f = frames.LengthFrames(Slow(False))
+    f.stall_s = 0.05
+    with pytest.raises(frames.FramingLost):
+        f.recv(0.3)
