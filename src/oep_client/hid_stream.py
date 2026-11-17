@@ -1,8 +1,10 @@
 """OEP over a vendor-defined USB HID interface (oep-spec oep-core §3): the way in when vendor bulk is not
 usable (no WinUSB / udev permission for raw USB), before a CDC port, which a probe may give to serial forwarding.
 
-Framing: every report carries count (u16 LE) and then that many bytes of the length-prefixed frame stream, the rest of
-the report zero. Report IDs are the HID transport's business, not OEP's: when the report descriptor declares one, every
+Framing: every report carries count (u16 LE), first (u16 LE: where the first frame starting in the report begins,
+hid_no_frame_start when none) and then count bytes of the length-prefixed frame stream, the rest of the report zero
+(transports §1). An OS HID driver drops reports read too late; a reader whose own reading puts the next frame's start
+elsewhere than first has lost one, drops the frame begun and reads on from first. Report IDs are the HID transport's business, not OEP's: when the report descriptor declares one, every
 report on the wire starts with it - output reports too (EspUsbDevice takes a first byte equal to its report ID as the
 ID, so a report sent without it lost a byte whenever count's low byte matched).
 
@@ -22,7 +24,40 @@ import time
 from . import registry as reg
 
 HID_USAGE_PAGE, HID_USAGE = reg.USB["hid_usage_page"], reg.USB["hid_usage"]   # OEP's HID: 0xFF4F, 0x45 (transports §3)
-GAP_S = reg.TIMING["probe_frame_gap_ms"] / 1000
+HEAD = reg.USB["hid_report_header_bytes"]          # count(u16), first(u16) (after the report ID, if any)
+NO_START = reg.USB["hid_no_frame_start"]
+
+
+class FrameTrack:
+    """Where the frames of a length-prefixed stream start: the frame begun so far (`partial`, b"" at a frame's start)."""
+
+    def __init__(self):
+        self.partial = bytearray()
+
+    def next_start(self, data: bytes) -> int:
+        """The position in `data` where the next frame starts, or NO_START when the frame begun runs past it."""
+        p = self.partial
+        if not p:
+            return 0 if data else NO_START
+        if len(p) == 1:
+            if not data:
+                return NO_START
+            need = 2 + (p[0] | data[0] << 8) - 1
+        else:
+            need = 2 + (p[0] | p[1] << 8) - len(p)
+        return need if need < len(data) else NO_START
+
+    def feed(self, data: bytes) -> list[bytes]:
+        """`data` read on: the frames it completes (each with its length)."""
+        self.partial += data
+        done = []
+        while len(self.partial) >= 2:
+            end = 2 + (self.partial[0] | self.partial[1] << 8)
+            if len(self.partial) < end:
+                break
+            done.append(bytes(self.partial[:end]))
+            del self.partial[:end]
+        return done
 
 
 def parse_report_descriptor(desc: bytes) -> list[dict]:
@@ -81,12 +116,17 @@ def vendor_report(desc: bytes) -> dict | None:
 
 
 class HidReportStream:
-    """count(u16) + frame bytes per report over a backend that moves whole reports (payload without the report ID)."""
+    """count(u16) + first(u16) + frame bytes per report over a backend that moves whole reports (payload without the
+    report ID). What read() gives is whole frames only: a report found missing (rule 6) drops the frame begun here, so
+    the link's reading never loses a boundary - the frames lost show as an answer that does not come or a push's seq
+    (core §10.2). `report_losses`: reports found missing or broken."""
 
     def __init__(self, backend, input_size: int, output_size: int):
         self.backend = backend
         self.input_size, self.output_size = input_size, output_size
         self.timeout = 0.05
+        self.report_losses = 0
+        self._out = FrameTrack()                         # the frames written, for each report's first
         self._buffer = bytearray()
         self._cond = threading.Condition()
         self._closed = False
@@ -94,7 +134,7 @@ class HidReportStream:
         self._reader.start()
 
     def _drain(self) -> None:
-        last, discarding = None, False
+        track, synced = FrameTrack(), False              # just opened: read from the first report with a first
         while not self._closed:
             try:
                 report = self.backend.read_report(0.1)
@@ -103,20 +143,28 @@ class HidReportStream:
                     return
                 time.sleep(0.01)
                 continue
-            if len(report) < 2:
+            if len(report) < HEAD:
                 continue
-            now = time.monotonic()
-            quiet = last is None or now - last >= GAP_S
-            last = now
-            if discarding and not quiet:
-                continue                                 # the stream broke: input dropped until a 200 ms pause
-            n = report[0] | report[1] << 8
-            discarding = n > len(report) - 2             # more than the report holds: dropped, the stream broken
-            if discarding:                               # (transports §1 HID rule 6)
+            count, first = report[0] | report[1] << 8, report[2] | report[3] << 8
+            if count > len(report) - HEAD or (first != NO_START and first >= count):
+                track, synced = FrameTrack(), False      # rule 7: dropped, the stream broken till the next first
+                self.report_losses += 1
                 continue
-            if n:
+            if not count:
+                continue
+            data = report[HEAD:HEAD + count]
+            if synced and track.next_start(data) != first:
+                track, synced = FrameTrack(), False      # rule 6: a report is missing before this one
+                self.report_losses += 1
+            if not synced:
+                if first == NO_START:
+                    continue
+                data, synced = data[first:], True
+            frames = track.feed(data)
+            if frames:
                 with self._cond:
-                    self._buffer += report[2:2 + n]
+                    for f in frames:
+                        self._buffer += f
                     self._cond.notify_all()
 
     @property
@@ -137,10 +185,14 @@ class HidReportStream:
             return out
 
     def write(self, data: bytes) -> int:
-        room = self.output_size - 2
+        """`data`: length-prefixed frames, as the link writes them; each report says where its first frame starts."""
+        room = self.output_size - HEAD
         for i in range(0, len(data), room):
             part = data[i:i + room]
-            self.backend.write_report(len(part).to_bytes(2, "little") + part + bytes(room - len(part)))
+            first = self._out.next_start(part)
+            self._out.feed(part)
+            self.backend.write_report(len(part).to_bytes(2, "little") + first.to_bytes(2, "little") + part
+                                      + bytes(room - len(part)))
         return len(data)
 
     def reset_input_buffer(self) -> None:

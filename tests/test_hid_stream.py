@@ -1,5 +1,5 @@
-"""The vendor HID way in: report descriptor parsing, count(u16) report framing, and open_usb_host's vendor -> HID order
-(no USB device)."""
+"""The vendor HID way in: report descriptor parsing, count(u16) + first(u16) report framing (transports §1), and
+open_usb_host's vendor -> HID order (no USB device)."""
 
 import queue
 import time
@@ -56,58 +56,92 @@ class Backend:
         self.closed = True
 
 
-def report(data: bytes, size: int = 511) -> bytes:
-    return len(data).to_bytes(2, "little") + data + bytes(size - 2 - len(data))
+def report(data: bytes, size: int = 511, first: int | None = None) -> bytes:
+    """A report carrying `data`; first 0 (a frame starts at its start) unless given, hid_no_frame_start when empty."""
+    if first is None:
+        first = 0 if data else hid_stream.NO_START
+    return (len(data).to_bytes(2, "little") + first.to_bytes(2, "little") + data
+            + bytes(size - hid_stream.HEAD - len(data)))
 
 
-def test_writes_are_cut_into_whole_reports_with_their_count():
+def frame(msg: bytes) -> bytes:
+    return len(msg).to_bytes(2, "little") + msg
+
+
+def wait_for(s, n):
+    deadline = time.monotonic() + 1
+    while s.in_waiting < n and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+
+def test_writes_are_cut_into_whole_reports_with_their_count_and_first():
+    """Each report: count, then where the first frame starting in it begins (hid_no_frame_start in one inside a frame)."""
     b = Backend()
     s = hid_stream.HidReportStream(b, 511, 511)
     try:
-        data = bytes(range(256)) * 4          # 1024 bytes: 509 + 509 + 6
-        s.write(data)
+        big, small = frame(bytes(range(256)) * 4), frame(b"xyz")     # 1026 + 5 bytes: 507 + 507 + 17
+        s.write(big + small)
         assert [len(r) for r in b.sent] == [511, 511, 511]
-        assert [r[0] | r[1] << 8 for r in b.sent] == [509, 509, 6]
-        assert b"".join(r[2:2 + (r[0] | r[1] << 8)] for r in b.sent) == data
-        assert b.sent[2][8:] == bytes(511 - 8)
+        assert [r[0] | r[1] << 8 for r in b.sent] == [507, 507, 17]
+        assert [r[2] | r[3] << 8 for r in b.sent] == [0, hid_stream.NO_START, 12]   # small starts at 1026 - 1014
+        assert b"".join(r[4:4 + (r[0] | r[1] << 8)] for r in b.sent) == big + small
+        assert b.sent[2][4 + 17:] == bytes(511 - 4 - 17)
+        s.write(frame(b"q"))                                       # the next write starts a frame
+        assert b.sent[3][2:4] == b"\x00\x00"
     finally:
         s.close()
     assert b.closed
 
 
-def test_reads_join_the_counted_bytes_and_drop_the_padding():
+def test_reads_give_whole_frames_and_drop_the_padding():
     b = Backend()
     s = hid_stream.HidReportStream(b, 511, 511)
     try:
-        b.inbox.put(report(b"\x03\x00abc"))
+        b.inbox.put(report(b"\x05\x00abc"))
         b.inbox.put(report(b""))
-        b.inbox.put(report(b"de"))
-        deadline = time.monotonic() + 1
-        while s.in_waiting < 7 and time.monotonic() < deadline:
-            time.sleep(0.01)
-        assert s.read(100) == b"\x03\x00abcde"
+        b.inbox.put(report(b"de", first=hid_stream.NO_START))
+        wait_for(s, 7)
+        assert s.read(100) == b"\x05\x00abcde" and s.report_losses == 0
     finally:
         s.close()
 
 
-def test_a_count_larger_than_the_report_is_dropped_and_input_until_a_200_ms_pause():
-    """transports §1 HID rule 6: a count over what the report holds - the report is dropped and the stream taken as
-    broken: reports are dropped until 200 ms (probe_frame_gap_ms) pass without one."""
+@pytest.mark.parametrize("case", __import__("json").load(open(__import__("pathlib").Path(__file__).with_name("vectors")
+                                                             / "hid_reports.json"))["read"], ids=lambda c: c["name"])
+def test_the_shared_vectors_read(case):
+    """tests/vectors/hid_reports.json (oep-spec): the messages a reader of rules 6 and 7 gets from the reports, a
+    reader that has just opened the transport."""
     b = Backend()
-    s = hid_stream.HidReportStream(b, 8, 8)
+    s = hid_stream.HidReportStream(b, 16, 16)
     try:
-        b.inbox.put(b"\xff\x00abcdef")
-        b.inbox.put(b"\x02\x00gh" + bytes(4))                  # right behind it: dropped too
-        time.sleep(0.1)
-        assert s.in_waiting == 0
-        time.sleep(hid_stream.GAP_S + 0.05)
-        b.inbox.put(b"\x02\x00ij" + bytes(4))                  # after the pause: read again
-        deadline = time.monotonic() + 1
-        while s.in_waiting < 2 and time.monotonic() < deadline:
-            time.sleep(0.01)
-        assert s.read(100) == b"ij"
+        for r in case["reports_hex"]:
+            b.inbox.put(bytes.fromhex(r))
+        want = [bytes.fromhex(m) for m in case["messages_hex"]]
+        wait_for(s, sum(2 + len(m) for m in want))
+        time.sleep(0.05)
+        got, data = [], s.read(1000)
+        while data:                                          # the frames given; a length 0 one is the link's to skip
+            n = data[0] | data[1] << 8
+            if n:
+                got.append(data[2:2 + n])
+            data = data[2 + n:]
+        assert got == want
     finally:
         s.close()
+
+
+def test_the_shared_vectors_pack():
+    import json
+    import pathlib
+    v = json.load(open(pathlib.Path(__file__).with_name("vectors") / "hid_reports.json"))
+    for case in v["pack"]:
+        b = Backend()
+        s = hid_stream.HidReportStream(b, v["room"], v["room"])
+        try:
+            s.write(b"".join(frame(bytes.fromhex(m)) for m in case["messages_hex"]))
+            assert [r.hex() for r in b.sent] == case["reports_hex"]
+        finally:
+            s.close()
 
 
 class Id6Device:
@@ -130,10 +164,10 @@ class Id6Device:
 def test_hidapi_reports_carry_the_report_id_both_ways():
     dev = Id6Device()
     b = hid_stream.HidapiBackend(dev, 6)
-    assert b.read_report(0.1)[:4] == b"\x02\x00xy"
+    assert b.read_report(0.1)[:6] == b"\x02\x00\x00\x00xy"
     assert b.read_report(0.1) == b""          # another report ID is not ours
     b.write_report(report(b"q"))
-    assert dev.written[0][0] == 6 and dev.written[0][1:4] == b"\x01\x00q"
+    assert dev.written[0][0] == 6 and dev.written[0][1:6] == b"\x01\x00\x00\x00q"
 
 
 def test_open_usb_host_falls_back_from_vendor_to_hid(monkeypatch):

@@ -2,12 +2,37 @@
 
 Backend: read(timeout) returns a complete transfer/report or None on timeout;
 write(bytes, method='out'|'set-report') returns the byte count, and close().
-HID sizes include count and an optional report ID. This checks probe output,
-so invalid counts, IDs and nonzero sender padding are violations, not filtered.
+HID sizes include count, first and an optional report ID. This checks probe output,
+so invalid counts, firsts, IDs and nonzero sender padding are violations, not filtered.
 """
 import time
 
+from .. import registry as _reg
 from .serial import WireError
+
+HID_HEAD = _reg.USB['hid_report_header_bytes']     # count(u16), first(u16) (transports §1)
+HID_NONE = _reg.USB['hid_no_frame_start']
+
+
+def next_start(partial, data):
+    """Where the next frame starts in `data` for a reader holding `partial` (the frame begun), or HID_NONE."""
+    if not partial:
+        return 0 if data else HID_NONE
+    if len(partial) == 1:
+        if not data:
+            return HID_NONE
+        end = 2 + (partial[0] | data[0] << 8) - 1
+    else:
+        end = 2 + (partial[0] | partial[1] << 8) - len(partial)
+    return end if end < len(data) else HID_NONE
+
+
+def advance(partial, data):
+    """The frame begun after reading `data` on from `partial`."""
+    buf = bytearray(partial) + data
+    while len(buf) >= 2 and len(buf) >= 2 + (buf[0] | buf[1] << 8):
+        del buf[:2 + (buf[0] | buf[1] << 8)]
+    return bytes(buf)
 
 
 def frame(message):
@@ -22,7 +47,7 @@ class UsbWire:
             raise ValueError('raw USB kind must be bulk or hid')
         if type(report_id) is not int or not 0 <= report_id <= 255:
             raise ValueError('report ID must be u8')
-        header = 2 + bool(report_id)
+        header = HID_HEAD + bool(report_id)
         if kind == 'hid' and (type(input_size) is not int or type(output_size) is not int or
                               not header < input_size <= 65535 or not header < output_size <= 65535):
             raise ValueError('explicit HID report sizes must leave room after count/ID')
@@ -34,22 +59,32 @@ class UsbWire:
         self.timeout, self.settle = timeout, settle
         self.clock, self.sleep = clock, sleep
         self.max_frame, self.last_exchange = 64, {}
+        self.sent_partial = b''   # HID: the frame begun in what this host sent, for each report's first
         self.op_wait_s = 1.0   # the request's processing bound: core_quick_op_max_ms until max_op_ms is read (core §4.4)
 
     def close(self):
         self.backend.close()
 
-    def pack(self, data, *, padding=0, report_id=None):
-        room = self.output_size - 2 - bool(self.report_id)
+    def pack(self, data, *, padding=0, report_id=None, first=None):
+        """One output report of `data`; first by what this host sent so far (sent_partial), unless given."""
+        room = self.output_size - HID_HEAD - bool(self.report_id)
         if len(data) > room:
             raise ValueError('stimulus exceeds HID report capacity')
         identity = self.report_id if report_id is None else report_id
         prefix = bytes((identity,)) if self.report_id else b''
-        return prefix + len(data).to_bytes(2, 'little') + data + bytes((padding,)) * (room - len(data))
+        if first is None:
+            first = next_start(self.sent_partial, data)
+            self.sent_partial = advance(self.sent_partial, data)
+        return (prefix + len(data).to_bytes(2, 'little') + first.to_bytes(2, 'little') + data
+                + bytes((padding,)) * (room - len(data)))
 
     def reports(self, data):
-        room = self.output_size - 2 - bool(self.report_id)
+        room = self.output_size - HID_HEAD - bool(self.report_id)
         return [self.pack(data[i:i + room]) for i in range(0, len(data), room)] or [self.pack(b'')]
+
+    def abandon(self):
+        """HID: this host gives up the frame begun (the probe reads on from the next report's first)."""
+        self.sent_partial = b''
 
     def send(self, message):
         replies = self.exchange([frame(message)], 1)
@@ -62,6 +97,7 @@ class UsbWire:
             'settle_ms': self.settle * 1000, 'silence_ms': silence * 1000,
             'started_monotonic_ns': int(self.clock() * 1e9)}
         pending, replies = bytearray(), []
+        synced = False            # HID: the probe's reports read from the first with a first
         try:
             for index, chunk in enumerate(chunks):
                 transfers = self.reports(chunk) if self.kind == 'hid' and not raw else [chunk]
@@ -85,11 +121,19 @@ class UsbWire:
                         if at and data[0] != self.report_id:
                             raise WireError('probe emitted undeclared HID report ID')
                         size = int.from_bytes(data[at:at + 2], 'little')
-                        if size > len(data) - at - 2:
+                        first = int.from_bytes(data[at + 2:at + 4], 'little')
+                        if size > len(data) - at - HID_HEAD:
                             raise WireError('probe emitted oversized HID count')
-                        if any(data[at + 2 + size:]):
+                        if any(data[at + HID_HEAD + size:]):
                             raise WireError('probe emitted nonzero HID padding')
-                        data = data[at + 2:at + 2 + size]
+                        data = data[at + HID_HEAD:at + HID_HEAD + size]
+                        if synced and first != next_start(bytes(pending), data):
+                            raise WireError('probe emitted a HID first where no frame starts (transports §1)')
+                        if not synced and data:
+                            if first == HID_NONE:
+                                data = b''        # the tail of a frame from before: not this exchange's
+                            else:
+                                data, synced = data[first:], True
                     pending.extend(data)
                     while len(pending) >= 2:
                         size = int.from_bytes(pending[:2], 'little')

@@ -7,7 +7,7 @@ SAVE=_reg.CORE.op['save']  # fn 0's save (core §13.7)
 
 
 REVIEWED={'docs/oep-core.ja.md':'7789bcf324dbf0e9f7dc319759b8353fd6c8732efb4107cf894e49fef967df22',
-          'docs/oep-transports.ja.md':'a22754ee25997058be0e698bd62ea132537627914f38a06caffd48e3d79f096e'}
+          'docs/oep-transports.ja.md':'4358a9defefb7131b2153caab43321686b6840aa4fe2b72824352c80e1ff7e89'}
 QUICK_MS=1000  # core_quick_op_max_ms
 
 

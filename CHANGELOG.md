@@ -1,6 +1,21 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Breaking (oep-spec 1c80768, transports §1): HID reports carry first(u16) after count - where the first frame
+  starting in the report begins, hid_no_frame_start when none. HidReportStream writes it, and reads by it: a report
+  whose first disagrees with its own reading means one went missing (an OS HID driver drops what is read too late), so
+  it drops the frame begun and reads on from first; one just opened, or after a broken report, reads from the next
+  report with a first. It hands the link whole frames only, so the link never loses a boundary on HID (report_losses
+  counts them); no 200 ms gap rule on HID. The virtual USB model and the raw USB conformance (its HID stimuli and its
+  check of the probe's firsts; CORE-HID-COUNT now expects the valid request after the broken report answered, and
+  CORE-HID-LOST-REPORT is new) follow the same rules; the registry and spec copies are synced.
+- (JA) 互換のない変更（oep-spec 1c80768、transports §1）: HID の report は count の後ろに first(u16) を持つ。その report で最初に始まるフレームの
+  位置で、無ければ hid_no_frame_start。HidReportStream はそれを書き、それで読む: first が自分の読みと違う report の前には欠けた report がある
+  （OS の HID のドライバーは読むのが遅れた report を捨てる）ので、読みかけのフレームを捨てて first から読み直す。開いた直後と、壊れた report の
+  後は、first を持つ次の report から読む。link にはまとまったフレームだけを渡すので、HID で link が区切りを失うことはない（report_losses が
+  数える）。HID には 200 ms の途切れの規則を掛けない。仮想の USB の模型と、生の USB の適合性の検査（HID の刺激、プローブの first の確かめ。
+  CORE-HID-COUNT は壊れた report の後の正しい要求に答えがあることを確かめ、CORE-HID-LOST-REPORT を足した）も同じ規則にした。registry と
+  仕様の写しを同期した。
 - (EN) A stream faster than this host fills no memory: acquire's spool queue (QUEUE_MAX, 256 MiB), UsbProcessStream's
   buffer (BUFFER_MAX, 64 MiB) and UsbAsyncStream's backlog (BACKLOG_MAX, 64 MiB: its IN transfers are held, not sent
   out again, until read() takes it under half) are bounded; past them each waits for the next, the kernel takes no

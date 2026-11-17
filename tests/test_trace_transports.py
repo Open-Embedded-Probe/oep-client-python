@@ -193,12 +193,16 @@ class Backend:
         pass
 
 
+NONE = reg.USB["hid_no_frame_start"]
+
+
 def test_hid_reports_carry_counted_bytes_skip_count_0_and_ignore_any_padding():
-    """transports §1 HID rules 1-3: the counted bytes after count(u16), joined in report order, are the length-framed
-    stream; a report of count 0 is empty; the sender pads with 0, the receiver ignores the padding whatever it is."""
+    """transports §1 HID rules 1-4: the counted bytes after count(u16) and first(u16), joined in report order, are the
+    length-framed stream; a report of count 0 is empty; the sender pads with 0, the receiver ignores the padding."""
     msg = frame(result(5))
-    reports = [len(msg[:4]).to_bytes(2, "little") + msg[:4] + b"\xff" * 4, b"\x00\x00" + b"\xee" * 8,
-               len(msg[4:]).to_bytes(2, "little") + msg[4:] + b"\x55" * (8 - len(msg[4:]))]
+    reports = [len(msg[:4]).to_bytes(2, "little") + b"\x00\x00" + msg[:4] + b"\xff" * 2,
+               b"\x00\x00" + NONE.to_bytes(2, "little") + b"\xee" * 6,
+               len(msg[4:]).to_bytes(2, "little") + NONE.to_bytes(2, "little") + msg[4:] + b"\x55" * (6 - len(msg[4:]))]
     s = hid_stream.HidReportStream(Backend(reports), 10, 10)
     try:
         lf = frames.LengthFrames(s)
@@ -206,7 +210,7 @@ def test_hid_reports_carry_counted_bytes_skip_count_0_and_ignore_any_padding():
         s.write(msg)
         assert all(len(r) == 10 for r in s.backend.sent)
         last = s.backend.sent[-1]
-        assert last[2 + (last[0] | last[1] << 8):] == bytes(10 - 2 - (last[0] | last[1] << 8))   # zero padding
+        assert last[4 + (last[0] | last[1] << 8):] == bytes(10 - 4 - (last[0] | last[1] << 8))   # zero padding
     finally:
         s.close()
 
@@ -252,7 +256,7 @@ def usb_model(kind, **kw):
 
 def usb_answers(usb) -> list[int]:
     data = b"".join(usb.inbox) if usb.kind == "bulk" else b"".join(
-        r[1 + 2:1 + 2 + (r[1] | r[2] << 8)] for r in usb.inbox)          # report ID 6, count, bytes
+        r[1 + 4:1 + 4 + (r[1] | r[2] << 8)] for r in usb.inbox)          # report ID 6, count, first, bytes
     usb.inbox.clear()
     out, at = [], 0
     while at < len(data):
@@ -262,39 +266,67 @@ def usb_answers(usb) -> list[int]:
     return out
 
 
-def hid_reports(usb, data: bytes) -> list[bytes]:
-    room = usb.output_size - 3
-    return [bytes([usb.report_id]) + len(data[i:i + room]).to_bytes(2, "little") + data[i:i + room]
-            + bytes(room - len(data[i:i + room])) for i in range(0, len(data), room)]
+def hid_reports(usb, data: bytes, at_start: bool = True) -> list[bytes]:
+    """`data` (length-prefixed frames, from a frame's start unless at_start is False) in the model's output reports,
+    each with its first (transports §1)."""
+    room, starts, at = usb.output_size - 5, set(), 0
+    while at_start and at + 2 <= len(data):
+        starts.add(at)
+        at += 2 + struct.unpack_from("<H", data, at)[0]
+    out = []
+    for i in range(0, len(data), room):
+        part = data[i:i + room]
+        first = min((x - i for x in starts if i <= x < i + len(part)), default=NONE)
+        out.append(bytes([usb.report_id]) + len(part).to_bytes(2, "little") + first.to_bytes(2, "little") + part
+                   + bytes(room - len(part)))
+    return out
 
 
-@pytest.mark.parametrize("kind", ["bulk", "hid"])
-def test_usb_probe_drops_a_frame_that_stops_for_probe_frame_gap_ms(kind):
-    """transports §2 and HID rule 5: on vendor bulk and HID a frame whose input stops 200 ms is dropped and the next
-    byte of the stream is read as a length."""
-    clock, usb = usb_model(kind)
-    send = (lambda d: [usb.write(r) for r in hid_reports(usb, d)]) if kind == "hid" else usb.write
+def test_usb_probe_drops_a_frame_that_stops_for_probe_frame_gap_ms():
+    """transports §2: on vendor bulk a frame whose input stops 200 ms is dropped and the next byte of the stream is read
+    as a length."""
+    clock, usb = usb_model("bulk")
     f1, f2 = frame(req(1)), frame(req(2))
-    send(f1[:4])
+    usb.write(f1[:4])
     clock.now += 0.2
-    send(f1[4:])
+    usb.write(f1[4:])
     assert usb_answers(usb) == []
     clock.now += 0.2
-    send(f2)
+    usb.write(f2)
     assert usb_answers(usb) == [2]
 
 
-def test_hid_count_over_the_report_breaks_the_stream_until_a_gap_at_the_probe():
-    """transports §1 HID rule 6: a count over what the report holds (its length - 2, - 3 with a report ID) - the report
-    is dropped and the input until 200 ms pass with nothing."""
+def test_hid_probe_reads_on_through_a_pause_and_from_first_after_a_lost_report():
+    """transports §1 HID rule 6 (no gap rule on HID): a pause inside a frame is read on; a report missing makes the next
+    report's first disagree with the probe's own reading - the frame begun is dropped and the reading goes on from
+    first."""
     clock, usb = usb_model("hid")
-    bad = bytes([usb.report_id]) + (usb.output_size - 2).to_bytes(2, "little") + bytes(usb.output_size - 3)
-    usb.write(bad)
+    f1, f2, f3 = frame(req(1)), frame(req(2)), frame(req(3))
+    reps = hid_reports(usb, f1)
+    usb.write(reps[0])
+    clock.now += 0.5
+    for r in reps[1:]:
+        usb.write(r)
+    assert usb_answers(usb) == [1]
+    reps = hid_reports(usb, f2 + f3)
+    lost = next(i for i, r in enumerate(reps) if i and (r[3] | r[4] << 8) == NONE)   # one inside f2
+    for i, r in enumerate(reps):
+        if i != lost:
+            usb.write(r)
+    assert usb_answers(usb) == [3]
+
+
+def test_hid_count_over_the_report_breaks_the_stream_until_the_next_first_at_the_probe():
+    """transports §1 HID rule 7: a count over what the report holds (its length - 4, - 5 with a report ID) - the report
+    is dropped and the stream broken; it is read again from the next report with a first, no pause needed."""
+    clock, usb = usb_model("hid")
     for r in hid_reports(usb, frame(req(1))):
         usb.write(r)
-    assert usb_answers(usb) == []
-    clock.now += 0.2
-    for r in hid_reports(usb, frame(req(2))):
+    assert usb_answers(usb) == [1]
+    bad = bytes([usb.report_id]) + (usb.output_size - 4).to_bytes(2, "little") + bytes(usb.output_size - 3)
+    usb.write(bad)
+    tail = hid_reports(usb, frame(req(9)))[1:]                    # a frame's tail: no first, dropped
+    for r in tail + hid_reports(usb, frame(req(2))):
         usb.write(r)
     assert usb_answers(usb) == [2]
 

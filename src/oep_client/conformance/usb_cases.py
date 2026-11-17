@@ -7,7 +7,7 @@ USB_CASES = tuple(('CORE-USB-' + name.upper(), name) for name in
                   ('split', 'coalesce', 'zero', 'short', 'role', 'truncated', 'oversized', 'boundary'))
 BULK_CASES = (('CORE-USB-IN-END', 'in-end'),)   # the probe's IN transfers end (transports §1, the USB bundling)
 HID_CASES = tuple(('CORE-HID-' + name.upper(), name) for name in
-                  ('empty-report', 'padding', 'report-id', 'count', 'set-report'))
+                  ('empty-report', 'padding', 'report-id', 'count', 'lost-report', 'set-report'))
 
 
 def run(check, kind):
@@ -51,24 +51,39 @@ def run(check, kind):
             if replies:
                 check.abort = True
             require(not replies, 'incomplete USB input produced a result')
+            wire.abandon()   # HID: the next report's first restarts the probe's reading (transports §1 rule 6)
             result(exchange([good], 1))
         return
-    if kind in ('oversized', 'count'):
-        if kind == 'oversized':
-            if check.max_frame == 65535:
-                raise NotApplicable('u16 length cannot express max_frame + 1')
-            chunks = [(check.max_frame + 1).to_bytes(2, 'little') + good]
-            kwargs = {}
-        else:
-            at = int(bool(wire.report_id))
-            bad = bytearray(wire.pack(b''))
-            bad[at:at + 2] = (wire.output_size - at - 1).to_bytes(2, 'little')
-            chunks, kwargs = [bytes(bad)] + wire.reports(good), {'raw': True}
-        replies = exchange(chunks, 0, silence=gap + 0.1, **kwargs)
-        # All bytes through the gap, including the following valid request, are discarded.
+    if kind == 'oversized':
+        if check.max_frame == 65535:
+            raise NotApplicable('u16 length cannot express max_frame + 1')
+        replies = exchange([(check.max_frame + 1).to_bytes(2, 'little') + good], 0, silence=gap + 0.1)
+        # The valid request inside the oversized frame's bytes is discarded with them: on vendor bulk through the gap,
+        # on HID up to the next report with a first (none of its reports has one).
         require(not replies, 'USB corruption did not discard input through frame gap')
+        wire.abandon()
         recovery = check.request(check.core['clock'])
         result(exchange([frame(recovery)], 1), recovery)
+        return
+    if kind == 'count':
+        # HID rule 7: a count over what the report holds - the report dropped, the stream broken till the next report
+        # with a first. The dropped report begins another request, its reports after it have no first: a probe that
+        # read the report anyway would answer that one too; the valid request (with a first) is answered.
+        at = int(bool(wire.report_id))
+        other = check.request(check.core['clock'])
+        reps = wire.reports(frame(other))                    # its own reports: the valid request starts a new one
+        bad = bytearray(reps[0])
+        bad[at:at + 2] = (wire.output_size - wire_head(wire) + 1).to_bytes(2, 'little')
+        result(exchange([bytes(bad)] + reps[1:] + wire.reports(good), 1, raw=True), req)
+        return
+    if kind == 'lost-report':
+        # HID rule 6: a report missing inside a frame - the probe's own reading disagrees with the next report's
+        # first, drops the frame begun and reads on from first: the valid request after it is answered.
+        room = wire.output_size - wire_head(wire)
+        cut = wire.reports(frame(bytes((1,)) + bytes(3 * room)))   # a frame of 4 reports or more
+        if len(cut) < 3:
+            raise NotApplicable('HID reports too large for a frame of three')
+        result(exchange(cut[:1] + cut[2:] + wire.reports(good), 1, raw=True), req)
         return
     kwargs = {}
     if kind == 'split':
@@ -89,10 +104,11 @@ def run(check, kind):
     elif kind == 'empty-report':
         chunks, kwargs = [wire.pack(b'')] * 3 + wire.reports(good), {'raw': True}
     elif kind == 'padding':
-        capacity = wire.output_size - 2 - bool(wire.report_id)
+        capacity = wire.output_size - wire_head(wire)
         chunks = [wire.pack(b'', padding=255)]
-        # Last report is deliberately short in counted bytes, with nonzero padding.
-        chunks += [wire.pack(good[i:i + capacity], padding=255) for i in range(0, len(good), capacity)]
+        # The first report deliberately holds one counted byte, the rest of it nonzero padding (whatever the sizes).
+        chunks += [wire.pack(good[:1], padding=255)]
+        chunks += [wire.pack(good[i:i + capacity], padding=255) for i in range(1, len(good), capacity)]
         kwargs = {'raw': True}
     elif kind == 'report-id':
         if not wire.report_id:
@@ -140,3 +156,9 @@ def in_end(check, wire, exchange):
         size = int.from_bytes(payload[:2], 'little')
         require(size == n and payload[2:2 + n] == bytes(k & 0xFF for k in range(n)),
                 f'source of {n} bytes answered {size}')
+
+
+def wire_head(wire):
+    """An output report's bytes before the stream: count, first and the report ID if one is declared."""
+    from .usb import HID_HEAD
+    return HID_HEAD + bool(wire.report_id)

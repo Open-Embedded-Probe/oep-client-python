@@ -16,7 +16,7 @@ REVIEWED = {
     'interfaces/oep-if-debug.ja.md': '6f21171b494e67d50bfc78b4da9e16949033c9e24d960efb42887335da021681',
     'interfaces/oep-if-capture.ja.md': '9d4e7c28467f00871e9be4a46903d385ae1179dc4dbd6ff9b3b2d449167394d5',
 }
-REVIEWED_REGISTRY_SHA256='08ea124e73ba30069556996181f85fd5206d9f5c20256c91cbafe6f3ab20d532'
+REVIEWED_REGISTRY_SHA256='86ed40372f3c53f69d52efb270f25d1c6efd76737db53d6b30cf6e965c8a07c7'
 
 
 def reviewed_identity(spec):

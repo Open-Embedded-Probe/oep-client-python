@@ -86,13 +86,14 @@ def test_hid_response_crosses_count_and_length_boundaries(report_id):
     clock = Clock()
     prefix = bytes((report_id,)) if report_id else b''
     size = 9 - len(prefix)
-    def report(data):
-        return prefix + len(data).to_bytes(2, 'little') + data + bytes(size - 2 - len(data))
-    backend = Raw(clock, [report(b'\x05'), report(b''), report(b'\0' + RESULT)])
+    none = (0xFFFF).to_bytes(2, 'little')
+    def report(data, first=b'\0\0'):
+        return prefix + len(data).to_bytes(2, 'little') + first + data + bytes(size - 4 - len(data))
+    backend = Raw(clock, [report(b'\x05'), report(b'', none), report(b'\0' + RESULT[:2], none), report(RESULT[2:], none)])
     inspector = wire(clock, backend, 'hid', report_id=report_id)
     assert inspector.send(b'request') == RESULT
     assert all(len(data) == 11 for data, _ in backend.writes)
-    joined = b''.join(data[len(prefix) + 2:len(prefix) + 2 +
+    joined = b''.join(data[len(prefix) + 4:len(prefix) + 4 +
                           int.from_bytes(data[len(prefix):len(prefix) + 2], 'little')]
                       for data, _ in backend.writes)
     assert joined == b'\x07\0request'
@@ -135,7 +136,7 @@ def test_current_virtual_core_passes_usb_contracts(monkeypatch, kind, report_id,
     check.usb_wire = inspector
     report = check.run()
     assert report['status'] == 'passed', [(r['id'], r.get('error')) for r in report['checks'] if r['status'] == 'failed']
-    assert len(report['checks']) == (56 if kind == 'bulk' else 60)   # bulk: CORE-USB-IN-END too (not applicable here)
+    assert len(report['checks']) == (56 if kind == 'bulk' else 61)   # bulk: CORE-USB-IN-END too (not applicable here)
     assert report['framing_backend'] == 'independent USB ' + kind
     assert not report['full_conformance'] and check.session is None
     assert ep.current_core.holder is None
@@ -156,17 +157,20 @@ def test_checker_detects_usb_probe_faults(monkeypatch, fault):
     check.confirm()
     check.identity()
     original = backend.write
+    room = inspector.output_size - 4 - 1                     # count, first, report ID 6
     def mutate(data, method='out'):
-        if fault == 'clip_count' and data[1:3] == b'\x09\0':
-            data = data[:1] + b'\x08\0' + data[3:]  # wrongly clip count to report capacity
-        if fault == 'padding' and any(data[3 + int.from_bytes(data[1:3], 'little'):]):
+        count = int.from_bytes(data[1:3], 'little')
+        if fault == 'clip_count' and count == room + 1:
+            data = data[:1] + room.to_bytes(2, 'little') + data[3:]  # wrongly clip count to report capacity
+        if fault == 'padding' and any(data[5 + count:]):
             return len(data)  # wrongly reject nonzero receiver padding
         if fault == 'ignore_set_report' and method == 'set-report':
             return len(data)
-        if fault == 'keep_partial':
-            backend.last = None  # wrongly keep prefix through a gap
-        if fault == 'accept_oversize' and data[3:5] == b'\x41\0':
-            data = inspector.pack(data[5:3 + int.from_bytes(data[1:3], 'little')])
+        if fault == 'keep_partial' and backend.hid_synced and count:
+            expect = backend._next_start(count, data[5:5 + count])   # wrongly read on, whatever first says
+            data = data[:3] + expect.to_bytes(2, 'little') + data[5:]
+        if fault == 'accept_oversize' and data[5:7] == b'\x41\0':
+            data = inspector.pack(data[7:5 + count], first=0)
         return original(data, method)
     backend.write = mutate
     case = {'clip_count': 'count', 'padding': 'padding', 'ignore_set_report': 'set-report',
@@ -263,7 +267,7 @@ def test_hid_count_uses_both_bytes_and_sender_zero_padding():
     clock = Clock()
     message = b'\x02\x01\0\x01\0' + b'x' * 300
     encoded = len(message).to_bytes(2, 'little') + message
-    raw = b'\x06' + len(encoded).to_bytes(2, 'little') + encoded + bytes(511 - 3 - len(encoded))
+    raw = b'\x06' + len(encoded).to_bytes(2, 'little') + b'\0\0' + encoded + bytes(511 - 5 - len(encoded))
     backend = Raw(clock, [raw])
     inspector = UsbWire(backend, 'hid', input_size=511, output_size=511, report_id=6,
                         clock=clock, sleep=clock.sleep)
