@@ -139,6 +139,8 @@ def test_an_rp2350_answers_without_targetsel_and_is_adiv6_at_0x2000():
     conn, dpidr, chip = attach_with(w)
     assert chip is rp.RP2350 and w.calls == [rp.RP2040.targetsel, None]
     assert chip.adiv6 and chip.ap == 0x2000 and chip.ram_end == 0x20082000
+    # its AHB-AP comes up non-secure (CSW bit 30) and SRAM / flash then fault: the MEM-AP clears it (Pico 2)
+    assert chip.csw_clear == 1 << 30 and rp.RP2040.csw_clear == 0
 
 
 def test_another_chip_is_named_and_let_go():

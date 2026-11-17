@@ -1,6 +1,17 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) rp2040_swd on an RP2350 (Pico 2, through an RP2040 OEP probe): its MEM-AP clears CSW bit 30 (the AHB-AP comes
+  up non-secure and SRAM / flash faulted), and the ROM's functions are called only once the RCP is on and salted
+  (CPACR CP7, then the salts unless set - OpenOCD's rp2xxx order: a core stopped by reset_halt has neither, and the
+  ROM's table lookup was a UsageFault NOCP). Flash, verify, reboot and the run after it checked on hardware. tests/hw:
+  rp2_swd (OEP_HW_RP2=<port>, OEP_HW_RP2_IMAGE to write the flash) and the RP2040 Pico probe 152a3f44e811780e in the
+  board table.
+- (JA) RP2350（Pico 2。RP2040 の OEP プローブ経由）での rp2040_swd: MEM-AP は CSW の bit 30 を落とす（AHB-AP は非セキュアで立ち上がり、
+  SRAM と flash が FAULT を返した）。ROM の関数は、RCP を有効にし salt を入れてから呼ぶ（CPACR の CP7、それから salt が未設定なら設定。
+  OpenOCD の rp2xxx と同じ順。reset_halt で止めたコアはどちらも済んでおらず、ROM の表引きが UsageFault NOCP になった）。書き込み、照合、
+  再起動、その後の実行を実機で確かめた。tests/hw に rp2_swd（OEP_HW_RP2=<port>、flash を書くなら OEP_HW_RP2_IMAGE）と、ボードの表に
+  RP2040 の Pico のプローブ 152a3f44e811780e を足した。
 - (EN) capture.CaptureSpill and acquire's meta["probe"]["spill"]: the reference firmware's capture-spill diagnostics
   (spill copies, DMA overruns while the spill had room, the harvest's longest pass with harvest_gap_max_us) - what to
   read when a stream reports dma_overruns (a P4X stream at rest: about 1.7 ms).

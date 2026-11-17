@@ -47,12 +47,14 @@ class Chip:
     core_of: Callable
     program_and_verify: Callable
     rom: Callable                   # Rom(core): its reboot()
+    csw_clear: int = 0              # MEM-AP CSW bits cleared: the RP2350's AHB-AP comes up non-secure (bit 30), and
+                                    # its SRAM and flash then fault (arm.MemAp)
 
 
 RP2040 = Chip("rp2040", 0x0BC12477, rp2040.TARGETSEL_CORE0, False, 0, 0x20042000, rp2040.core_of,
               rp2040.program_and_verify, rp2040.Rom)
 RP2350 = Chip("rp2350", 0x4C013477, None, True, 0x2000, 0x20082000, rp2350.core_of,
-              rp2350.program_and_verify, rp2350.Rom)
+              rp2350.program_and_verify, rp2350.Rom, csw_clear=1 << 30)
 CHIPS = (RP2040, RP2350)       # tried in this order: TARGETSEL first, so an RP2040's three DPs never answer at once
 
 
@@ -90,7 +92,7 @@ class Target:
         self.conn, self.dpidr, self.chip = self._attach((swdio, swclk))
         adi = arm.ArmAdi(h, self.conn, adiv6=self.chip.adiv6)
         adi.power_up()
-        self.mem = arm.MemAp(adi, self.chip.ap)
+        self.mem = arm.MemAp(adi, self.chip.ap, csw_clear=self.chip.csw_clear)
         self.core = self.chip.core_of(self.mem)
 
     def _attach(self, pins):

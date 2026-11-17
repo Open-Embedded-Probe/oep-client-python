@@ -110,6 +110,11 @@ TABLE: dict[str, Board] = {b.id: b for b in (
     Board("e8f60ae84e28", "esp32p4", "esp32p4x", "esp32p4x", "oep://e8f60ae84e28?via=usb", unit_id="e8f60ae84e28",
           notes="P4X (ESP32-P4 silicon v3, HS USB), ours: an M030 (ArduinoCore-CH32RV's bench) on GPIO30 (its rx, label "
                 "m030.rx) and GPIO31 (its swio, m030.swio); keyed by unit id", **_P4),
+    Board("152a3f44e811780e", "rp2", "rp2040", "rp2040", "oep://152a3f44e811780e?via=cdc", unit_id="152a3f44e811780e",
+          gpio=(2, 3), disable=4, uart=(13, 12),
+          notes="Raspberry Pi Pico (RP2040), ours: a CH32V003's SWIO on GP1 (v003.swio@pd1), a Pico's SWD on GP10 / GP8 "
+                "(pico.swdio / pico.swclk), a Pico 2's (RP2350) on GP21 / GP22 (pico2.swdio / pico2.swclk): "
+                "OEP_HW_RP2=pico or pico2 for the rp2_swd test; keyed by unit id"),
     # The ATOM over Wi-Fi / TCP: the same board and firmware as above, flashed and given its networks through its bridge
     # entry (OEP_WIFI_SSID_<n> / OEP_WIFI_PASS_<n> on that run); found by DNS-SD unless OEP_HW_ATOM_TCP names it
     # (tcp://HOST:PORT - from WSL 2's NAT mDNS does not reach the board; `oep settings network` over the bridge shows its ip)

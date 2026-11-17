@@ -486,7 +486,16 @@ class FakeCortexM:
             assert not self.dhcsr & 8, "reboot with C_MASKINTS left set"
             self.log.append(f"reboot flags {r[0]} delay {r[1]}"); return
         assert self.dhcsr & 8, "a ROM call without C_MASKINTS"
-        if pc == 0x8C:                                              # rom_table_lookup(code, mask)
+        from oep_client import rp2350
+        if pc == rp2350.RCP_INIT_AT:                                # the host's RCP stub: CP7 on, then the salts
+            assert self.ram.get(rp2350.CPACR, 0) & rp2350.CPACR_CP7 == rp2350.CPACR_CP7, "RCP stub with CP7 off (NOCP)"
+            code = rp2350.RCP_INIT + (0,) * (len(rp2350.RCP_INIT) % 2)
+            words = [code[i] | code[i + 1] << 16 for i in range(0, len(code), 2)]
+            assert [self.ram.get(rp2350.RCP_INIT_AT + 4 * i) for i in range(len(words))] == words
+            self.rcp = True; self.log.append("rcp_init")
+        elif pc == 0x8C:                                            # rom_table_lookup(code, mask)
+            # the ROM's functions use the RCP: a reset core has it off and unsalted (UsageFault NOCP, Pico 2)
+            assert getattr(self, "rcp", False), "a ROM call before the RCP is on and salted"
             r[0] = self.ROM.get((chr(r[0] & 0xFF), chr(r[0] >> 8)), 0)
         elif pc == 0xF64:  self.xip = False; self.log.append("exit_xip")
         elif pc == 0xE3C:  self.log.append("connect")
@@ -508,6 +517,7 @@ class FakeCortexM:
 
 def test_cortexm_call_returns_r0_and_clears_maskints():
     model = FakeCortexM()
+    model.rcp = True                                                    # the call alone (the ROM's RCP: Rom's job)
     core = arm.CortexM(model, bkpt_at=0x20040000, stack_top=0x20080000)
     core.halt()
     assert core.call(0x8C, (ord("R") | ord("B") << 8, 4)) == 0x6F3
@@ -522,9 +532,10 @@ def test_rp2350_flash_program_runs_the_sdk_sequence_and_verifies():
     core.halt()
     image = bytes(range(256)) * 70 + b"\x12\x34"                      # 17922 B: 70 pages + a partial one
     assert rp2350.program_and_verify(core, image, 0)
-    assert model.log[:3] == ["connect", "exit_xip", "erase 0x0+20480"]  # erase rounded to 4 KiB sectors
-    assert model.log[3:5] == ["program 0x0+16384", "program 0x4000+1792"]   # 16 KiB buffer, page-padded tail
-    assert model.log[5:] == ["flush", "enter_cmd_xip"]
+    assert model.log[0] == "rcp_init"                                  # before the ROM's first function
+    assert model.log[1:4] == ["connect", "exit_xip", "erase 0x0+20480"]  # erase rounded to 4 KiB sectors
+    assert model.log[4:6] == ["program 0x0+16384", "program 0x4000+1792"]   # 16 KiB buffer, page-padded tail
+    assert model.log[6:] == ["flush", "enter_cmd_xip"]
     assert bytes(model.flash[:len(image)]) == image and model.flash[len(image):20480] == b"\xff" * (20480 - len(image))
     rp2350.Rom(core).reboot()
     assert model.log[-1] == "reboot flags 0 delay 10" and not model.dhcsr & 8

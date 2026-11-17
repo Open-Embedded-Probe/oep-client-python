@@ -19,18 +19,40 @@ TABLE_LOOKUP_PTR = 0x16          # halfword in the ROM: rom_table_lookup(code, m
 # RAM the target can spare while the host drives it (main SRAM ends at 0x20082000): the return breakpoint, the data
 # buffer for programming, and the stack the ROM functions run on. Whatever ran before is restarted afterwards.
 BKPT_AT, BUF, BUF_BYTES, STACK_TOP = 0x20040000, 0x20041000, 16 * 1024, 0x20080000
+# The boot ROM's functions use the RCP (coprocessor 7). A core stopped on its first instruction (reset_halt) has it
+# off and its salt unset, and the first RCP instruction is a UsageFault (NOCP; Pico 2, 2026-11-17): CP7 on in CPACR,
+# then the salts set unless they already are (setting them twice faults) - OpenOCD's rp2xxx does the same.
+CPACR, CPACR_CP7 = 0xE000ED88, 0x3 << 14
+RCP_INIT_AT = BKPT_AT + 0x10
+RCP_INIT = (0xEE30, 0xF710,      # mrc p7, #1, r15, c0, c0, #0   (N: the salts are set)
+            0xD403,              # bmi done
+            0xEC40, 0x0780,      # mcrr p7, #8, r0, r0, c0
+            0xEC40, 0x0781,      # mcrr p7, #8, r0, r0, c1
+            0x4770)              # done: bx lr
 
 
 def code(a: str, b: str) -> int:
     return ord(a) | ord(b) << 8
 
 
+def rcp_init(core: CortexM) -> None:
+    """The RCP on and salted on the halted core, as the boot ROM leaves it: before any ROM function is called."""
+    core.mem.write32(CPACR, core.mem.read32(CPACR) | CPACR_CP7)
+    code = RCP_INIT + (0,) * (len(RCP_INIT) % 2)
+    core.mem.write_block(RCP_INIT_AT, [code[i] | code[i + 1] << 16 for i in range(0, len(code), 2)])
+    core.call(RCP_INIT_AT | 1)
+
+
 class Rom:
     def __init__(self, core: CortexM):
         self.core = core
         self._fn: dict[str, int] = {}
+        self._rcp = False
 
     def lookup(self, c: str) -> int:
+        if not self._rcp:
+            rcp_init(self.core)
+            self._rcp = True
         if c not in self._fn:
             word = self.core.mem.read32(TABLE_LOOKUP_PTR & ~3)
             lookup = (word >> (8 * (TABLE_LOOKUP_PTR & 3))) & 0xFFFF

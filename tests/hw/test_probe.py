@@ -12,6 +12,8 @@
                for (OEP_HW_WIFI_WAIT_S, 30 s) - the ssid, passphrase and address never recorded
   wire         scan, attach (with the reset TLV when OEP_HW_RESET names the line), halt -> read_block -> resume 50x
                with s0 / s1 / a0 / a1 read before and after each block op       (only with OEP_HW_TARGET)
+  rp2_swd      an RP2040 / RP2350 over SWD: attach, halt, registers and SRAM read twice the same, resume; with
+               OEP_HW_RP2_IMAGE its flash written, verified, rebooted, the core running        (only with OEP_HW_RP2)
   gpio         fixture gpio set / read on two free channels (outputs read back, pull-up / pull-down levels)
   uart         fixture uart configure / status (a loopback write / read with OEP_HW_UART_LOOP=rx,tx)
   capture      fixture logic: a one-shot at the lowest declared rate over a 10 ms window on the two free channels,
@@ -45,7 +47,7 @@ import pytest
 import json
 
 from oep_client import (capture, capture_blocks, catalog, stimulus, console as console_mod, core, dump, fixture, host as h, link, linktest,
-                        message as m, registry as reg, riscv, settings)
+                        message as m, registry as reg, riscv, rp2040_swd, settings)
 
 from . import boards, firmware as fwmod, flash, record
 
@@ -430,6 +432,56 @@ def test_wire(run: record.Run):
         print(f"registers changed over a read_block (s0 s1 a0 a1):\n{detail}")
         pytest.fail(f"s0 / s1 / a0 / a1 changed over a read_block in {len(changed)} of {loops} loops "
                     f"(before, after, again, the words past the block, dpc):\n{detail}", pytrace=False)
+
+
+def test_rp2_swd(run: record.Run):
+    """An RP2040 / RP2350 on the SWD pair labelled <port>.swdio / <port>.swclk (OEP_HW_RP2=<port>): attach (the chip
+    from its DPIDR), halt, the core's registers and SRAM read twice the same, resume. With OEP_HW_RP2_IMAGE (an ELF or
+    .bin: the target's flash is replaced): erase, program, verify through the ROM from a reset core, reboot, and the
+    core running again (its PC moves)."""
+    port = os.environ.get("OEP_HW_RP2", "")
+    if not port:
+        pytest.skip("no RP2 target wired (OEP_HW_RP2=<port> names the labels <port>.swdio / <port>.swclk)")
+    hst = run.take()
+    rec = run.record("rp2_swd", port=port)
+    t = rp2040_swd.Target(hst, port)
+    try:
+        rec.update(chip=t.chip.name, dpidr=f"{t.dpidr:#010x}")
+        c = t.core
+        c.halt()
+        regs = [c.reg(n) for n in range(16)]
+        sram = c.mem.read_block(0x20000000, 64)
+        assert [c.reg(n) for n in range(16)] == regs, "a register changed while the core was halted"
+        assert c.mem.read_block(0x20000000, 64) == sram, "SRAM changed while the core was halted"
+        rec["halted_pc"] = f"{regs[c.PC]:#010x}"
+        c.release()
+        image_path = os.environ.get("OEP_HW_RP2_IMAGE", "")
+        if not image_path:
+            return
+        image = rp2040_swd.image_of(image_path)
+        t0 = time.monotonic()
+        c.halt()
+        c.reset_halt()
+        log = []
+        assert t.chip.program_and_verify(c, image, 0, log=log.append), "the flash did not read back as written"
+        rec.update(image=os.path.basename(image_path), image_bytes=len(image), flash_log=log,
+                   flash_seconds=round(time.monotonic() - t0, 2))
+        t.chip.rom(c).reboot()
+    finally:
+        t.close()
+    time.sleep(1.0)
+    t = rp2040_swd.Target(hst, port)                  # the chip rebooted: a new connection
+    try:
+        pcs = set()
+        for _ in range(4):
+            t.core.halt()
+            pcs.add(t.core.reg(t.core.PC))
+            t.core.release()
+            time.sleep(0.05)
+        rec["pcs_after_reboot"] = sorted(f"{p:#010x}" for p in pcs)
+        assert len(pcs) > 1, f"the core did not run after the reboot (PC stayed {pcs})"
+    finally:
+        t.close()
 
 
 # ---- 5. fixture gpio -------------------------------------------------------------------------------------------------------
