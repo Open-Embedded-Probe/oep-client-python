@@ -1291,6 +1291,7 @@ def _group_stream_result(cap, an, hst, cfg, acfg, req: Request, names, ids, aids
     if drops is not None:
         import dataclasses
         probe["drops"] = dataclasses.asdict(drops)
+    _note_spill(probe, oc, st)
     received = (spool.received if spool is not None else len(lg.data)) + len(ag.data)
     tail = None
     if st.state != oc.STATE["error"]:
@@ -1378,6 +1379,7 @@ def _analog_stream_result(an, hst, acfg, req: Request, aids, probe, fast, open_s
     if drops is not None:
         import dataclasses
         probe["drops"] = dataclasses.asdict(drops)
+    _note_spill(probe, oc, st)
     tail = None
     end = (got.start or 0) + len(got.data) + sum(n for _, n in got.gaps)
     if st.state != oc.STATE["error"] and st.write_pos > end:
@@ -1453,6 +1455,7 @@ def _stream_result(cap, hst, cfg, req: Request, names, ids, probe, fast, open_s,
     if drops is not None:
         import dataclasses
         probe["drops"] = dataclasses.asdict(drops)
+    _note_spill(probe, oc, st)
     received = spool.received if spool is not None else len(got.data)
     tail = None
     if st.state != oc.STATE["error"]:            # stopped: every byte up to write_pos should have come (§2.1 rule 2)
@@ -1762,6 +1765,15 @@ class _Spool:
 
 
 DROP_COUNTS = ("no_stage_bytes", "unqueued_bytes", "dma_overruns", "queue_overflows")
+
+
+def _note_spill(probe: dict, oc, st) -> None:
+    """The reference firmware's spill diagnostics (capture.CaptureSpill) into meta["probe"]["spill"], with the harvest's
+    longest pass in microseconds: what to look at when a stream reports dma_overruns."""
+    spill = oc.CaptureSpill.of(st) if hasattr(oc, "CaptureSpill") else None
+    if spill is not None:
+        import dataclasses
+        probe["spill"] = dataclasses.asdict(spill) | {"harvest_gap_max_us": spill.harvest_gap_max_us}
 
 
 def _drops_line(drops: dict | None) -> str:

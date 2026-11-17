@@ -70,3 +70,21 @@ def test_putting_a_stream_together_keeps_the_callers_lease():
     h2 = Host()
     h2.session = None
     assert acquire._put_together(Slow(), h2) == "parts" and h2.sent == 0
+
+
+def test_the_spill_diagnostics_go_into_meta_with_the_harvest_gap_in_us():
+    """capture-spill (the reference firmware's): its fields and the harvest's longest pass in microseconds."""
+    import struct
+    from oep_client import capture as oc
+
+    class St:
+        named = {oc.CAPTURE_SPILL: struct.pack("<QQQQIII", 1, 2, 3, 4, 5, 3_600_000, 360_000_000)}
+    probe = {}
+    acquire._note_spill(probe, oc, St())
+    assert probe["spill"]["overruns_with_room"] == 5 and probe["spill"]["harvest_gap_max_us"] == 10000.0
+
+    class Old:
+        named = {}
+    probe = {}
+    acquire._note_spill(probe, oc, Old())
+    assert "spill" not in probe

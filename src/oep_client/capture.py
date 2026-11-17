@@ -419,6 +419,38 @@ class CaptureDrops:
         return None if data is None else cls.unpack(data)
 
 
+CAPTURE_SPILL = "io.github.open-embedded-probe.capture-spill"
+
+
+@dataclass(frozen=True)
+class CaptureSpill:
+    """The Arduino reference firmware's spill diagnostics in a capture's status (named extension CAPTURE_SPILL, not an
+    OEP definition; only with a spill, a P4 / P4X stream): since start, the bytes into the spill and their copy's CPU
+    cycles, the bytes out and theirs, the DMA overruns while the spill had room, the longest between two passes of the
+    harvest's loop (cycles) and the CPU's clock (Hz). harvest_gap_max_us: that longest pass in microseconds - a DMA
+    overrun with room in the spill means the harvest did not run for longer than the DMA ring holds."""
+    in_bytes: int
+    in_cycles: int
+    out_bytes: int
+    out_cycles: int
+    overruns_with_room: int
+    harvest_gap_max_cycles: int
+    cpu_hz: int
+
+    FORMAT = "<QQQQIII"
+
+    @property
+    def harvest_gap_max_us(self) -> float | None:
+        return self.harvest_gap_max_cycles / self.cpu_hz * 1e6 if self.cpu_hz else None
+
+    @classmethod
+    def of(cls, status: "Status") -> "CaptureSpill | None":
+        data = status.named.get(CAPTURE_SPILL)
+        if data is None or len(data) != struct.calcsize(cls.FORMAT):
+            return None
+        return cls(*struct.unpack(cls.FORMAT, data))
+
+
 @dataclass(frozen=True)
 class TriggerOpts:
     """configure's trigger_opts (§3.3): `arm` 1 looks once the pretrigger is there (0: at once, a short segment);

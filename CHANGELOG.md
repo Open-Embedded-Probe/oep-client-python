@@ -1,6 +1,11 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) capture.CaptureSpill and acquire's meta["probe"]["spill"]: the reference firmware's capture-spill diagnostics
+  (spill copies, DMA overruns while the spill had room, the harvest's longest pass with harvest_gap_max_us) - what to
+  read when a stream reports dma_overruns (a P4X stream at rest: about 1.7 ms).
+- (JA) capture.CaptureSpill と acquire の meta["probe"]["spill"]: 参照ファームの capture-spill の診断（spill の写し、spill に空きがあるときの
+  DMA のあふれ、回収の 1 周の最長と harvest_gap_max_us）。流し続けが dma_overruns を出したときに読むもの（P4X の何もない流れで約 1.7 ms）。
 - (EN) acquire.capture(hst, ...) keeps the caller's lease while a stream is put together (keepalive at a third of the
   lease): a 120 s stream at 20 MS/s x 2 took about a minute to put together, past a 30 s lease, and the caller's next
   request (its end) found no session.
