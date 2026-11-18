@@ -14,7 +14,7 @@ privateベンチを参照せず、SPEC checkoutと出力先を明示する。
 - 存在しないfnのdescribeはfirstが末尾以降でもunknown_functionとなり、宣言を変えない。
 
 最初のsnapshotだけが一貫して誤っている場合の全実装固有情報までは証明しない。
-各インターフェースのname/instance/opsやdescribeは既存InterfaceChecksと組み合わせる。
+各インターフェースのname/instance/opsやdescribeはInterfaceChecksと組み合わせる。
 検査するのは現在の経路のframeであり、他経路の最小frameを推測しない。
 
 client checkoutのルートで実行する。
@@ -23,7 +23,7 @@ client checkoutのルートで実行する。
 uv run pytest -q tests/test_conformance_discovery.py
 ```
 
-pytestは正常3構成、cursor/locked/unknown-fnの不具合5種類、label不正5種類の13件。
+pytestは正常3構成、cursor/locked/unknown-fnの不具合、label不正を持つ。
 正常構成は短い名前（複数entryが同じpageに入る）、48 byteの名前、fn無し。
 公開のDeclarationModelへfixture条件を明示して使い、モデル本体の動作を変更しない。
 これは検査用の独自インターフェースであり、標準OEP機能の適合例ではない。

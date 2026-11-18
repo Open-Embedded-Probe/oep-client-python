@@ -15,7 +15,7 @@ corr 65533のcreate、65534の不正kind create、65535のendを受付枠内で�
 
 fixtureは接続closeと別経路を論理APIで表現する。physical reader停止、USB再同期、TCP再接続を実装した保証ではない。経路上の読み出しはatomic snapshotではなく、並行writerがいない条件に限定する。新openにはforceを使わないため、他の所有者が先に取得した場合に奪い返さない。
 
-単体22件ではbarrier無視、旧IDの再使用、unknownの書換え、受信済み結果の消去、旧binding保持、force使用の6欠陥を検出する。入力/制御能力不足、別の所有者のロック、boot変更、読取り中のboot変更、新open応答喪失も確認する。検査器はhostの要求ログとadapterの実際の送信bytesを照合する。
+単体試験ではbarrier無視、旧IDの再使用、unknownの書換え、受信済み結果の消去、旧binding保持、force使用の欠陥を検出する。入力/制御能力不足、別の所有者のロック、boot変更、読取り中のboot変更、新open応答喪失も確認する。検査器はhostの要求ログとadapterの実際の送信bytesを照合する。
 
 ```python
 import os
@@ -34,6 +34,6 @@ with equipment_lock(os.environ['OEP_HW_LOCK']):
         assert report['status'] == 'passed', report
 ```
 
-既存`.env.example`のSPEC/共有lockを明示する。私的ベンチへの依存・探索や新しい設備項目はない。[同じ接続でのend/open喪失回復](session-loss-conformance.ja.md)とは異なり、この検査は旧経路を退役させるため旧要求を再送しない。
+`.env.example`のSPEC/共有lockを明示する。私的ベンチへの依存・探索はしない。[同じ接続でのend/open喪失回復](session-loss-conformance.ja.md)とは異なり、この検査は旧経路を退役させるため旧要求を再送しない。
 
-`full_conformance=false`。production Host統合、物理reader停止/再接続、並行writer、任意の拡張の外部副作用、別のbatchサイズ/保持条件は未検査。SPEC・仮想probe・Arduino firmwareは変更しない。
+`full_conformance=false`。production Host統合、物理reader停止/再接続、並行writer、任意の拡張の外部副作用、別のbatchサイズ/保持条件は未検査。

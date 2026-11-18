@@ -4,7 +4,7 @@ bulk/HIDのprobe入力を、公開clientの独立した検査器で確認する�
 
 ## 最小モデルの実行
 
-`tests/equipment/.env.example` から明示設定を作り、unitを `virtual-core-1`、SPEC checkout、新規JSON出力先、既存のlockファイルを指定する。モデル用入口はこの4設定だけを使う。通常入口のADDRESS/FRAMING/TCP_PEERを使わず、実機へ接続しない。隣接checkoutや私的設備台帳を探索しない。
+`tests/equipment/.env.example` から明示設定を作り、unitを `virtual-core-1`、SPEC checkout、新規JSON出力先、共有のlockファイルを指定する。モデル用入口はこの4設定だけを使う。通常入口のADDRESS/FRAMING/TCP_PEERを使わず、実機へ接続しない。隣接checkoutや私的設備台帳を探索しない。
 
 ```sh
 uv run --group dev --env-file tests/equipment/.env \

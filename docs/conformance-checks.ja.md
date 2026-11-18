@@ -148,7 +148,7 @@ consoleのlink-lost/closed、成功後の履歴消去と他connectionの保持�
 
 [標準資源のwriter lease検査](writer-lease-conformance.ja.md)。
 実行中の停止、送信時の再開始、writer待ち中の期限切れ、古いtokenによる所有権復活防止を
-明示logical clockで確認する。新fixtureの共通宣言と既存cut検査は第二/第三段階へ分ける。
+明示logical clockで確認する。このfixtureの共通宣言とcut検査は第二/第三段階へ分ける。
 
 [登録標準opの検査](registered-ops-conformance.ja.md)は明示した標準インターフェースの必須opと任意opの組を
 第三段階で確認する。実動作を呼ばず、宣言だけのfixtureを完全probeと扱わない。

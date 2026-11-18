@@ -35,6 +35,6 @@ with equipment_lock(os.environ['OEP_HW_LOCK']):
 assert report['status'] == 'passed', report
 ```
 
-既存`.env.example`のSPEC/共有lockを明示する。私的ベンチへの依存や自動探索は不要。
+`.env.example`のSPEC/共有lockを明示する。私的ベンチへの依存や自動探索は不要。
 
 `full_conformance=false`。物理reader停止/再同期、TCP再接続、複数pendingの放棄後の回復、production Host統合、任意の並行writerや拡張の副作用は未検査。TCP切断後の新接続へ前のSを移せるという保証はない。

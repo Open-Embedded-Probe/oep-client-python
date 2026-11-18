@@ -27,14 +27,14 @@ optional stepを提供する明示論理fixtureを使う。
 - critical/壊れたTLV/切れた引数、session優先順、無効資源/stream/ARM資源を検査する。
   同一要求再送はstep/resumeを繰り返さず、保存結果をそのまま返す。
 
-`StepModel`は既存block fixtureへstepを追加する独立論理モデル。
+`StepModel`はblock fixtureへstepを追加する独立論理モデル。
 `step_seed(connection, pc, dcsr)`で保存前の状態を、
 `step_behavior(mode, after_pc)`で結果を指定する。modeは
 `ok` / `late-halt` / `running` / `prepare-line` / `prepare-fault`。
 論理PC遷移と状態復元を扱い、CPU命令や抽象CSRコマンドを実行するものではない。
 各caseは新bootとし、raw交換、PC/dcsr、DATA復元順、haltreqとconsole調停を記録する。
 
-単体34件は20種類の誤動作注入（step_left後もconnectionを残す誤りを含む）、step_leftでstep bitが下がっていても通る正常例、
+単体試験は誤動作注入（step_left後もconnectionを残す誤りを含む）、step_leftでstep bitが下がっていても通る正常例、
 前提不足、不正刺激、共通宣言を含む。`full_conformance`はfalse。
 物理命令/CSR操作、再停止の実時間、DATA復元自体の失敗、初めから走っているhartの受付、
 実応答writer、reset/run、他targetとproduction Host統合は未検査。

@@ -5,7 +5,7 @@
 公開checkerとadapterは私的ベンチ・兄弟checkout・設備設定を探索しない。
 共通宣言とcapture metadataは別checkerで確認する。
 
-既存`LogicChecks`のwire交換・世代・データ寿命・資源寿命の検査手順を再利用し、
+`LogicChecks`のwire交換・世代・データ寿命・資源寿命の検査手順を再利用し、
 analogの成功payloadと生データは`AnalogPayloadChecks`で独立に読む。
 Hostのcapture decoderや仮想probeのencoderを正解の生成に使わない。
 複数trackの結合は[capture-group操作ガイド](capture-group-conformance.ja.md)の別checkerで確認する。
@@ -43,13 +43,13 @@ max_frameは256 byteと明示する。2チャネルの必須configure応答全�
 logical msへ変換する。`advance`/`fail`/`seed`は明示したclock・取得失敗・世代境界の刺激。
 `factory`はfixtureが保持するfactory rawの長さ（0〜4096 byte）を決める刺激で、設定したrawを返す。
 modelの共通取得状態機械は独立`LogicModel`と共有するが、ADCの設定・trigger・encoder・校正は別実装。
-既存ベンチの`virtual_bench_capture`やHost decoderは取り込まない。
+ベンチの`virtual_bench_capture`やHost decoderは取り込まない。
 referenceはstartのlogical clockで同期測定したfixture値であり、一般のprobeの測定遅延を規定しない。
 
-単体82件。42 caseへのwire応答故障、24の意味的な故障、再送の二重副作用2件を検出する。
+単体試験は、各caseへのwire応答故障、意味的な故障、再送の二重副作用を検出する。
 意味的な故障には、世代の1への巻き戻り、scaleの欠落、calibrationの切り詰め/vrefint省略/partial、
-読めるデータが無いときのgap欠落、宣言しないmode 3の受理を含む。任意の応答行を省いたfixtureの合格4件、
-不正刺激と前提不足も確認する。共通宣言/metadata、旧logic、analog payloadの回帰と併せて実行する。
+読めるデータが無いときのgap欠落、宣言しないmode 3の受理を含む。任意の応答行を省いたfixtureの合格、
+不正刺激と前提不足も確認する。共通宣言/metadata、logic、analog payloadの検査と併せて実行する。
 
 `full_conformance`はfalse。group、streaming/通知、optional force/subscribe、
 他のADC形/rate/trigger境界・基準電圧測定方式、serial wrap/保持境界/並行性/永続config、

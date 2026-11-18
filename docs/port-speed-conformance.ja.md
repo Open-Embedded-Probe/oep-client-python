@@ -67,7 +67,7 @@ phase3を作る刺激は1つのframeの受信だけであり、送受信が同�
 begin中に別の要求を実行する並行性は、この順次fixtureの採用範囲に含めない。
 
 単体は`uv run pytest -q tests/test_conformance_port_speed.py`。
-81件は正常1、共通宣言1、wire故障20、意味的故障48、control不足10、port_state不在1。
+単体試験は、正常例、共通宣言、wire故障、意味的故障、control不足、port_state不在を含む。
 書き込み前切替、実baud/状態/送出baud、timer早期/欠落、再送deadline更新、cause/tag、critical、
 許容差と境界、pin変化、非bridge/第二port受理・拒否時のpeer変化、idle誤更新を注入して検出する。
 port_stateの古いphase/baud・非bridge受理・critical無視、起動速度の受理、revertの誤baud、step1のverify0拒否、
@@ -101,8 +101,8 @@ PortSpeedLifecycleChecksはcontext1と9ケースの部分検査を追加する�
 正常なforce例も新しいsessionを開く要求であり、保持者の既存sessionを他経路へ移動しない。
 検査失敗時のcleanupは観測された保持者を使い、元の境界違反を別のno_session拒否で隠さない。
 
-`uv run pytest -q tests/test_conformance_port_speed_lifecycle.py`：24件。
-正常1、応答故障9、状態故障14。forceの早すぎる復帰/復帰欠落、lease早期・解放欠落、
+`uv run pytest -q tests/test_conformance_port_speed_lifecycle.py`。
+正常例、応答故障、状態故障を含む。forceの早すぎる復帰/復帰欠落、lease早期・解放欠落、
 古いwriteでtrial/commit/保持者を復活させる故障、commit応答の途中切替、
 受信中の即時復帰、旧sessionへのcause6、session保留の取消・復帰欠落、forceのphase3欠落を検出する。
 
@@ -123,9 +123,8 @@ VERIFYは試し中にSID0のsource3500msを実行し、verify期限が実行時�
 OTHER-ROUTEは確定後、別bridge2でSID0のsource3500msを実行し、port0のidle期限が延びて、その応答では更新されないことを確認する。
 どちらも残り時間の1ms前/境界で復帰を確認する。
 
-`uv run pytest -q tests/test_conformance_port_speed_execution.py`で40件。
-正常全体1/各スケジュール10、応答故障10、時計・状態故障12、停止故障5、fixture guard2。
+`uv run pytest -q tests/test_conformance_port_speed_execution.py`。
+正常例（全体と各スケジュール）、応答故障、時計・状態故障、停止故障、fixture guardを含む。
 停止故障はverify消費、応答でのverify更新、他経路実行でのidle消費・更新、verifyの早期復帰。
-旧モデルで全8ケースのidle消費違反を再現し、実行時間だけidle期限を延ばした。
 3500msはidle3000msより長く、短lease1000msも越えるので、偶然期限内で通る刺激ではない。
 複数経路の同時実行、source/sink以外の実行・拒否経路、物理時間・Host switch/waitは検査しない。

@@ -41,7 +41,7 @@ reset role 3はchannel 6、max_op_ms=5、最も遅い読出しは1000 Hzを宣�
 予約状態はplan allocatorの代わりの論理刺激であり、plan統合の適合証拠にはしない。
 各caseを新bootとし、raw交換、pin mode/level、reset/read時刻と資源/target metadataを保存する。
 
-単体38件は22種類の誤動作注入、前提不足、不正刺激、所有pin変更拒否、共通宣言を含む。
+単体試験は誤動作注入、前提不足、不正刺激、所有pin変更拒否、共通宣言を含む。
 `full_conformance`はfalse。scanのidle_clock/targetsel、物理open-drain/level/hold/wake/DM timing、
 attachの速さ/scratchのアルゴリズム、線切れの応答/解放順、非RVSWDのidle=0の方針、
 plan統合/別容量、実応答writerとproduction Host統合は未検査。

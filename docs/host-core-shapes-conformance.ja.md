@@ -60,8 +60,8 @@ listは0/1/48/255 entry、channel_groupは0/1/255 member、text/TLV値は65535 b
 SPECが変わった場合は入力を読み直すまで停止し、番号が同じだけで形の互換性を推定しない。
 固定形を変更する将来のrevisionは、このrevision 1 readerへ無条件で適用しない。
 
-単体103件は正常report1、固定形の誤り19、既知値の誤り30、後続重複の壊れた値の使用28、意味的故障18、
-壊れた既知値の非使用を許すreader1、SPEC変更の検出5、core tagとしてのindexの検出1。
+単体試験は、正常report、固定形の誤り、既知値の誤り、後続重複の壊れた値の使用、意味的故障、
+壊れた既知値の非使用を許すreader、SPEC変更の検出、core tagとしてのindexの検出を含む。
 要素長の誤った要求、短い形の受理、critical alias使用、文脈を跨ぐcache、最後の重複値、
 繰返しのsort、boolを0/1だけで読む誤りなどを捕捉する。
 

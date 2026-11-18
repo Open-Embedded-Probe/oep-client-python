@@ -29,7 +29,7 @@ synced/last_s/last_syn/h/pendingをstreamごとに持つ。`reset_target(connect
 検出済みtarget resetの論理刺激で、実機をresetしたりhaveresetを実際に観測したりしない。
 各caseはlogical restartし、mailboxの全アクセスをpollごとのsnapshotで保存する。
 
-単体31件は正常系・規範CRC例・前提不足と15種類の誤動作注入を含む。
+単体試験は正常系・規範CRC例・前提不足と誤動作注入を含む。
 `full_conformance`はfalse。target側の再送/timeoutアルゴリズム、
 実riscv-dm要求との調停、物理DMI/timing/配送、production Host統合、別容量と並行pollerは未検査。
 probe側のframing検査だけでtarget側や全consoleの適合とは扱わない。

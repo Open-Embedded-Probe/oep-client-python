@@ -29,7 +29,7 @@ max_length=8 byteを宣言する。この値を他のprobeへ要求しない。
 状態にはbusのaccess、復元順、memory/GPR/mailbox/pendingを保存し、各caseを新bootにする。
 物理abstract command、program bufferやsysbusの実装ではない。
 
-単体28件は17種類の誤動作注入、前提不足、不正刺激、全5 fnの共通宣言を含む。
+単体試験は誤動作注入、前提不足、不正刺激、全5 fnの共通宣言を含む。
 `full_conformance`はfalse。全transport経路のframe制約、物理GPR復元失敗、
 abstract command/program buffer/sysbusのアルゴリズム、RV32番地overflowとbusアクセス権、
 reset/step/run、実応答writer、別容量とproduction Host統合は未検査。

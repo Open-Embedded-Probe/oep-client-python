@@ -17,9 +17,9 @@
 
 共通タグの意味を読む際は、非反復タグの最初の値を使う。未知非criticalタグを解釈せず保持し、ページ位置の計算にも含める。role_channelsは立ったbitのchannelだけを検査する。未定義のrole値、clockの大小関係、group番号の意味、標準opの必須集合を汎用検査から推測しない。
 
-位置付きストリーム、debug connection、statusなどの[common部品](../../oep-spec/interfaces/oep-if-common.ja.md)は、インターフェイスがその部品を採用すると定めた場合だけ適用する。全fnへread/marks/attachを要求しない。資源・購読・通知の寿命は既存の明示adapter検査を併用し、固有opの副作用・配線・電気的観測は3段階目で検査する。
+位置付きストリーム、debug connection、statusなどの[common部品](../../oep-spec/interfaces/oep-if-common.ja.md)は、インターフェイスがその部品を採用すると定めた場合だけ適用する。全fnへread/marks/attachを要求しない。資源・購読・通知の寿命は明示adapter検査を併用し、固有opの副作用・配線・電気的観測は3段階目で検査する。
 
-単体29件で名前、固定幅、channel範囲/count、ops、位置指定だけ壊れたページ、保持中だけ変わる宣言、未宣言opの拒否優先順位、不正instance、ops欠落を検出する。48 byteの名前、標準名、独自名、未知タグ、反復タグ、異なるrevisionも確認する。fnがない端点では各fnの検査を適用外と記録し、全準拠とはしない。
+単体試験で名前、固定幅、channel範囲/count、ops、位置指定だけ壊れたページ、保持中だけ変わる宣言、未宣言opの拒否優先順位、不正instance、ops欠落を検出する。48 byteの名前、標準名、独自名、未知タグ、反復タグ、異なるrevisionも確認する。fnがない端点では各fnの検査を適用外と記録し、全準拠とはしない。
 
 ```python
 import os

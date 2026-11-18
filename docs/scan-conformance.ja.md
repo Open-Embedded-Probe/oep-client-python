@@ -6,7 +6,7 @@
 
 `Checks(send, registry, unit)`と`SampleScanAdapter(source)`を明示して
 `ScanChecks(checks, adapter).run()`を呼ぶ。公開コードは設備設定や私的ベンチを
-探索しない。実装の版・SPEC identityと各検査のraw交換は既存の報告に残す。
+探索しない。実装の版・SPEC identityと各検査のraw交換はの報告に残す。
 
 
 - RVSWD/SWIO/SWDの識別子、kind、候補順、triedとcount、未知応答TLV。

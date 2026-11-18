@@ -1,7 +1,7 @@
 # Probe restartの部分適合検査
 
 RestartChecksはrestart §1/2とcore §9に基づき、現在のCoreとGPIO/planを使うRestartModelへ操作を送る。
-モデルの再起動は既存Endpoint.rebootを使い、boot/時計/Core/拡張資源を新しい起動へ切り替える。
+モデルの再起動はEndpoint.rebootを使い、boot/時計/Core/拡張資源を新しい起動へ切り替える。
 明示SPEC registryでChecksを作り、共通InterfaceChecks、RegisteredOpsChecks、固有検査の順で実行する。
 公開部品はprivateベンチや設備を自動探索しない。
 
@@ -21,7 +21,7 @@ write完了から49/50ms境界をfixture条件として使い、50msでは新boo
 raw制御の要求/返信とwrite/quiet/bootイベントを、通常のChecks traceとは別に保存する。
 physicalフレーミング・USB列挙・TCP待ち受け直しの時刻を測るものではない。
 
-`uv run pytest -q tests/test_conformance_restart.py`は27件。
+`uv run pytest -q tests/test_conformance_restart.py`で実行する。
 正常1、共通宣言1、wire故障3、状態故障12、再起動後clock成功/boot故障2、制御不足7、fixture遅延条件1。
 応答前再起動、再起動欠落、boot再使用、plan/pin/cache/保持者残留、時計の非初期化、
 再起動中応答、経路復帰欠落、critical tag書換え、拒否時pin変更を注入して検出する。

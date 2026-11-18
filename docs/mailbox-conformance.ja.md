@@ -20,14 +20,14 @@
   再開時はDATA0より先にDMSTATUSを読む。停止中にqueueや受信bufferを変えない。
 - readは非消費、clearは受信bufferだけを捨てる。writeの再送はqueueを再補充しない。ack後の同じ枠を再配送しない。
 
-独立`MailboxModel`は既存attach sampleを土台にmailboxを追加する。
+独立`MailboxModel`はattach sampleを土台にmailboxを追加する。
 `mailbox_frame(stream, data0, data1)`でu32の論理wordを置き、`mailbox_poll(stream)`を明示実行する。
 `mailbox_halted(stream, bool)`、`mailbox_debug_busy(stream, bool)`は外部状態の刺激であり、
 実際のtarget操作ではない。DMSTATUSのanyhaltedを読み、DATA0/DATA1のアクセスを記録する。
 状態snapshotのeventsは直近のpollだけで、各pollのsnapshotをadapter traceへ保存する。
 各caseは新bootでlogical restartする。実機やファームウェアを操作しない。
 
-単体23件には15種類の誤動作注入を含む。DATA1の欠落/過剰読出し/書込み、不正枠消去の違反、
+単体試験には誤動作注入を含む。DATA1の欠落/過剰読出し/書込み、不正枠消去の違反、
 自己応答の上書き、queueの誤消費/逆順/短縮、halt/debug中アクセス、DMSTATUS順序違反、
 SDI writeの受理、bit 6の誤解釈、ack未反映を独立検査で検出する。
 

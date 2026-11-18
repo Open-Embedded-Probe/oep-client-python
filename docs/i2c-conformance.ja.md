@@ -29,7 +29,7 @@ stretch/内部pullupの有無をconstructorで明示し、4構成を検査する
 ACK・stretch回数と終了時刻、queue/pin/journal、wire交換を保存する。
 この刺激は実バスのエッジ・波形・実時間を再現するものではない。
 
-単体64件で4構成、共通宣言/metadata、各caseのwire誤応答、FIFO/二重errors/初期化漏れ/slot再利用/誤timestamp/誤駆動、
+単体試験で4構成、共通宣言/metadata、各caseのwire誤応答、FIFO/二重errors/初期化漏れ/slot再利用/誤timestamp/誤駆動、
 再送での二重消費、任意timestampの省略、前提不足・不正刺激を確認する。
 `full_conformance` はfalse。物理I2C、永続config、他pin/channel_group、255以上のqueue/u32 counter境界、
 並行controller/writerとdeferred response、production Host統合は未検査。

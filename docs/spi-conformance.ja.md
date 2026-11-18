@@ -31,7 +31,7 @@ channel 0〜3、idle入力の論理fixture。LSBを宣言する/しない2構成
 clockは取り込みedgeで実際のlogical MISO pinを読む。readyはarmを準備できない場合の刺激であり、
 その理由を規範へ追加しない。CS開始/終了、clock edge、pin駆動、queue/state、wire交換をtraceに保存する。
 
-単体86件は正常2構成、共通宣言/metadata、caseごとのwire故障、FIFO/arm/bit順/phase/未取得bit、
+単体試験は正常2構成、共通宣言/metadata、caseごとのwire故障、FIFO/arm/bit順/phase/未取得bit、
 二重errors・counter/初期化/駆動/timestampの誤り、再送の二重副作用、CS取得中の解放漏れ、
 任意timestamp/setup省略、空readの未使用bits、前提不足と不正刺激を確認する。
 `full_conformance`はfalse。物理波形・負荷下のcs_setup_ns保証、255 queue/u32 bits/counter上限、

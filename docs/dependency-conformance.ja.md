@@ -35,7 +35,7 @@ sample contractは次の通り。すべての応答の末尾にはTLVを置け�
 
 一覧は作成順にページングする。1 parentに複数の独立streamを許すsampleで、consoleのmechanism 0〜2が1 connectionにつき1 streamという制約を実装したものではない。pin割当やtarget選択はこのsampleに含めない。break刺激は論理fixtureによる明示connection解放で、線切れの判断や「失敗応答を送ってから閉じる」順序の検査ではない。
 
-単体23件でparent先行解放、孤立stream、stream closeによるparent解放、clearによるqueue消去、target restartによる出力消去、ID再利用、暗黙の最後のstream、read消費、end後の資源保持、marksの資源誤指定、detachの再実行、必須op宣言欠落、空応答の不正TLVを検出する。採用条件不足、選択SPEC mark値変更、所有中のlogical restart拒否、結果の段階/未検査範囲も確認する。
+単体試験でparent先行解放、孤立stream、stream closeによるparent解放、clearによるqueue消去、target restartによる出力消去、ID再利用、暗黙の最後のstream、read消費、end後の資源保持、marksの資源誤指定、detachの再実行、必須op宣言欠落、空応答の不正TLVを検出する。採用条件不足、選択SPEC mark値変更、所有中のlogical restart拒否、結果の段階/未検査範囲も確認する。
 
 ```python
 import os
@@ -53,6 +53,6 @@ with equipment_lock(os.environ['OEP_HW_LOCK']):
 assert report['status'] == 'passed', report
 ```
 
-既存`.env.example`のSPEC/共有lockを明示する。私的ベンチへの依存/探索や新しい設備設定は加えない。通常CLIへ自動追加しない。
+`.env.example`のSPEC/共有lockを明示する。私的ベンチへの依存・探索はしない。通常CLIへ自動追加しない。
 
-`full_conformance=false`。物理解放/pin idle、線切れの判断/応答後のclose、標準mechanism制約、target debug操作、通知dataの配送、production Host統合、別容量/並行writerは未検査。SPEC、既存仮想model、Arduino firmwareは変更しない。
+`full_conformance=false`。物理解放/pin idle、線切れの判断/応答後のclose、標準mechanism制約、target debug操作、通知dataの配送、production Host統合、別容量/並行writerは未検査。

@@ -2,7 +2,7 @@
 
 core §5.1は、実行済みか不明な変更要求を新しいcorrで自動再実行しないこと、再送を諦めた後はboot_idと状態を読み直すことを定める。result_lostは元の要求の成功・拒否・未実行のいずれも証明しない。読み直した状態も、元の結果そのものではない。
 
-probeの保持契約とsample hostの回復方針を分けて観測する。sample資源操作、状態の読み方、単独writer条件を一般の拡張へ義務付けるものではない。既存production Hostへ回復処理を組み込む変更ではない。
+probeの保持契約とsample hostの回復方針を分けて観測する。sample資源操作、状態の読み方、単独writer条件を一般の拡張へ義務付けるものではない。production Hostへ回復処理を組み込む変更ではない。
 
 `SampleRecoveryAdapter.discard_reply()`は論理exchangeを完了させ、全raw応答を証跡に記録した上で、hostへは返さない。実機の転送・再起動を行わず、physical timeoutも起こさない。sample opは操作待ち時間を定めておらず0ms、論理転送時間も0ms。再送前には独立時計で1050ms待ち、coreのhost_wait_add_ms=1000を下回らないことを確認する。実機では操作待ちと転送時間を加算し、経路の再同期/再接続を別途検査する必要がある。
 
@@ -41,6 +41,6 @@ with equipment_lock(os.environ['OEP_HW_LOCK']):
 assert report['status'] == 'passed', report
 ```
 
-既存`.env.example`のSPEC/共有lockを使い、私的ベンチの探索や新しい設備設定を追加しない。証跡には失った元のraw応答も保存するが、回復hostにその内容を渡さない。
+`.env.example`のSPEC/共有lockを使い、私的ベンチを探索しない。証跡には失った元のraw応答も保存するが、回復hostにその内容を渡さない。
 
 `full_conformance=false`。物理損失/timeout/再接続、production Host統合、並行writerとatomicな状態取得、読み直し中のforce、任意の拡張の回復意味論、他の保持サイズは未検査。

@@ -2,7 +2,7 @@
 
 SPEC checkoutを明示し、`HostDeadlineChecks(SampleHostDeadlineAdapter(), spec=path).run()`を実行する。
 core §4.4/7.5、transports §3/6の本文のレビュー済みSHAと待ちの数値を照合し、OEP固有のconfig仕様には依存しない。
-private設備を探索しない。既存SerialLink._send/_exchange_once/_recv_forとLengthFrames.recvを、
+private設備を探索しない。SerialLink._send/_exchange_once/_recv_forとLengthFrames.recvを、
 予定したbyte列を返すScheduledStreamと仮想時計で通す。OSの口や実時計のsleepを使わない。
 
 fn1/op16、引数wait_ms(u32)、空の成功payloadをこのfixtureの拡張として使う。
@@ -11,7 +11,7 @@ fn1/op16、引数wait_ms(u32)、空の成功payloadをこのfixtureの拡張と�
 fixtureのop16は要求全体の短い処理上限を定めない。
 
 待ちの下限はcore §4.4に従い、「要求全体の処理上限＋1秒＋転送時間」。
-処理上限はmax_op_msで、引数の待ち時間だけを上限に使わない（旧本文の「引数時間＋1秒」からの変更）。
+処理上限はmax_op_msで、引数の待ち時間だけを上限に使わない。
 fn 0のconfirm/list/describe/clock/keepalive/lock_stateはmin(max_op_ms, core_quick_op_max_ms=1000)、
 max_op_msを取得する前は1000 ms（下限2秒と転送時間）。registryのcore_quick_op_max_msとmax_op_ms_maxも照合する。
 op16要求message14byte、length frame16byte、COBS frame19byte。clock要求は10/12/15byte。
@@ -35,11 +35,8 @@ timeout後の_recoverは観測用hookで止める。再送/resyncの検査へ結
 復帰時刻の完全一致はこのゼロ処理時間fixtureの条件で、実CPUに正確な応答時刻を要求しない。
 応答なしの場合は下限以上を要求し、余分に待つことを禁止しない。
 
-単体35件：正常1、実待受け処理の故障8、観測故障11、旧下限（引数時間だけ、fn 0の0 ms、max_op_ms未取得時の0 ms）5、
-制御不足2、本文guard2、registry guard6。
-短いtimeout、引数/余裕/転送の省略、書込み開始起点、pipelineの書込み/最初のbyte起点、
+単体試験は、短いtimeout、引数/余裕/転送の省略、書込み開始起点、pipelineの書込み/最初のbyte起点、
 早い結果/timeout、異なるcorr、再書込み、誤ったfloor/長さ、実際の要求/応答byteを検出する。
-既存実装の待受け処理は、処理上限を与えれば変更なしでPASSする。
 実時計の精度、物理transport、resync/retry/own-link交渉、pipeline内の異なる処理上限、
 操作が定める短い処理上限、production Hostによる処理上限の選択、
 production Hostとの統合は検査しない。full_conformance=false。

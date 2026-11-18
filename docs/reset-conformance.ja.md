@@ -30,13 +30,13 @@ resetを提供しないprobeへ実装を要求するものではない。
 - 不明mode、critical/壊れたTLV/切れた引数、sessionと資源拒否は副作用前に行う。
   成功/DM line失敗の同一要求再送は、reset・mark・ack・確認を繰り返さない。
 
-`ResetModel`は既存step fixtureへresetを追加する独立論理モデル。
+`ResetModel`はstep fixtureへresetを追加する独立論理モデル。
 `reset_behavior(result)`で`ok` / `state-timeout` / `dm-recover` / `dm-line` /
 `fault` / `cleanup-line`を選ぶ。
 論理状態・順序・PCを明示し、物理DMやCPU命令を実行するものではない。
 各caseを新bootとし、raw交換、ndmreset/DM read/ack/復元、buffer/mark/pendingを記録する。
 
-単体40件は24種類の誤動作注入、DM未復帰でも予防的に同期を解除する正常例、
+単体試験は誤動作注入、DM未復帰でも予防的に同期を解除する正常例、
 前提不足、不正刺激、共通宣言を含む。`full_conformance`はfalse。
 物理ndmreset/wakeとDM復帰時間、havereset ack自体の失敗、
 実応答writer、run、別target/容量とproduction Host統合は未検査。

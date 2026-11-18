@@ -31,7 +31,7 @@ runはloader呼出しであり、デバッガのcontinueへ流用しない。
   別connectionを変えない。応答後にconsoleを再開する。
 - 正常停止/停止させた時間切れ/走行継続の再送は保存結果を返し、loaderを二度実行しない。
 
-`RunModel`は既存reset fixtureへrunを追加する独立論理モデル。
+`RunModel`はreset fixtureへrunを追加する独立論理モデル。
 `run_behavior(mode, after_pc)`で`stopped` / `timeout-halted` / `not-halted` /
 `prepare-line` / `prepare-fault`を選ぶ。
 `run_program(connection, memory, gprs)`は実行後の論理program効果を明示する。
@@ -40,7 +40,7 @@ memoryはaligned-u32 address → u32 value、gprsはindex 0〜31 → u32 value�
 CPU命令、CSR/抽象コマンド、実clock、実targetへの転送を実行しない。
 各caseを新bootとし、raw交換、resume/finish時刻、PC/dcsr/GPR、復元とconsole調停を記録する。
 
-単体47件は28種類の誤動作注入、前提不足、不正刺激と共通宣言を含む。
+単体試験は誤動作注入、前提不足、不正刺激と共通宣言を含む。
 `full_conformance`はfalse。全transport経路のframe上限、未対応抽象reg/部分準備の方針、
 初期走行hart受付、結果読出し/DATA復元自体の失敗、programが実行中にmailboxへ書く場合、
 物理CSR/CPU/clock、実応答writer、他target/容量とproduction Host統合は未検査。

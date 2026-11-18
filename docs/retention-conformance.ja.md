@@ -26,7 +26,7 @@ sample fn 1/2のown create(op 16)はkind u8、reply_size u8、[TLV]を受け、r
 
 `state()`のcacheにはcorrと実際の要求/応答bytesまたはNone markerを含め、deadline、high、last、資源一覧、next_resource_idも観測する。再送前後は状態そのものが一致する。5ms待機を独立時計で確認し、deadline誤更新を見逃さない。新corrの作成が次の番号を一度だけ返すことも確認する。単なる成功回数の自己申告で代用しない。
 
-`SampleRetentionAdapter`は既存の明示lease adapterに`retention_state()`を加え、保持サイズと件数を返す。機能/型/幾何条件/個体/資源opの宣言をsession操作前に確認する。これはモデルinstrumentationで、実機に新しい公開opを追加するものではない。
+`SampleRetentionAdapter`はの明示lease adapterに`retention_state()`を加え、保持サイズと件数を返す。機能/型/幾何条件/個体/資源opの宣言をsession操作前に確認する。これはモデルinstrumentationで、実機に新しい公開opを追加するものではない。
 
 ```python
 import os
@@ -44,6 +44,6 @@ with equipment_lock(os.environ['OEP_HW_LOCK']):
 assert report['status'] == 'passed', report
 ```
 
-既存`.env.example`のSPEC/共有lockを明示し、公開側から私的ベンチを探索しない。全raw交換、cache/allocator snapshot、待機/制御時刻、SPEC/検査器/モデルhashを新規artifactへ保存する。
+`.env.example`のSPEC/共有lockを明示し、公開側から私的ベンチを探索しない。全raw交換、cache/allocator snapshot、待機/制御時刻、SPEC/検査器/モデルhashを新規artifactへ保存する。
 
 `full_conformance=false`。実機、並行処理、再起動、hostがresult_lostから状態を読み直して回復する方針、記録した実時計実行での期限切れ/forceと保持欠落の組合せ、ほかの保持上限は未検査。保持16 byte / 8件と、失敗時に番号を消費しない方針はsample条件で、一般probeへの追加規範ではない。

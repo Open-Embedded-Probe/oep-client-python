@@ -36,7 +36,7 @@ sample contractはfn 1、read 16（from u8/arg u64/max u16）、marks 17（from_
 
 `StreamModel`は独立した論理fixture。外部bytesとmark刺激をadapterで与える。境界値の初期化は毎回新しいbootの明示logical restartとして記録する。同bootのposition/serialを巻き戻して境界を作らない。serialの一周は初期値を境界直前に置く条件で、2^32回の刺激や実機の再起動を行ったという意味ではない。resetイベントはmark刺激であり、実際のtarget resetではない。
 
-単体30件でread消費、gap/more/未来位置、exclusive marks、wrapの数値sort、end時のserial初期化、clear時のposition初期化、reset時のbytes消去、時刻/種別/serialの不正を検出する。選択SPECのenum変更、採用条件・addressing・geometry・reset scope不足、write宣言欠落、所有中のfixture reset、不正seedも確認する。ページ間arrivalへの8故障では、空応答/古いpageの再提示、追加後の数値sort、kind/位置切詰め、容量超過、serial飛び、marksによるbytes消費を検出する。
+単体試験でread消費、gap/more/未来位置、exclusive marks、wrapの数値sort、end時のserial初期化、clear時のposition初期化、reset時のbytes消去、時刻/種別/serialの不正を検出する。選択SPECのenum変更、採用条件・addressing・geometry・reset scope不足、write宣言欠落、所有中のfixture reset、不正seedも確認する。ページ間arrivalへの故障では、空応答/古いpageの再提示、追加後の数値sort、kind/位置切詰め、容量超過、serial飛び、marksによるbytes消費を検出する。
 
 MOVING-PAGESは要求と要求の間で順序を定めたproducer刺激である。要求処理中の同時threadを検証したとはしない。
 5markと次serialの保持spanはu32の1/4未満で、任意ring容量全域の証明へは広げない。
@@ -57,6 +57,6 @@ with equipment_lock(os.environ['OEP_HW_LOCK']):
 assert report['status'] == 'passed', report
 ```
 
-既存`.env.example`のSPEC/共有lockを明示する。私的ベンチへの依存・探索や新設備設定を加えない。通常CLIへ自動追加しない。
+`.env.example`のSPEC/共有lockを明示する。私的ベンチへの依存・探索はしない。通常CLIへ自動追加しない。
 
-`full_conformance=false`。資源を指すstreamの寿命、writeの配送/partial/failed、通知data、physical UART/target reset、debug status/done部品、別のring/frame条件、要求中の同時producerは未検査。OEP固有opの動作、SPEC、既存仮想model、Arduino firmwareは変更しない。
+`full_conformance=false`。資源を指すstreamの寿命、writeの配送/partial/failed、通知data、physical UART/target reset、debug status/done部品、別のring/frame条件、要求中の同時producerは未検査。

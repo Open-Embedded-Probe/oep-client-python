@@ -27,7 +27,7 @@ timeoutを第三段階`oep-interface`で検査する。`Checks(send, registry, u
 target/probe双方のsnapshotとpollごとのDATA0/DATA1操作をadapter traceへ保存する。
 CRCの期待値は検査側の多項式除算で計算し、モデルのbit逐次計算を参照しない。
 
-単体30件に15種類の誤動作注入、前提不足、不正刺激の無変更確認を含む。
+単体試験に誤動作注入、前提不足、不正刺激の無変更確認を含む。
 DATA1順序、早すぎるtimeout、0のack化、外来wordへの停止、不正Mの受付、入力重複/満杯時ack、
 空ackのA更新、timeout時S反転、定期再送の欠落、timeout中の出力受付、SYN保持、出力逆順、
 往復時の入力逆順を検出する。

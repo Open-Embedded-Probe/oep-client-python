@@ -28,7 +28,7 @@ max_op_msは1、DMIアクセスの論理コストは10 us。poll_readsで要求�
 `debug_state()`で資源・アクセス・console pollの調停・buffer/pendingを観測する。
 各caseは新bootでlogical restartする。targetや実機を操作しない。
 
-単体38件には21種類の誤動作注入、前提不足、不正刺激、全5 fnの共通宣言検査を含む。
+単体試験には誤動作注入、前提不足、不正刺激、全5 fnの共通宣言検査を含む。
 `full_conformance`はfalse。optional reset/step/run/block操作と状態復元、hartsel、
 物理DMI/timeout/線の再試行、別connectionのschedule、実応答writerの順序、production Host統合は未検査。
 同じconnection内の論理調停が通っただけで、全debug操作や実機適合とは扱わない。

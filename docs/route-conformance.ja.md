@@ -1,6 +1,6 @@
 # 通知経路・応答優先・送りかけqueueの検査
 
-SPEC core §10.4、transports §3の契約を、2つの明示経路とinstrumentationを持つモデルで検査する。受信済み要求、通知生成、送信停止/部分送信を制御し、各経路の全raw messageと未送信suffixを観測する。設備の自動探索や私的ベンチ依存は加えない。
+SPEC core §10.4、transports §3の契約を、2つの明示経路とinstrumentationを持つモデルで検査する。受信済み要求、通知生成、送信停止/部分送信を制御し、各経路の全raw messageと未送信suffixを観測する。設備の自動探索や私的ベンチへの依存はしない。
 
 共通契約は、応答が要求元に返る、通知がsubscribe元だけへ届く、受信済み要求の応答を通知より先に送る、送りかけ通知の残りbytes合計がmax_frame×2以内、送信停止中も他経路の処理が進む、probe内部で捨てた通知もdata/event共通seqを消費する、経路切断だけではsession/資源/購読/再送履歴を解放しないこと。
 
@@ -18,7 +18,7 @@ queue残量・購読・再送履歴の保持はinstrumentationで観測する。
 
 `virtual_route_model.RouteModel`はstreamモデルの生成処理を使い、通知queueと単一writerを追加する。論理primary/peerは同じTCP listenerの別接続として扱う（socket/framingは持たない）。`conformance_route_sample.SampleRouteAdapter`はモデルをimportせず、明示して渡された観測対象を呼ぶ。
 
-実行例は公開Python環境またはArduinoのuv環境から、SPEC/既存共有lockを明示して使う。
+実行例は公開Python環境またはArduinoのuv環境から、SPEC/共有lockを明示して使う。
 
 ```python
 import os
@@ -37,7 +37,7 @@ with equipment_lock(os.environ['OEP_HW_LOCK']):
 assert report['status'] == 'passed', report
 ```
 
-新規JSONへSPEC/検査器/モデルhash、raw交換とadapter traceを保存する。既存`.env.example`のSPEC/共有lockを使い、ADDRESS/FRAMING/TCP_PEERをモデルへ流用しない。公開テストから私的ベンチを参照しない。
+新規JSONへSPEC/検査器/モデルhash、raw交換とadapter traceを保存する。`.env.example`のSPEC/共有lockを使い、ADDRESS/FRAMING/TCP_PEERをモデルへ流用しない。公開テストから私的ベンチを参照しない。
 
 部分送信ではmax_frameの通知を7 byte進め、残りsuffixを独立に照合する。次のmax_frame通知を追加すると残量はmax_frame×2−7。10 byteのeventは入らず、seqを消費して捨てる。既に始めた通知を完了し、clock応答、次の通知の順で出力する。drop検査では32個のdata/eventを交互に生成し、保持された通知の内容/位置/seqと、その後のseq 32を確認する。
 

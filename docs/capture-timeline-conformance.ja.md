@@ -2,7 +2,7 @@
 
 `CaptureTimelineChecks`は、明示したSPECのcapture §2/3.2/3.4/4.1とcore §10に基づく第三段階の検査。
 `SampleCaptureTimelineAdapter`で独立`CaptureTimelineModel`の時計と通知の取り出しを指定する。
-私的ベンチ、endpoint、兄弟checkout、既存Hostのcapture decoder、他のcapture checkerは取り込まない。
+私的ベンチ、endpoint、兄弟checkout、Hostのcapture decoder、他のcapture checkerは取り込まない。
 layoutはconfigureの応答から独立に解き、生データを既知の波形と照合する。
 
 このfixtureはplan=1、ADC=2、logic=3、group=4。
@@ -43,7 +43,7 @@ streamingでは購読前のgroup startがcause 6で断られることを確か�
 
 いずれもsession end後にbind、plan、購読、通知、取得データを解放し、pinをidleへ戻し、世代を保つことを確認する。
 
-単体79件は正常24、wire応答故障24、track故障16、group故障4、宣言2、不正刺激7、前提不足2。
+単体試験は、正常例、wire応答故障、track故障、group故障、宣言、不正刺激、前提不足を含む。
 track故障は未到来sampleの計上、未確定byte、生データ、区画時刻、readの位置/gap/max=0の誤り、
 区画をまたぐframe、segment_infoの欠落・sample数・時刻、generation TLV、streamingの区画出来事を注入する。
 group故障は世代0の応答、購読なしのstart受付、終了後の購読残留、start_nsのずれを注入する。

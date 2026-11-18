@@ -47,7 +47,7 @@ with equipment_lock(os.environ['OEP_HW_LOCK']):
 assert report['status'] == 'passed', report
 ```
 
-新規JSONを`open('x')`で予約し、SPEC/検査器/モデルsource hash、日時、raw要求/応答/通知、データ刺激と期待位置、観測時間を保存する。既存`.env.example`のSPEC/共有lock項目を使う。モデルはADDRESS/FRAMING/TCP_PEERを使わず、私的ベンチや実機を探索しない。
+新規JSONを`open('x')`で予約し、SPEC/検査器/モデルsource hash、日時、raw要求/応答/通知、データ刺激と期待位置、観測時間を保存する。`.env.example`のSPEC/共有lock項目を使う。モデルはADDRESS/FRAMING/TCP_PEERを使わず、私的ベンチや実機を探索しない。
 
 単体検査はu64 position/u16 lenのliteral bytes、壊れた通知、閾値/時刻/seq/再送/旧bufferのmutant、再起動を含む。seq一周では65,538個のdata/eventを交互に生成・復号し、65535→0を検証する。内部counterをseedしていないが、これは仮想時計・in-process配信の検査であり、実時計の検査や実機wireのseq一周の証拠とは区別する。
 

@@ -32,8 +32,8 @@ client checkoutのルートで実行する。
 uv run pytest -q tests/test_conformance_notification_sequence.py tests/test_conformance_routes.py tests/test_conformance_data.py tests/test_conformance_subscriptions.py
 ```
 
-pytestは正常モデル、10種類の違反注入、DISCARDの違反注入5種類、解除の違反注入7種類、無効な前提3種類ほか計27件。
-応答優先・部分送信・queue量・経路切断は既存RouteChecksを別に実行する。
+pytestは正常モデル、違反注入（DISCARD、解除を含む）、無効な前提などを持つ。
+応答優先・部分送信・queue量・経路切断はRouteChecksを別に実行する。
 SPEC identity、送受信raw、刺激/観測、checker/model SHAを保存する例:
 
 ```sh

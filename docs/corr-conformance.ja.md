@@ -31,7 +31,7 @@ with equipment_lock(os.environ['OEP_HW_LOCK']):
 assert report['status'] == 'passed', report
 ```
 
-`.env.example`の既存SPEC/共有lockを指定する。公開側から私的ベンチを探索しない。
+`.env.example`のSPEC/共有lockを指定する。公開側から私的ベンチを探索しない。
 
 検査器`Checks.request()`の自動採番は65535の次を1にし、0を使わない。不正headerでpackingに失敗した場合は番号を消費しない。明示corr指定は0を含む異常系検査にも使う。
 

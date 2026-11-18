@@ -32,7 +32,7 @@ fixtureは前回のwire attachモデルにscanを追加し、max_op_ms=5、既�
 selectorはSWDだけで使い、Noneは省略。配線/実targetを探索するものではない。
 新bootごとにraw交換、選択、read時のlevels/速さ/ID、解放順と資源状態を保存する。
 
-単体36件は18種類の誤動作注入、前提不足、不正刺激、共通宣言、
-新fixtureでの既存attachオプションを含む。`full_conformance`はfalse。
+単体試験は誤動作注入、前提不足、不正刺激、共通宣言、
+このfixtureでのattachオプションを含む。`full_conformance`はfalse。
 物理wake/dmactive/idle cycles/時間、線切れの応答/解放順、他budget/frame経路とwriter並行性、
 plan統合とproduction Host統合は未検査。

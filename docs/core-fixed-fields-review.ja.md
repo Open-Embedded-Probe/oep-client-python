@@ -3,7 +3,7 @@
 core §2.3の「固定部分に省略できるフィールドを置かない」を、revision1のコアpayloadへ適用する。
 本文SHAは[core形の検査](host-core-shapes-conformance.ja.md)の固定を共有する。
 CoreFixedFieldChecksはSPECを明示指定し、本文・番号が変わればレビューし直す。
-生成registryは番号の照合に使う。幅・省略条件は本文§1.1/4.3/6.4/7を読んで下の台帳に固定した。
+生成registryは番号の照合に使う。幅・省略条件は本文§1.1/4.3/6.4/7から下の台帳に固定する。
 privateベンチへの依存や隣接SPECの自動探索はない。
 
 以下の固定フィールドはすべて必須。意味のあるゼロ値、空の並びもbyteを省略しない。
@@ -41,7 +41,7 @@ REVIEW、REQUEST-FIELDS、RESPONSE-FIELDS、ZERO-VALUES、OWNER-TLVを検査す�
 各要求/応答の固定fieldを丸ごと抜いた刺激と、list要素の各field欠落を確認する。
 これはtailを含まない欠落刺激であり、任意byte列を足した全曖昧性を証明しない。
 
-`uv run pytest -q tests/test_conformance_core_fixed_fields.py`は17件。
-正常1、応答欠落受理の故障6、短い要求受理の故障4、ゼロ値/owner省略の混同5、旧confirm flags台帳の検出1。
+`uv run pytest -q tests/test_conformance_core_fixed_fields.py`。
+正常例、応答欠落受理の故障、短い要求受理の故障、ゼロ値/owner省略の混同、confirm flagsを持つ台帳の検出を含む。
 コアpayloadのレビューであり、全message header、拡張の要求/応答/event/data/TLV、
 設定（core §13）の値の固定形・省略条件は別途レビューが必要。full_conformance=false。

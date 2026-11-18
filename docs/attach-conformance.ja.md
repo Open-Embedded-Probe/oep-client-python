@@ -23,7 +23,7 @@
 
 仮想コアは`request_tags` / `dispatch_request`の明示拡張入口で、拡張固有critical TLVを検査・実行へ渡す。入口が無い拡張は共通の処理を使う。session・header・cacheの判定は入口より先に行う。同一要求再送でTLV解析や実行を繰り返さない。
 
-単体19件でmax_speed 0の受理、未知critical無視、既知noncritical拒否、raw tag喪失、後のtag優先、後のコピーの未検証、拒否時targetアクセス、console応答の余分なbyte、ARM console受理、方式競合無視、速度上限超過、再送再実行、connectionsのmetadata不正を検出する。採用条件/選択SPEC変更、所有中fixture再起動拒否、拡張入口とsession/cacheの優先順も確認する。
+単体試験でmax_speed 0の受理、未知critical無視、既知noncritical拒否、raw tag喪失、後のtag優先、後のコピーの未検証、拒否時targetアクセス、console応答の余分なbyte、ARM console受理、方式競合無視、速度上限超過、再送再実行、connectionsのmetadata不正を検出する。採用条件/選択SPEC変更、所有中fixture再起動拒否、拡張入口とsession/cacheの優先順も確認する。
 
 ```python
 import os
@@ -41,6 +41,6 @@ with equipment_lock(os.environ['OEP_HW_LOCK']):
 assert report['status'] == 'passed', report
 ```
 
-既存`.env.example`のSPEC/共有lockを明示し、私的ベンチへの依存/探索や新しい設備設定を加えない。通常CLIへ自動追加しない。
+`.env.example`のSPEC/共有lockを明示し、私的ベンチへの依存・探索はしない。通常CLIへ自動追加しない。
 
-`full_conformance=false`。物理bringup/scratch/速度/pin idle、scan、reset/idle_clock/targetsel動作、targetインターフェイスの操作、console mailbox/framing/配送、SDIのcount=0 write、通知、別容量/並行要求、production Host統合は未検査。SPEC・Arduino firmwareは変更しない。
+`full_conformance=false`。物理bringup/scratch/速度/pin idle、scan、reset/idle_clock/targetsel動作、targetインターフェイスの操作、console mailbox/framing/配送、SDIのcount=0 write、通知、別容量/並行要求、production Host統合は未検査。

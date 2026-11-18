@@ -22,7 +22,7 @@ channel 0はidle出力high、その他は入力。外部入力値はchannel番�
 - 同一要求の再送でplan適用や駆動を繰り返さない。
 - 個別/all release、plan置換、session endで旧ピンをidleへ戻す。
 
-新fixtureの共通宣言、GPIOのmetadataも別に実行する。
+このfixtureの共通宣言、GPIOのmetadataも別に実行する。
 38単体テストは、誤ったwire outcome/reason、順序逆転、拒否前副作用、再送時二重駆動、idle復元漏れの故障を検出する。
 物理level/pull/電流/波形、他fixtureのrole/channel_group、永続config、GPIO planでのforce/expiryは未検査。
 この結果で全標準opや全plan条件の適合とはしない。`full_conformance`はfalse。

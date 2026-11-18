@@ -4,7 +4,7 @@ SPEC core §4.4/7.1から、経路ごとのmax_frame、window、max_inflightと�
 
 hostは宣言した上限を守る。**超過要求へのwindow_exceeded応答は任意**で、容量を超えた要求には応答がない場合も許される。従って超過拒否の検査をすべてのprobeに課さない。この補助検査は`reject-overflow`を明示した論理モデル専用。実機wireの上限検査、silent lossを選ぶprobe、実際のhost schedulerは別に扱う。
 
-サンプルは既存routes interfaceを使い、primaryはmax_frame=64 / window=80 / max_inflight=3、peerは64 / 96 / 2をconfirmで宣言する。primaryへ10 byte要求3つを送るとcountだけが上限、64 byteと16 byte要求を送るとwindowだけが上限に達する。clockに非critical TLVを付けてサイズを調整し、要求に副作用を加えない。各経路にsession 0のみを使い、sessionを別経路へ移さない。
+サンプルはroutes interfaceを使い、primaryはmax_frame=64 / window=80 / max_inflight=3、peerは64 / 96 / 2をconfirmで宣言する。primaryへ10 byte要求3つを送るとcountだけが上限、64 byteと16 byte要求を送るとwindowだけが上限に達する。clockに非critical TLVを付けてサイズを調整し、要求に副作用を加えない。各経路にsession 0のみを使い、sessionを別経路へ移さない。
 
 要求を受理するとその経路の枠を予約し、**このサンプルでは応答message全体を書き終えるまで**保持する。処理完了だけで解放せず、途中まで送った応答も未解決とする。これは保守的なモデル方針で、SPECに新たな内部bufferの解放時点を定める変更ではない。送信完了後には枠を戻す。超過要求は受理せず、受信順にwindow_exceededを返す。通知queueの上限とは別管理。
 
@@ -19,7 +19,7 @@ peerの個体/boot/宣言も照合する。
 
 各応答の経路・corr・受信順・outcome・boot・TLVをraw bytesで検査する。単なる残量の自己申告ではなく、instrumentationの`pending(route)`が返す受理済み未解決要求そのものを、検査側の要求列と比較して数とbyte数を計算する。ただしモデルのinstrumentationを観測する検査であり、実機bufferの直接測定ではない。
 
-adapterは`SampleRouteAdapter`の制御/trace能力に加え、明示した`admission_policy='reject-overflow'`と`pending`を提供する。service観測予算は既存の1〜1000ms（サンプル100ms）を使う。全入力/出力、要求/応答、制御時刻を記録し、公開opを新設しない。
+adapterは`SampleRouteAdapter`の制御/trace能力に加え、明示した`admission_policy='reject-overflow'`と`pending`を提供する。service観測予算はの1〜1000ms（サンプル100ms）を使う。全入力/出力、要求/応答、制御時刻を記録し、公開opを新設しない。
 
 ```python
 import os
@@ -37,6 +37,6 @@ with equipment_lock(os.environ['OEP_HW_LOCK']):
 assert report['status'] == 'passed', report
 ```
 
-SPEC/共有lockは既存`.env.example`の項目から渡す。私的ベンチを探索せず、設備のADDRESS/FRAMING/TCP_PEERをモデルへ流用しない。この固定寸法は境界を分離する検査fixtureの条件で、恒久設備や実機の宣言値の制約ではない。
+SPEC/共有lockは`.env.example`の項目から渡す。私的ベンチを探索せず、設備のADDRESS/FRAMING/TCP_PEERをモデルへ流用しない。この固定寸法は境界を分離する検査fixtureの条件で、恒久設備や実機の宣言値の制約ではない。
 
 常に`full_conformance=false`。実際のhostの送信抑制、silent overflow loss、session要求のpressure下での再送/拒否cache、並行処理、実際のTCP/USB、再起動は未検査。

@@ -18,7 +18,7 @@ fnと標準名の対応を明示する。名称による全fnへの自動適用�
 
 `OepDeclarationModel`は標準名の宣言だけを持つ独立fixture。3 wireはscanなし、RVSWDはmax_connections 2、他2 wireは省略、SWIOは固定clock、consoleはDMDATAだけを宣言する。role_channelsとchannel_groupの両形式を使う。attachやconsoleの配送は実装していない。仮想fixtureが宣言を返す検査であり、稼働probeの証拠ではない。
 
-単体23件で必須op欠落、mechanisms欠落/未知値/preset none、max_connectionsの幅、ピン宣言欠落/同一ピン/範囲外、SWIO clock欠落/幅/0、選択fn/標準名/revision不一致を検出する。scanなしと空mechanismsを許容し、選択SPECに追加された必須opを無視しない。不正な選択は失敗として報告し、第三段階の各結果とSID 0の要求を確認する。
+単体試験で必須op欠落、mechanisms欠落/未知値/preset none、max_connectionsの幅、ピン宣言欠落/同一ピン/範囲外、SWIO clock欠落/幅/0、選択fn/標準名/revision不一致を検出する。scanなしと空mechanismsを許容し、選択SPECに追加された必須opを無視しない。不正な選択は失敗として報告し、第三段階の各結果とSID 0の要求を確認する。
 
 ```python
 import os
@@ -37,6 +37,6 @@ with equipment_lock(os.environ['OEP_HW_LOCK']):
 assert report['status'] == 'passed', report
 ```
 
-通常CLIへ自動追加しない。既存`.env.example`のSPEC/共有lockを明示し、公開検査は私的ベンチへ依存・探索しない。
+通常CLIへ自動追加しない。`.env.example`のSPEC/共有lockを明示し、公開検査は私的ベンチへ依存・探索しない。
 
-`full_conformance=false`。対応するtarget interfaceの存在、要求のcritical TLVと拒否条件、attach/scanの電気的手順、consoleのmechanism競合/配送/framing、共通stream/status/資源寿命、実機ピン、production Host統合は別途検査する。SPEC、既存仮想コア/モデル、Arduino firmwareは変更しない。
+`full_conformance=false`。対応するtarget interfaceの存在、要求のcritical TLVと拒否条件、attach/scanの電気的手順、consoleのmechanism競合/配送/framing、共通stream/status/資源寿命、実機ピン、production Host統合は別途検査する。

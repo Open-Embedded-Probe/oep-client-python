@@ -18,7 +18,7 @@ common §1.4のwrite、§3のdebug status/doneを採用したインターフェ�
 
 受信側の補助関数`decode_debug_counted`は未知statusでもdoneに従って同じ形で読む。`debug_succeeded`は既知のsuccess outcome / ok status / 全doneを満たす場合だけ成功とする。未知statusや未知outcomeを成功にしない。これは検査用sampleの分類で、production Hostへの統合や未受付部分の自動再送は行わない。
 
-単体22件でoutcome誤り、先頭以外の受付、accepted過大、受け付けたdebug失敗のrejected化、done過大、結果不足、single失敗の形違い、cache再実行を検出する。未知status/outcomeの失敗分類、採用条件不足、選択SPECのstatus変更も確認する。仮想コアの最小拡張`Completed`でfailed/partialを応答とcacheへ保存する。新しいfailed/partial完了はleaseを更新し、cache再送は更新しないことも独立に検査する。
+単体試験でoutcome誤り、先頭以外の受付、accepted過大、受け付けたdebug失敗のrejected化、done過大、結果不足、single失敗の形違い、cache再実行を検出する。未知status/outcomeの失敗分類、採用条件不足、選択SPECのstatus変更も確認する。仮想コアの最小拡張`Completed`でfailed/partialを応答とcacheへ保存する。新しいfailed/partial完了はleaseを更新し、cache再送は更新しないことも独立に検査する。
 
 ```python
 import os
@@ -36,6 +36,6 @@ with equipment_lock(os.environ['OEP_HW_LOCK']):
 assert report['status'] == 'passed', report
 ```
 
-既存`.env.example`のSPEC/共有lockを明示する。公開検査は私的ベンチへの依存や探索を持たない。通常CLIへ自動追加しない。
+`.env.example`のSPEC/共有lockを明示する。公開検査は私的ベンチへの依存や探索を持たない。通常CLIへ自動追加しない。
 
-`full_conformance=false`。物理配送/target進捗、独自statusの意味、debug接続資源の解放、production Host統合、別容量/結果形式、並行writer、OEP固有opは未検査。SPEC、Arduino firmwareは変更しない。
+`full_conformance=false`。物理配送/target進捗、独自statusの意味、debug接続資源の解放、production Host統合、別容量/結果形式、並行writer、OEP固有opは未検査。

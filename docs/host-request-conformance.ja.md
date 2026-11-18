@@ -9,7 +9,7 @@ encoder契約は`encode(interface, operation, fixed: bytes, fields: list[tuple[i
 fieldsのtagはcriticalを含まない番号1〜127。固定部分は呼び出し側が組み立てる。
 encoderは文脈の方針に従ってbit7を付け、長さu16 little-endian、値と並び順を保存する。
 番号0・128以上、65536 byte以上の値はValueErrorで断る。
-このAPIの入力制限は検査部品の採用契約であり、既存Host APIを変更する要求ではない。
+このAPIの入力制限は検査部品の採用契約であり、Host APIを変更する要求ではない。
 
 ## レビューした文脈
 

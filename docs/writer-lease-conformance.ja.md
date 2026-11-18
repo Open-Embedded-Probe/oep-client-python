@@ -2,7 +2,7 @@
 
 `WriterLeaseChecks`はcore §5.1/6.1/9を第一段階で検査する。
 `WriterLeaseModel`/`SampleWriterLeaseAdapter`はwire connectionとdmseq consoleを持つ明示logical fixture。
-共通宣言は別の第二段階、既存cutも別の第三段階として再実行する。
+共通宣言は別の第二段階、cutも別の第三段階として再実行する。
 公開Pythonライブラリと明示したSPEC/registryだけで使え、私的ベンチや設備設定を探索しない。
 
 fixtureはlease 1000 ms、max_op_ms 5000 ms、単一writer。

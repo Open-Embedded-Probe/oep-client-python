@@ -46,8 +46,8 @@ fn0の全経路宣言、任意port_speed不在と明示保存前提を検査す�
 FREE-CACHEの固定corrはProbeのSID0非重複排除を検査する順次刺激で、Hostのcorr allocatorの適合は別の責任。
 
 単体は`uv run pytest -q tests/test_conformance_link_routes.py`。
-30件は正常1、各経路の共通宣言3、wire故障6、意味的故障15、control不足4、
-保持者が1経路を使うこととSID0の別経路応答を調べる独立監査1。
+単体試験は、正常例、各経路の共通宣言、wire故障、意味的故障、control不足、
+保持者が1経路を使うこととSID0の別経路応答を調べる独立監査を含む。
 意味的故障は上限/transport/boot/fn一覧、global source長、pin変化、SID0誤cache、
 経路別の独立ロック、closeでsession/cache消去・boot変更、reopenでplan消去、
 再送時pin変化・変更要求受理、peer経路のend後ロック残留を含む。

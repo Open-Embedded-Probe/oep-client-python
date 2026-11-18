@@ -11,9 +11,9 @@ reset能力はsession操作の前に確認し、`reset_scope='logical-model'`だ
 
 寿命契約のSの要求はprimaryを使い、peerはsession 0照会と別ID Tに使う。継承するretentionの同SID open/keepalive検査では、同じ所有SIDをpeer経路からも送って購読先の保持を確認する。終了したIDを再使用しない。再起動後の旧open再送はsessionを新規に作り得るため、この検査でも回復手順でも行わない。
 
-`SampleRetentionLifecycleAdapter`は既存adapterへ論理restartだけを追加する。modelのboot_idはstateで観測し、restartの返答だけで成功を判断しない。confirm/clockでも実際のbootを確認する。独立monotonic時計で待機を測り、state/cache/allocator、全raw交換・制御時刻・restart入力/出力を記録する。
+`SampleRetentionLifecycleAdapter`はadapterへ論理restartだけを追加する。modelのboot_idはstateで観測し、restartの返答だけで成功を判断しない。confirm/clockでも実際のbootを確認する。独立monotonic時計で待機を測り、state/cache/allocator、全raw交換・制御時刻・restart入力/出力を記録する。
 
-`RetentionModel.restart()`は異なるu32 boot_idのみ受け、同一boot・範囲外・boolは拒否する。sampleのbootを確実に変えるための制御で、実際のboot乱数源を模擬検証したものではない。既存core/通常profileや物理設備の再起動入口を追加しない。
+`RetentionModel.restart()`は異なるu32 boot_idのみ受け、同一boot・範囲外・boolは拒否する。sampleのbootを確実に変えるための制御で、実際のboot乱数源を模擬検証したものではない。core/通常profileや物理設備の再起動入口を追加しない。
 
 ```python
 import os
@@ -31,6 +31,6 @@ with equipment_lock(os.environ['OEP_HW_LOCK']):
 assert report['status'] == 'passed', report
 ```
 
-既存`.env.example`のSPEC/共有lockを明示する。私的ベンチ・設備・ポートを探索しない。reset capabilityがない設備やphysical scopeでは操作を始めずFAILとする。`.env`へ実機reset設定は追加しない。
+`.env.example`のSPEC/共有lockを明示する。私的ベンチ・設備・ポートを探索しない。reset capabilityがない設備やphysical scopeでは操作を始めずFAILとする。`.env`へ実機reset設定は追加しない。
 
 常に`full_conformance=false`。物理的な再起動/接続回復、並行処理、hostのresult_lost回復方針、他の保持上限、boot_idの乱数源は未検査。boot_id=0も有効で、uptimeの再開は追加の仮想時計単体でも確認する。

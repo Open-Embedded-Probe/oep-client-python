@@ -13,7 +13,7 @@ core §6.1は、session判定を通った持ち主の要求への応答を**生�
 
 lease=1000msで検査し、待機は100〜1050ms。adapterの独立したclockで各waitが実際に指定時間以上進んだことを確認する。`timing_state()`のdeadlineとprobeモデルのnow_msを、送信再開の前後で取得する。更新するケースのdeadlineは「応答生成時のnow+lease」と一致し、更新しないケースでは以前のdeadlineそのものと一致する。時刻・全制御・raw要求/応答・stateを記録する。瞬時の時計の完全一致を実時計へ要求しない。
 
-sample adapterは`SamplePipelineAdapter`にclock_ms、wait_ms、timing_stateを加える。既定では独立したmonotonic時計と実sleep、単体では明示した仮想時計を使う。clockとwaitは外から指定でき、モデルのdeadlineに合わせて待機時間を捏造しない。既存`.env.example`のSPEC/共有lockを使い、私的ベンチ・設備の探索は加えない。
+sample adapterは`SamplePipelineAdapter`にclock_ms、wait_ms、timing_stateを加える。既定では独立したmonotonic時計と実sleep、単体では明示した仮想時計を使う。clockとwaitは外から指定でき、モデルのdeadlineに合わせて待機時間を捏造しない。`.env.example`のSPEC/共有lockを使い、私的ベンチ・設備の探索は加えない。
 
 ```python
 import os

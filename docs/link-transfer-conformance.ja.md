@@ -55,7 +55,7 @@ adapterは実際の保存上限を返し、23 byte未満なら採用前提不足
 大きな応答の再送を成功と決めつけない。保存できない応答のresult_lostはcoreの正当な拒否である。
 
 単体は`uv run pytest -q tests/test_conformance_link_transfers.py`。
-50件は正常3、共通宣言3、wire故障21、意味的故障18、seed不足1、control不足3、保存前提不足1。
+単体試験は、正常例、共通宣言、wire故障、意味的故障、seed不足、control不足、保存前提不足を含む。
 意味的故障は長さ/限界/pattern/空データ、pin/plan変化、短い固定/countの誤受理、
 未知critical/壊れたTLVの無視、tag印の消失、誤ったSID受理、再送payload変化、変更要求の誤受理、
 未宣言port_speed受理を検出する。各profileの第三段階reportはfull_conformance=false。

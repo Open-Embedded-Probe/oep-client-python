@@ -30,7 +30,7 @@ roles=..., frontends=..., mode=...)`は3項目を返す。
 単体ではs/o/b、正順/逆順、未使用bitを0/1にした16構成と、構造・必須情報・enum・role・校正・生データの故障を検査する。
 scaleの一部roleの欠落を検出し、frontend_used/reference/skewの省略とfrontend_usedの一部roleだけの応答は許容する。
 Host decoderの読み出し、負scaleのクリップと入力ピン換算も既知値と比較する。
-既存VirtualCaptureの実際のsuccess payloadとraw取得にも適用し、校正schemeの禁止字種を検出した。
+VirtualCaptureの実際のsuccess payloadとraw取得にも適用し、校正schemeの禁止字種を検出する。
 
 calibrationの応答がmax_frameに収まるか（§3.7）はwireの経路に依るため、ここでは確かめず`AnalogChecks`のCALIBRATION-FITで確かめる。
 
@@ -42,7 +42,7 @@ uv run pytest -q tests/test_conformance_analog_payload.py tests/test_virtual_ben
 uv run --project tests --with-editable /path/to/oep-client-python pytest -c tests/pyproject.toml /path/to/oep-client-python/tests/test_conformance_analog_payload.py
 ```
 
-## 既存仮想ベンチの設定要求と状態不変
+## 仮想ベンチの設定要求と状態不変
 
 `test_virtual_bench_capture_requests.py`はwire bodyを渡し、frontendの指定/幅/未宣言値/重複、
 rate/samples/mode/triggerの拒否、query成功時の非適用を確認する。
@@ -58,7 +58,7 @@ logic/analog双方を確認する。planありのstate 5でもqueryを許可す�
 uv run pytest -q tests/test_virtual_bench_capture_requests.py
 ```
 
-## 既存仮想captureの世代とデータ寿命
+## 仮想captureの世代とデータ寿命
 
 `test_virtual_bench_capture_lifetime.py`はlogic/analogの再startとu32世代境界、旧世代read/releaseの
 拒否時不変、one-shot releaseの非適用、repeatのinclusive解放を確認する。
@@ -90,7 +90,7 @@ logic/analog、3種類の分数rate、1/2区画の解放を使い、再開後の
 uv run pytest -q tests/test_virtual_bench_capture_resume_calibration.py
 ```
 
-## 既存仮想captureの通知
+## 仮想captureの通知
 
 `test_virtual_bench_capture_notifications.py`はraw eventの固定部分を独立に読み、Host decoderとも比較する。
 logic/analogのone-shot完了、short stop、error、repeat満杯/解放、到達可能なtriggerで世代と
@@ -112,14 +112,14 @@ uv run pytest -q tests/test_virtual_bench_capture_notifications.py
 forceでは現在のsampleを使い、まだ足りないpretrigger分だけ区画を短くする。
 capture-groupは即時のtrackだけを束ねるので、groupの待機やforceはここで扱わない。
 
-既存one-shot fixtureと同じく、成立後の将来sampleは即時に合成する。
+one-shot fixtureと同じく、成立後の将来sampleは即時に合成する。
 これは物理的な待ち時間の証明ではない。自然な早期trigger、全modeのtriggerは検査しない。
 
 ```sh
 uv run pytest -q tests/test_virtual_bench_capture_waiting.py
 ```
 
-## 疎なanalog roleの既存仮想ベンチ
+## 疎なanalog roleの仮想ベンチ
 
 `test_virtual_bench_analog_roles.py`はrole 1/3、0/3、3だけのplanについて、
 configure/query、frontend/triggerの割当確認、raw dataとHost解析を検査する。
@@ -198,5 +198,5 @@ uv run pytest -q tests/test_virtual_bench_capture_changing_trigger.py
 analogの自然triggerは、該当roleのskewを含む観測時刻を待ち、その時刻をtrigger_nsで返す。
 最寄りのbase sampleは、conditionを検出したchannelのframeと一致するとは限らない（4 channelの最後のchannelなど）。
 forceのtrigger_nsは実行時刻で、trackのoffsetやsampling周期へ丸めない。
-[取得時間の検査](capture-metadata-conformance.ja.md#仮想captureの時間検査)に98件のscopeを記載する。
+[取得時間の検査](capture-metadata-conformance.ja.md#仮想captureの時間検査)にscopeを記載する。
 取得区画のデータ・世代・plan roleの判定はこれらの時刻判定と併用する。

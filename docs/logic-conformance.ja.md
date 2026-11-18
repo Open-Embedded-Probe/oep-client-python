@@ -35,7 +35,7 @@ Fractionでsample周期を累積し、clockをlogical msへ落とす。区画の
 `advance`/`fail`/`seed`は明示刺激であり、物理sample sourceや実時間ではない。
 wire交換・sample・state・generation・data・区画・pinをtraceに保存する。
 
-単体65件でwire/packing、query適用、世代/区画/再開/gap/short/error/pinの誤りと再送の二重副作用を検出する。
+単体試験でwire/packing、query適用、世代/区画/再開/gap/short/error/pinの誤りと再送の二重副作用を検出する。
 世代の1への巻き戻り、旧形のstart応答、layoutのC、actual_samplesの欠落、triggerの無いpretriggerやmode 3の受理、
 segmentsを切り下げない応答、future readの要求位置、読めるデータが無いときやmax=0のgapの誤りも故障として注入する。
 不正刺激、前提不足、未割当bitも確認する。
@@ -48,10 +48,10 @@ uv run pytest -q tests/test_conformance_logic.py
 uv run --project tests --with-editable /path/to/oep-client-python pytest -c tests/pyproject.toml /path/to/oep-client-python/tests/test_conformance_logic.py
 ```
 
-## 既存仮想ベンチのrate契約
+## 仮想ベンチのrate契約
 
 capture §3.3のrateは宣言範囲内で実現可能な最も近い値を使う。要求以下へ丸めるとは限らない。
-`tests/test_virtual_bench_capture_rates.py`は既存VirtualCaptureのsource/divisorという内部選択を明示し、
+`tests/test_virtual_bench_capture_rates.py`はVirtualCaptureのsource/divisorという内部選択を明示し、
 小さい範囲では実現可能値を全列挙する独立oracleで全要求を検査する。
 logicの上/下丸め・同距離・min境界、analogの共有ADC予算と分数の上限、u32 source境界、
 exactなsource（rate_rangeはmin/maxだけで宣言しない）、queryの非適用、wire actual_rateとanalog skewを確認する。

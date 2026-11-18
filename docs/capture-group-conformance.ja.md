@@ -28,7 +28,7 @@
 
 独立`CaptureGroupModel`はADC/logicのtrackとgroupを持つ。
 独立`Analog`/`Logic`の設定・encoder・区画リングを再利用し、groupのbind/start/寿命は別に実装する。
-既存`virtual_bench_capture.VirtualGroup`とHostのcapture decoderを取り込まない。
+`virtual_bench_capture.VirtualGroup`とHostのcapture decoderを取り込まない。
 ADCのoracleは`AnalogPayloadChecks`、logicは割当bitを独立に読み、生の値と照合する。
 
 fixtureのfnはplan=1、ADC=2、logic=3、group=4。ADC role1/3をchannel0/1、
@@ -46,7 +46,7 @@ logical sample clockを1行ずつ進める。
 `invalidate(fn)`はstart前提の破れを注入し、他trackを先にstartしないことを検査する。
 wire交換・group/track状態・データ・区画・pin・clockをadapter traceへ記録する。
 
-単体89件。39 caseのwire応答故障、35の意味的故障、3種の再送二重副作用を検出する。
+単体試験は、各caseのwire応答故障、意味的故障、再送の二重副作用を検出する。
 意味的故障の検出は、検査の`Violation`で落ちることまで確認する。
 前提不足・不正刺激と、fixtureのchannel広告が実装に一致することも確認する。
 metadataの構造が正しいことと、fixtureがその広告に対応することは別の検査である。

@@ -4,7 +4,7 @@
 responseの並びと、実際に資源を作成・使用・解放する順序を分けて観測する。
 
 sample fn1/2、kind1/2、max_frame64/window80/max_inflight3、連続allocatorを明示する。
-`SampleExecutionOrderAdapter`は既存pipeline adapterへlogical restartと資源/次番号のsnapshotを追加する。
+`SampleExecutionOrderAdapter`はpipeline adapterへlogical restartと資源/次番号のsnapshotを追加する。
 これは実機に追加する公開opやprivate bench依存ではない。
 
 - CLOSE-USE-CREATE：既存IDを解放し、同じIDの使用がno_resourceになり、別fn/kindへ新IDを作る。

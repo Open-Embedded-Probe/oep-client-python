@@ -28,7 +28,7 @@ client checkoutのルートで実行する。
 uv run pytest -q tests/test_conformance_clock.py
 ```
 
-正常モデル、12種類の不具合注入、無効な前提3種類、許される内部採時2種類を合わせて18件で検査器も確認する。
+正常モデル、不具合注入、無効な前提、許される内部採時で検査器も確認する。
 raw交換を保存する例（SPECのcheckoutと新規出力先を明示する）:
 
 ```sh

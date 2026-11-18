@@ -15,7 +15,7 @@ adapterは次を提供する。符号化と応答の形式検証を担当し、�
 
 検査はsession必須、全fn/種類で共通の単調増加ID、閉じた/存在しないID、別fn/種類のcause 6、create/closeの再送、副作用の観測、同IDの新しいopen、open再送、end、自然失効、別IDのforce、容量不足を扱う。自分で取得したsessionのみ操作する。自然失効後はendを送らず、force後は新しいsessionを後始末する。終了後のcreate再送は過去のIDを返しても、資源が復活してはならない。
 
-adapter未提供をPASSにしない。この入口は任意の補助APIで、通常CLIの既存レポートと別に保存する。レポートは常に`full_conformance=false`。購読/通知、route切断、依存順、電気的idle、再起動、65535回の実際の割り当て、未指定fn/種類は未検査と明記する。`wait`を差し替えた仮想時計と実時計の結果も区別する。
+adapter未提供をPASSにしない。この入口は任意の補助APIで、通常CLIのレポートと別に保存する。レポートは常に`full_conformance=false`。購読/通知、route切断、依存順、電気的idle、再起動、65535回の実際の割り当て、未指定fn/種類は未検査と明記する。`wait`を差し替えた仮想時計と実時計の結果も区別する。
 
 ## 最小サンプル拡張
 
@@ -53,4 +53,4 @@ with equipment_lock(os.environ['OEP_HW_LOCK']):
 assert report['status'] == 'passed', report
 ```
 
-保存時は新規ファイルを`open('x')`で予約し、SPEC commit/dirty/hashと検査器source hash、モデルsource hash、実行日時をraw交換とともに残す。既存の通常CLI/USBモデルと出力先を分ける。モデルにはADDRESS/FRAMINGの設定を使わず、実機adapterを自動選択しない。
+保存時は新規ファイルを`open('x')`で予約し、SPEC commit/dirty/hashと検査器source hash、モデルsource hash、実行日時をraw交換とともに残す。の通常CLI/USBモデルと出力先を分ける。モデルにはADDRESS/FRAMINGの設定を使わず、実機adapterを自動選択しない。

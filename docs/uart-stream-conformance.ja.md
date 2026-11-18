@@ -2,7 +2,7 @@
 
 `SampleUartStreamAdapter.adoption`でfn 2とread/marks/clear/mark/write、
 byte ring 64 / mark ring 5 / TX queue 4という採用条件を明示する。
-既存StreamChecksの位置・ページング・あふれ・mark cursor/一周/eviction・u64境界のassertを再利用する。
+StreamChecksの位置・ページング・あふれ・mark cursor/一周/eviction・u64境界のassertを再利用する。
 clearの再送とwrite受付/結果/prefix/再送も確認する。
 
 元の独立sampleはsession endでも受信bufferを保持するが、UARTはplanの資源としてendで消える。

@@ -2,7 +2,7 @@
 
 SPEC checkoutを明示し、`ProbeInputChecks(SampleProbeInputAdapter(), spec=path).run()`を実行する。
 core/transports本文SHAとregistry待ち値を照合する。private設備・OS transportを使わない。
-現在のvirtual Coreへraw messageを入力し、応答とowner/資源/cache/leaseを直接観測する。
+virtual Coreへraw messageを入力し、応答とowner/資源/cache/leaseを直接観測する。
 fn1/op16はサンプル資源作成で、標準OEP固有操作ではない。
 
 
@@ -15,7 +15,6 @@ fn1/op16はサンプル資源作成で、標準OEP固有操作ではない。
 
 discard前後のsnapshotは同じ論理時刻で比較する。時計が期限へ進んだ際の資源解放は正しいtimer効果として区別する。
 ownerは非空textをseedし、匿名所有者のままでは見逃すowner変更も検出する。
-単体37件：正常1、観測故障13、実Core故障4、制御不足5、unowned観測故障12、unowned実Core故障2。
 unowned時の応答/履歴破棄/last/allocator/generation変更とclock消失を検出する。
 所有中だけ正しくroleを捨て、unowned時に別roleを実行する実Core故障も検出する。
 現在のモデル本体/Core/productionに修正はない。

@@ -26,8 +26,8 @@ client checkoutのルートで実行する。
 uv run pytest -q tests/test_conformance_allocator.py tests/test_conformance_resources.py
 ```
 
-新しいpytestは正常モデル、10種類の不具合注入、前提拒否3種類、重複causeの最初の値を読む2種類、u32境界1件の17件。
-既存資源検査と合わせて36件。選択SPECのraw交換を保存する例:
+pytestは正常モデル、不具合注入、前提拒否、重複causeの最初の値を読む場合、u32境界を持つ。
+選択SPECのraw交換を保存する例:
 
 ```sh
 uv run python - /path/to/oep-spec /path/to/allocator-report.json <<'PY'
