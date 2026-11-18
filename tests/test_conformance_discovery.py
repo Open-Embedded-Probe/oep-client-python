@@ -12,8 +12,10 @@ def setup(kind='short'):
     model = DeclarationModel(lambda:0, boot_id=17)
     model.extension.name = b'io.test' if kind=='short' else b'io.'+b'a'*45
     if kind=='empty': model.extension.functions = ()
-    reg=copy.deepcopy(REG);reg['core']['tlv']['describe']['label']=0x46
-    model.ep.static[0] += (tlv(0x46, struct.pack('<H',0)+b'UART\nRX'),tlv(0x46,struct.pack('<H',3)+'端子'.encode()))
+    reg=copy.deepcopy(REG);d=reg['core']['tlv']['describe']
+    model.ep.static[0] = tuple(r for r in model.ep.static[0] if r[0] not in (d['channels'],d['channel_name']))
+    model.ep.static[0] += (tlv(d['channels'],struct.pack('<H',2)),tlv(d['channel_name'],struct.pack('<H',0)+b'GPIO0'),
+                           tlv(d['channel_name'],struct.pack('<H',1)+b'PA_5-x'))
     c=Checks(model.handle,reg,'virtual-resource-1'); return model,c,DiscoveryChecks(c)
 
 
@@ -46,11 +48,21 @@ def test_discovery_cursor_faults_are_detected(fault,case):
     assert next(x for x in report['checks'] if x['id']=='CORE-DISCOVERY-'+case)['status']=='failed',report['checks']
 
 
-@pytest.mark.parametrize('value', [b'',b'\0',b'\x04\0bad',b'\xff\xffbad',b'\0\0\xff'])
-def test_invalid_channel_labels_fail(value):
-    model,c,runner=setup();model.ep.static[0] += (tlv(0x46,value),)
+@pytest.mark.parametrize('value', [b'',b'\0\0',b'\x04\0bad',b'\xff\xffbad',b'\0\0b d',b'\0\0'+b'x'*17,
+                                   b'\0\0again',b'\x01\0GPIO0'])
+def test_invalid_channel_names_fail(value):
+    """core §7.5: a short row, a channel outside channels, a name outside A-Z a-z 0-9 _ - or over 16 bytes, a channel
+    named twice, a name used twice."""
+    model,c,runner=setup();model.ep.static[0] += (tlv(c.reg['core']['tlv']['describe']['channel_name'],value),)
     report=runner.run()
-    assert next(x for x in report['checks'] if x['id']=='CORE-DISCOVERY-LABELS')['status']=='failed'
+    assert next(x for x in report['checks'] if x['id']=='CORE-DISCOVERY-CHANNEL-NAMES')['status']=='failed'
+
+
+def test_a_channel_without_a_name_fails():
+    model,c,runner=setup();d=c.reg['core']['tlv']['describe']
+    model.ep.static[0] = tuple(r for r in model.ep.static[0] if r[0]!=d['channels']) + (tlv(d['channels'],struct.pack('<H',3)),)
+    report=runner.run()
+    assert next(x for x in report['checks'] if x['id']=='CORE-DISCOVERY-CHANNEL-NAMES')['status']=='failed'
 
 
 

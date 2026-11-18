@@ -1,4 +1,4 @@
-# core発見処理のcursor・label検査
+# core発見処理のcursor・channel名検査
 
 `DiscoveryChecks`はcore §2.1/7.1–7.5に基づく第一段階の補助検査である。
 通常の順次ページングに加え、listのページ途中のentryとfn 0 describeのページ途中のTLVを指すcursorを確認する。
@@ -9,8 +9,8 @@ privateベンチを参照せず、SPEC checkoutと出力先を明示する。
 - listのfirstを0〜total、total+1（u16内）、65535で照合する。項目は最初のsnapshotの該当suffixで、末尾はcount 0。
 - fn 0 describeのfirstも全TLV位置と末尾以降で照合し、moreとTLV境界を確認する。
 - セッション保持中とend後にも同じcursor結果を要求する。
-- labelは先頭u16 channelを持ち、宣言したchannelsの範囲にあり、残りがUTF-8 textである。
-  C0制御文字はprobe側の不合格条件にしない。表示時の置換はHostの別の契約。
+- channel_name（core §7.5）は先頭u16 channelを持ち、宣言したchannelsの範囲にあり、channelごとに1つある。名前は`A-Z a-z 0-9 _ -`の
+  1〜16 byteで、probeの中で重ならない。ピンの呼び名（label）は設定の`channel.{}.label`（core §13.8）で、ここでは見ない。
 - 存在しないfnのdescribeはfirstが末尾以降でもunknown_functionとなり、宣言を変えない。
 
 最初のsnapshotだけが一貫して誤っている場合の全実装固有情報までは証明しない。
@@ -23,7 +23,7 @@ client checkoutのルートで実行する。
 uv run pytest -q tests/test_conformance_discovery.py
 ```
 
-pytestは正常3構成、cursor/locked/unknown-fnの不具合、label不正を持つ。
+pytestは正常3構成、cursor/locked/unknown-fnの不具合、channel名の不正を持つ。
 正常構成は短い名前（複数entryが同じpageに入る）、48 byteの名前、fn無し。
 公開のDeclarationModelへfixture条件を明示して使い、モデル本体の動作を変更しない。
 これは検査用の独自インターフェースであり、標準OEP機能の適合例ではない。
@@ -43,8 +43,11 @@ for geometry in ('short', 'long', 'empty'):
     model = DeclarationModel()
     model.extension.name = b'io.test' if geometry == 'short' else b'io.' + b'a'*45
     if geometry == 'empty': model.extension.functions = ()
-    model.ep.static[0] += (tlv(0x46, struct.pack('<H', 0)+b'UART\nRX'),
-                           tlv(0x46, struct.pack('<H', 3)+'端子'.encode()))
+    d = registry['core']['tlv']['describe']
+    model.ep.static[0] = tuple(r for r in model.ep.static[0] if r[0] not in (d['channels'], d['channel_name']))
+    model.ep.static[0] += (tlv(d['channels'], struct.pack('<H', 2)),
+                           tlv(d['channel_name'], struct.pack('<H', 0)+b'GPIO0'),
+                           tlv(d['channel_name'], struct.pack('<H', 1)+b'GPIO1'))
     checks = Checks(model.handle, registry, 'virtual-resource-1')
     reports[geometry] = DiscoveryChecks(checks).run()
     reports[geometry]['wire_trace'] = checks.trace

@@ -96,16 +96,25 @@ class DiscoveryChecks:
             tlvs(self.c.success(self.c.request(self.c.core['keepalive'], session=sid)))
         self.c.observed['confirm_revision_ranges'] = observations
 
-    def labels(self):
+    def channel_names(self):
+        """core §7.5: channels, then one channel_name per channel - a channel below channels, a name of 1-16 bytes of
+        A-Z a-z 0-9 _ -, no name twice."""
         tags = self.c.reg['core']['tlv']['describe']; values = dict(reversed(self.rows))
         channels = values.get(tags['channels'], b'\0\0')
         require(len(channels) == 2, 'core channels u16')
         count = int.from_bytes(channels, 'little')
+        named, names = set(), set()
+        allowed = set(b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-')
         for tag, value in self.rows:
-            if tag != tags['label']: continue
-            require(len(value) >= 2, 'label channel u16 required')
-            require(int.from_bytes(value[:2], 'little') < count, 'label channel outside declared channels')
-            value[2:].decode('utf-8')  # Text may contain C0; rendering is a Host contract.
+            if tag != tags['channel_name']: continue
+            require(len(value) >= 3, 'channel_name: channel u16 and a name')
+            channel, name = int.from_bytes(value[:2], 'little'), value[2:]
+            require(channel < count, 'channel_name channel outside declared channels')
+            require(channel not in named, 'channel_name twice for one channel')
+            require(len(name) <= 16 and set(name) <= allowed, 'channel name: 1-16 bytes of A-Z a-z 0-9 _ -')
+            require(name not in names, 'channel name used twice')
+            named.add(channel); names.add(name)
+        require(len(named) == count, 'a channel without channel_name')
 
     def unknown(self):
         used = {e['fn'] for e in self.entries} | {0}
@@ -124,12 +133,12 @@ class DiscoveryChecks:
         self.c.check('CORE-DISCOVERY-CONTEXT', 'core §7.1–7.5', context)
         if self.c.results[-1]['status'] != 'passed': self.c.abort = True
         for name, method in [('LIST-CURSORS', self.lists), ('CORE-CURSORS', self.describes), ('LOCKED', self.locked),
-                             ('LABELS', self.labels), ('UNKNOWN-FN', self.unknown)]:
+                             ('CHANNEL-NAMES', self.channel_names), ('UNKNOWN-FN', self.unknown)]:
             self.c.check('CORE-DISCOVERY-'+name, 'core §2.1/7.2/7.3/7.5', method)
         if self.supported_revisions is not None:
             self.c.check('CORE-DISCOVERY-REVISIONS', 'core §7.1; explicit supported revision profile', self.revisions)
         rows = self.c.results[start:]
         return dict(status='passed' if all(x['status']=='passed' for x in rows) else 'failed',checks=rows,
-                    observed=self.c.observed,full_conformance=False,scope='all list and fn-zero describe cursors; labels; lock stability; optional explicit revision interval',
+                    observed=self.c.observed,full_conformance=False,scope='all list and fn-zero describe cursors; channel names; lock stability; optional explicit revision interval',
                     unchecked=['other-route minimum frame size and firmware-version stability', 'concurrent declaration changes',
                                'Host text rendering', 'multiple-revision fixture execution and per-route revision application', 'complete core/common normative audit'])

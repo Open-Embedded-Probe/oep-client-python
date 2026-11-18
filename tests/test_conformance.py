@@ -23,7 +23,8 @@ REG = {
              'tlv': {'confirm_answer': {'transport': tag('core', 'confirm_answer', 'transport')},
                      'unavailable_payload': dict(SPEC['core']['tlv']['unavailable_payload']),
                      'describe': {k: tag('core', 'describe', k) for k in
-                                  ('firmware', 'model', 'unit_id', 'channels', 'transport', 'chip', 'max_op_ms')}}},
+                                  ('firmware', 'model', 'unit_id', 'channels', 'channel_name', 'transport', 'chip',
+                                   'max_op_ms')}}},
     'interface': [],
 }
 
