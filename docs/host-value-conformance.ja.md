@@ -1,5 +1,7 @@
 # Hostの未知値分類
 
+[English](host-value-conformance.md)
+
 core §2.4の失敗分類と、値を残すenumを別々に検査する。
 readerを明示指定し、SPEC checkoutと出力先も指定する。production Hostへ自動適用しない。
 

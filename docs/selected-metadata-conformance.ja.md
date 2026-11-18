@@ -1,5 +1,7 @@
 # 選択した標準describe metadataの検査
 
+[English](selected-metadata-conformance.md)
+
 `SelectedMetadataChecks(checks, selection).run()`は、明示したfn/nameについて第三段階の検査を行う。
 restart、riscv-dm、arm-adiのrevision 1を扱い、登録op検査も実施する。全要求はSID 0の読出し。
 

@@ -1,5 +1,7 @@
 # Probeのroleと要求見出し
 
+[English](probe-input-conformance.md)
+
 SPEC checkoutを明示し、`ProbeInputChecks(SampleProbeInputAdapter(), spec=path).run()`を実行する。
 core/transports本文SHAとregistry待ち値を照合する。private設備・OS transportを使わない。
 virtual Coreへraw messageを入力し、応答とowner/資源/cache/leaseを直接観測する。

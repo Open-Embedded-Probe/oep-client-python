@@ -1,5 +1,7 @@
 # 全拡張に使うインターフェース大枠検査
 
+[English](interface-smoke-conformance.md)
+
 `InterfaceSmokeChecks`は、標準OEPと独自拡張に共通する選択した契約を確認する。
 レビュー済みcoreのガードを持つcore contextを使う。
 

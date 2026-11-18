@@ -1,5 +1,7 @@
 # UARTの論理動作とplan寿命
 
+[English](uart-conformance.md)
+
 `UartChecks(checks, adapter).run()`は明示したplan fn 1 / UART fn 2を第三段階で検査する。
 code/tagは選択registryから読む。公開コードは私的ベンチに依存しない。
 

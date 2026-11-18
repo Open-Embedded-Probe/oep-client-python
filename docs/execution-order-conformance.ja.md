@@ -1,5 +1,7 @@
 # 資源の副作用から確認するpipeline処理順
 
+[English](execution-order-conformance.md)
+
 `ExecutionOrderChecks`はcore §4.4/9の共通規則を、明示したlogical resource/pipeline fixtureで確認する。
 responseの並びと、実際に資源を作成・使用・解放する順序を分けて観測する。
 

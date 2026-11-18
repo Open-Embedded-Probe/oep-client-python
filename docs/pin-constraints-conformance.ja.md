@@ -1,5 +1,7 @@
 # ピン宣言の組み合わせを検査する
 
+[English](pin-constraints-conformance.md)
+
 core §7.4のrole_channelsとchannel_groupは、どの方法でピンを選ぶ場合にも制約として働く。
 同じroleのrole_channelsは和集合である。groupに含むroleはそのgroupへ完全一致し、
 groupに含まないroleはrole_channelsだけで選ぶ。両方に含むroleは両方の制約を満たす。

@@ -1,5 +1,7 @@
 # 標準資源と応答writerのlease検査
 
+[English](writer-lease-conformance.md)
+
 `WriterLeaseChecks`はcore §5.1/6.1/9を第一段階で検査する。
 `WriterLeaseModel`/`SampleWriterLeaseAdapter`はwire connectionとdmseq consoleを持つ明示logical fixture。
 共通宣言は別の第二段階、cutも別の第三段階として再実行する。

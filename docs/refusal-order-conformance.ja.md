@@ -1,5 +1,7 @@
 # 同時に不正な条件がある要求の拒否順序
 
+[English](refusal-order-conformance.md)
+
 SPEC checkoutを明示し、`RefusalOrderChecks(SampleRefusalOrderAdapter(), spec=path).run()`を実行する。
 core/transports本文SHAとregistry待ち値を照合する。private設備・実transportを使わない。
 現在のCoreとサンプル資源拡張へraw要求を送り、core §4.3の順序を確認する。

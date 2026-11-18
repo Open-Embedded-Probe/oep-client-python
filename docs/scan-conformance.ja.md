@@ -1,5 +1,7 @@
 # 標準wireの有限scan検査
 
+[English](scan-conformance.md)
+
 `ScanChecks`は、選択SPECの`oep-if-debug.ja.md` §1/3/5を第三段階
 `oep-interface`として検査する。scanは任意opなので、標準宣言検査では
 欠落を失敗にしない。この検査の明示fixtureにはscanの提供を要求する。

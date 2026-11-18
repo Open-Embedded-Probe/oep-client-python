@@ -1,5 +1,7 @@
 # GPIOとplanの論理動作検査
 
+[English](gpio-conformance.md)
+
 `GpioChecks(checks, adapter).run()`は、明示した論理fixtureへ第三段階の検査を行う。
 fn 1がplan、fn 2/3がGPIO（instance 0/1）。操作code/tagは選択registryから読む。
 外部プロジェクトは独自adapterで観測を供給できるが、この検査の刺激は下記fixture条件に限定する。

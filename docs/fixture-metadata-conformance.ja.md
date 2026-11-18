@@ -1,5 +1,7 @@
 # fixture系のdescribe metadata検査
 
+[English](fixture-metadata-conformance.md)
+
 `FixtureMetadataChecks(checks, selection).run()`は、呼び出し元が明示したGPIO/UART/I2C/SPIのfn/nameを第三段階で検査する。
 revision 1に限定し、登録op検査も実施する。全要求はSID 0の読出しで、未選択の標準名を自動探索して操作しない。
 

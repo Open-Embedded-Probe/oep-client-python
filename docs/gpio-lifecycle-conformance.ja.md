@@ -1,5 +1,7 @@
 # GPIO planを使ったcore寿命検査
 
+[English](gpio-lifecycle-conformance.md)
+
 `GpioLifecycleChecks(checks, adapter).run()`は第一段階のcore規則を、明示したGPIO plan資源で検査する。
 fn 1 plan、fn 2/3 GPIO、8 channel、4割当とidleはGPIO fixtureの契約に従う。
 操作code/tagは選択registryから読む。公開側は私的ベンチへ依存しない。

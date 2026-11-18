@@ -1,5 +1,7 @@
 # capture区画serialの周回とrelease
 
+[English](capture-serial-conformance.md)
+
 SPEC checkoutを明示し、`CaptureSerialChecks(SampleCaptureSerialAdapter(), spec=path).run()`を実行する。
 core/transportsに加え、capture/common本文のレビュー済みSHAを照合する。private設備や実transportを使わない。
 logic/analogの現在の独立モデルに実wire要求とsampleを送り、u32 serialとu64 byte positionを区別する。
