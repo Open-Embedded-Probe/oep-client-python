@@ -1,5 +1,7 @@
 # 応答送信とleaseの補助検査
 
+[English](lease-conformance.md)
+
 core §6.1は、session判定を通った持ち主の要求への応答を**生成した時点**からleaseを数え直す。rejectedも含むが、見出し・再送・別sessionの拒否は更新しない。要求の実行中はleaseを数えない。起算は応答の送信待ち・送信完了によらず、経路が閉じて応答を捨てる場合も同じ。
 
 `LeaseChecks`は先に[混雑時の再送検査](replay-pressure-conformance.ja.md)（CORE-PIPELINE-*、CORE-PRESSURE-*）を同じadapterで実行し、続けてCORE-LEASE-INSTRUMENTATIONと次の6件（WHOLE、REJECTED、NO-RENEW、EXPIRE、FORCE、END）を報告する。

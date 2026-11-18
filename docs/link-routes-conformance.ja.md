@@ -1,5 +1,7 @@
 # 同じProbeの複数経路でlinkを検査する
 
+[English](link-routes-conformance.md)
+
 LinkRoutesChecksは、core §4.4/5/6、transports §3、link §2を、1つのCoreを持つ明示仮想モデルで検査する。
 経路0はUART bridge・max_frame64、1はvendor bulk・256、2はTCP・1024。
 これらは論理経路であり、実際のシリアル・USB・socketを開かない。

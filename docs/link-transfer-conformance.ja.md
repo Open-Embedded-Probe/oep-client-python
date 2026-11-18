@@ -1,5 +1,7 @@
 # linkの必須source/sinkを検査する
 
+[English](link-transfer-conformance.md)
+
 LinkTransferChecksは選択した`oep.probe.link` revision1のsource/sinkをraw要求・応答と保護対象の状態で検査する。
 link §2のデータpattern、経路max_frameによる長さ、任意sinkデータ、TLV、拒否時不変、ロック不要、再送を扱う。
 port_speedを持たない適合構成を明示して採用し、port_speedの要求はunknown_operationと確認する。
