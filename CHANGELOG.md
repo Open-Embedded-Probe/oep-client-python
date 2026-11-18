@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 0.0.57
 - (EN) fixture.I2cTarget.configure(address, nack_from=None) and the nack_from property (oep-spec 1b5d056, fixture §3):
   NACK the n-th data byte of each write and every one after, sent critical (a probe without it refuses unsupported).
   The virtual bench's P4 profile declares it (its endpoint model: i2c_last_nack), conformance OEP-I2C-NACK-FROM (the
