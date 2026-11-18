@@ -1,5 +1,7 @@
 # ARM-ADIの独立検査とlogical fixture
 
+[English](arm-adi-conformance.md)
+
 `ArmAdiChecks`は選択したSPECのdebug §2/6とcore §2.3/4/5/7/9から、
 raw-messageで`oep.target.arm-adi`を確認する第三段階の検査である。
 一般インターフェイス検査（第二段階）も別に実行する。
