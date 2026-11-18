@@ -115,6 +115,8 @@ oep settings items <probe>                   # 各持ち主が宣言する項目
 oep settings set <probe> core channel.GPIO23.label=v003.nrst channel.GPIO20.idle=pull-up [--save]
 oep settings unset <probe> core channel.GPIO20.idle [--save]     # --all なら全部（その後の --save で保存も空に）
 oep settings save <probe>                    # 再起動の後も残す
+oep settings state <probe>                   # 保存の状態（ロック不要）
+oep settings network <probe>                 # いまのネットワーク: TCP の port、各 netif の様子とアドレス（ロック不要）
 oep settings export <probe> jig.oep-settings.json                # 全部の値を名前で、メモ欄のオブジェクトも書き出す（secret はあることだけ）
 oep settings import <probe> jig.oep-settings.json [--save]       # 変わる所を見せ、確かめてから set / unset とメモ欄の書き直し
 oep speed <probe> [921600,500000] [--verify] [--flows out:2]  # port_speed: UART bridge を速くし（既定 500000）、結果を出す（下）
@@ -124,6 +126,8 @@ oep restart <probe> [--reopen-s S]           # oep.probe.restart: probe を再�
                                              # --reopen-s: restart_max_ms のうちに戻らないとき（WSL / usbipd）さらに S 秒まで開き直す
 oep find [--timeout 2] [--json] [--no-verify]  # _oep._tcp を広告する probe（確かめたもの）: unit_id、host、port、アドレス
 oep linktest <probe> ...                     # --timeout: 既定は応答 1 つに 0.3 秒、TCP では 3 秒
+oep call <probe> io.github.you.thing 0x10 a=1 b=0x2   # 任意のインターフェースの op: 番号と hex の要求、または describe の名前と項目で
+                                             # （core §7.4 の op_name / op_field）。--text、--wait S（ジョブを status で待つ）、--json
 ```
 
 `<probe>` は OEP のアドレス `oep://UNIT_ID[?via=経路]`（oep-spec の host ガイド §5.3。via が無ければ USB のデバイス、無ければ
@@ -171,8 +175,6 @@ TCP で OEP を運ぶ probe は DNS-SD で見つける（ネットワークの�
 - `oep://UNIT_ID?via=net` はその unit_id で DNS-SD が見つけた probe を開き、describe の unit_id を確かめる（違えば UnitIdMismatch で閉じる）。
   再起動の後は browse し直す（アドレスは変わりうる）。TCP に認証は無い: 信頼するネットワークかトンネルの中で使う（transports §1）。
 - `oep linktest` は TCP では応答を 3 秒待つ（ほかは 0.3 秒）: Wi-Fi の再送でときどき 1〜4 秒止まり、それでも答えは来る。
-
-実機での一通りの確認は ArduinoCore-CH32 の `tests/manual/oep_smoke/`（`oep_smoke.py`、`oep_probe_checks.py`）。
 
 ## ピンを探す（`oep pins`）
 
@@ -266,8 +268,8 @@ hst = link.open_host("/dev/ttyUSB0", port_speed=[921600, 500000])
 いっぱいのフレームを、完全な形が duplex を確かめるなら duplex でも、それぞれ 1 秒以上（`link.FAST_VERIFY_S`）その同時数で流し、
 流し方と同じ基準で判定します（n = 1 での流し直しはしない）。その試すは verify_ms 4000（duplex を含めば 6000）を頼むので、lease は
 5000（7000）ms 以上が要ります（`link.lease_for(candidates, flows, verify)`。`open_host` と `oep speed` は少なくともそれで取り、短い
-lease ではその候補を飛ばす）。決めた後は、ほかの速さと同じ試用期間と使用中の判定を受けます。理由: ある変換では 921600 が両方向
-16 フレームずつの確かめを通っても、9 KiB の書き込みのたびに応答が 1〜4 個壊れた。500000 は測ったどの変換でも壊れなかった。
+lease ではその候補を飛ばす）。決めた後は、ほかの速さと同じ試用期間と使用中の判定を受けます。変換によっては、500000 より速い速さが短い確かめを通っても、
+長い書き込みで応答を壊します。
 
 手順はこの client のもの。oep-if-link §3 は握手だけで、port_speed の要求は baud、step（試す / 決める / 戻す）、verify_ms、効くのは要求が来た
 UART bridge の口で、起動時より速い速さだけ。port_state（ロック不要）はその口の baud と phase（0 起動時、1 試し、2 決めた、3 フレームの
@@ -305,7 +307,7 @@ max(基準 × 2, 10 %) を超えて壊れ・失われたら下げる。下げる
 何も残さず何も読まない。上げるのは、この host が来た経路（confirm の応答の transport TLV、core §7.1）が UART bridge のときの
 その口。UART bridge でない口に来た port_speed の要求と、口を上げている間の試すは unavailable（cause 6）で断られる。`oep.probe.link` の無い probe、または `oep.probe.link` が port_speed を持たない probe では
 速さは変わらない（結果がその理由を言う）。線の試験（`linktest`、`core.link_speed`）も `oep.probe.link` を要る。ブローカー（TCP）の後ろでは client ではなくブローカーが行う。シリアルの口は、ドライバにあれば low-latency の
-モードで開く（FTDI の latency timer 16 → 1 ms で UART bridge の速度が 3 倍になった）。ボードの起動時の速さが 115200 でなければ
+モードで開く（FTDI では latency timer を 16 から 1 ms にする）。ボードの起動時の速さが 115200 でなければ
 `open_host(..., baud=)` で渡す。
 
 ## 仮想ベンチ（動く spec）
@@ -391,7 +393,7 @@ proc.stdin.write(b"reboot\n"); proc.stdin.flush()
 
 pty がシリアルの口（host が TIOCEXCL を掛けて開く）、`--tcp PORT` は既定で probe の TCP の経路と同じ length のフレームを話す（`--framing length`:
 待ち受けは probe の TCP の経路として describe に載り、confirm がその番号を返す。max_frame を超える長さは接続を閉じる）。
-`--framing cobs` は指定したときだけで、socket の上でシリアルの口をまねる（COBS のフレームだけ、一度に 1 つの接続）。length の framing の TCP は同時に `--tcp-connections N` 個（既定 3。参照の probe と同じ。それを超える接続は受けてすぐ閉じる）の接続に答える。どの接続も別の経路（transports §1: confirm と使っている revision は接続ごと、通知はその fn の subscribe が来た接続へ）で、probe は 1 つ: ある接続のセッションがロックを持つ間、別の接続の open は locked で断られ、lock_state はどの接続からも同じに見える。`--framing cobs`（シリアルの口）は今も一度に 1 つの接続に答える。閉じた接続はセッションを終えない（transports §3）: セッション、ロック、購読、送り直しの表は lease が切れるまで残り、閉じた接続への通知は捨て、別の接続からの同じ id の open がセッションを取り戻し、通知もその接続に移る（core §6.2）。`--once` は、接続を 1 つ受けた後に接続が 1 つも無くなったら終わる（length の framing では、重なった接続の最後が閉じたとき）。故障の注入は `--drop N`（N 番目の答えを 1 回出さない。要求は実行済みなので送り直しは覚えた答えを
+`--framing cobs` は指定したときだけで、socket の上でシリアルの口をまねる（COBS のフレームだけ、一度に 1 つの接続）。length の framing の TCP は同時に `--tcp-connections N` 個（既定 3。参照の probe と同じ。それを超える接続は受けてすぐ閉じる）の接続に答える。どの接続も別の経路（transports §1: confirm と使っている revision は接続ごと、通知はその fn の subscribe が来た接続へ）で、probe は 1 つ: ある接続のセッションがロックを持つ間、別の接続の open は locked で断られ、lock_state はどの接続からも同じに見える。閉じた接続はセッションを終えない（transports §3）: セッション、ロック、購読、送り直しの表は lease が切れるまで残り、閉じた接続への通知は捨て、別の接続からの同じ id の open がセッションを取り戻し、通知もその接続に移る（core §6.2）。`--once` は、接続を 1 つ受けた後に接続が 1 つも無くなったら終わる（length の framing では、重なった接続の最後が閉じたとき）。故障の注入は `--drop N`（N 番目の答えを 1 回出さない。要求は実行済みなので送り直しは覚えた答えを
 受ける）、`--noise TEXT`（答えの前に雑音）、`--corrupt N`（N 番目の答えの CRC を 1 回壊す）。`--uart-rx` は、セッションが plan して
 configure した最初の fixture UART の RX にバイトを渡し、`--run-hook` は riscv-dm の run を host 自身の模型にする。`--capture-slipped` は capture の
 区画すべてに flags bit2 を立てる。
