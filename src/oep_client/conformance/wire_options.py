@@ -43,8 +43,14 @@ class WireOptionsChecks(AttachChecks):
         target_id=tags.get(tid)
         if target_id is not None:require(len(target_id)>=1,'target_id scheme');self.attach_tids=getattr(self,'attach_tids',{});self.attach_tids[rid]=(target_id[0],target_id[1:])
         after=self.a.state();s=after['connections'][rid];pins=pair or self.a.pairs[fn][0]
-        require(tuple(s['pins'])==pins and s['idle_clock']==(idle or 0) and s['targetsel']==targetsel,'attach option binding')
-        expected_levels=[1,(idle or 0)^1] if fn==1 else [1] if fn==2 else [0,1]
+        # debug §3.1: without idle_clock the probe picks the rest from the target (idle_low_family); the rvswd attach
+        # answer always says which (attach_answer idle_clock), and an asked one is used as asked
+        rest=idle or 0
+        if fn==1:
+            told=tags.get(self.answer['idle_clock']);require(told is not None and len(told)==1 and told[0] in (0,1),'rvswd attach answer idle_clock')
+            require(idle is None or told[0]==idle,'attach answer idle_clock differs from the one asked');rest=told[0]
+        require(tuple(s['pins'])==pins and s['idle_clock']==rest and s['targetsel']==targetsel,'attach option binding')
+        expected_levels=[1,rest^1] if fn==1 else [1] if fn==2 else [0,1]
         require([after['pin_levels'][pin]['level'] for pin in pins if pin!=65535]==expected_levels,'wire idle levels')
         events=after['wire_events'][len(before['wire_events']):]
         if reset is None:require(not any(row[0].startswith('reset-') for row in events),'implicit reset pin')

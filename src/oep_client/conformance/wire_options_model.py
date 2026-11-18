@@ -98,7 +98,8 @@ class WireOptions(Attachments):
         levels=(1,1-idle) if fn==1 else (1,) if fn==2 else (0,1)
         for pin,level in zip((pin for pin in pair if pin!=65535),levels):self.pin_levels[pin]=dict(mode='wire',level=level)
         identity=0x2ba01477 if fn==3 else 0x302 if method else 0xc02
-        return struct.pack('<IIBI',rid,identity,flags,chosen)+(tlv(ANSWER['dpc'],struct.pack('<I',0x1000)) if method else b'')+extension()
+        rest=tlv(ANSWER['idle_clock'],bytes((idle,))) if fn==1 else b''   # rvswd: always the rest used (debug §3.1)
+        return struct.pack('<IIBI',rid,identity,flags,chosen)+(tlv(ANSWER['dpc'],struct.pack('<I',0x1000)) if method else b'')+rest+extension()
 
 
 class WireOptionsModel(AttachModel):

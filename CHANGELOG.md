@@ -1,6 +1,15 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Conformance against the current spec: HostCoreShapeChecks / CoreFixedFieldChecks know describe's op_name /
+  op_field (they stopped at "selected declaration tag spaces differ"); CORE-DISCOVERY-CHANNEL-NAMES checks core §7.5's
+  channel_name (the describe label TLV is gone); the rvswd attach checks take the rest from the answer's idle_clock when
+  the attach asks none (debug §3.1: the probe picks it from the target), the logical wire model answers it; clause
+  strings at the core's current section numbers.
+- (JA) 今の仕様に照らした適合検査の直し: HostCoreShapeChecks / CoreFixedFieldChecks が describe の op_name / op_field を知る（「selected
+  declaration tag spaces differ」で止まっていた）。CORE-DISCOVERY-CHANNEL-NAMES が core §7.5 の channel_name を見る（describe の label の TLV は
+  もう無い）。rvswd の attach の検査は、idle_clock を頼まないとき休ませ方を応答の idle_clock から取る（debug §3.1: probe が target から決める）。
+  論理の wire の模型もそれを答える。検査の条項の文字列を core の今の節番号にした。
 - (EN) spi-target's sck_filter (oep-spec baa2605, fixture §4): `SpiTarget.configure(mode, bit_order, sck_filter=True)`
   sends the critical TLV (SCK pulses shorter than sck_filter_ns not counted), `sck_filter` / `sck_filter_ns` read the
   declaration; virtual bench P4 declares it (25 ns), the endpoint model keeps it; conformance OEP-SPI-SCK-FILTER.
