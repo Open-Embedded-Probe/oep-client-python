@@ -2,6 +2,8 @@
 
 core §6.1は、session判定を通った持ち主の要求への応答を**生成した時点**からleaseを数え直す。rejectedも含むが、見出し・再送・別sessionの拒否は更新しない。要求の実行中はleaseを数えない。起算は応答の送信待ち・送信完了によらず、経路が閉じて応答を捨てる場合も同じ。
 
+`LeaseChecks`は先に[混雑時の再送検査](replay-pressure-conformance.ja.md)（CORE-PIPELINE-*、CORE-PRESSURE-*）を同じadapterで実行し、続けてCORE-LEASE-INSTRUMENTATIONと次の6件（WHOLE、REJECTED、NO-RENEW、EXPIRE、FORCE、END）を報告する。
+
 明示したlogical writerで応答全体の完了を制御する。物理USB/TCPでの送信完了を証明する検査ではない。
 
 - clock応答を止めて待ち、7 byteだけ送って待つ。応答の生成時にlease_ms先へ更新し、その後の待機・部分送信・全応答の完了ではdeadlineを変えない。
@@ -13,7 +15,7 @@ core §6.1は、session判定を通った持ち主の要求への応答を**生�
 
 lease=1000msで検査し、待機は100〜1050ms。adapterの独立したclockで各waitが実際に指定時間以上進んだことを確認する。`timing_state()`のdeadlineとprobeモデルのnow_msを、送信再開の前後で取得する。更新するケースのdeadlineは「応答生成時のnow+lease」と一致し、更新しないケースでは以前のdeadlineそのものと一致する。時刻・全制御・raw要求/応答・stateを記録する。瞬時の時計の完全一致を実時計へ要求しない。
 
-sample adapterは`SamplePipelineAdapter`にclock_ms、wait_ms、timing_stateを加える。既定では独立したmonotonic時計と実sleep、単体では明示した仮想時計を使う。clockとwaitは外から指定でき、モデルのdeadlineに合わせて待機時間を捏造しない。`.env.example`のSPEC/共有lockを使い、私的ベンチ・設備の探索は加えない。
+sample adapterは`SamplePipelineAdapter`にclock_ms、wait_ms、timing_stateを加える。clock_ms/wait_msを渡さなければmonotonic時計と実sleepを使う。例とpytestは、モデルとadapterに同じ仮想時計を渡す。clockとwaitは外から指定でき、モデルのdeadlineに合わせて待機時間を捏造しない。`.env.example`のSPEC/共有lockを使い、私的ベンチ・設備の探索は加えない。
 
 ```python
 import os
@@ -25,7 +27,9 @@ from oep_client.conformance.pipeline_model import PipelineModel
 
 registry, spec = spec_identity(os.environ['OEP_CONFORMANCE_SPEC'])
 with equipment_lock(os.environ['OEP_HW_LOCK']):
-    adapter = SampleLeaseAdapter(PipelineModel())
+    now = [0]
+    adapter = SampleLeaseAdapter(PipelineModel(lambda: now[0]), clock_ms=lambda: now[0],
+                                 wait_ms=lambda ms: now.__setitem__(0, now[0] + ms))
     checks = Checks(lambda req: adapter.exchange(adapter.primary, req), registry, 'virtual-routes-1')
     report = LeaseChecks(checks, adapter).run()
 assert report['status'] == 'passed', report

@@ -19,7 +19,7 @@ peerの個体/boot/宣言も照合する。
 
 各応答の経路・corr・受信順・outcome・boot・TLVをraw bytesで検査する。単なる残量の自己申告ではなく、instrumentationの`pending(route)`が返す受理済み未解決要求そのものを、検査側の要求列と比較して数とbyte数を計算する。ただしモデルのinstrumentationを観測する検査であり、実機bufferの直接測定ではない。
 
-adapterは`SampleRouteAdapter`の制御/trace能力に加え、明示した`admission_policy='reject-overflow'`と`pending`を提供する。service観測予算はの1〜1000ms（サンプル100ms）を使う。全入力/出力、要求/応答、制御時刻を記録し、公開opを新設しない。
+adapterは`SampleRouteAdapter`の制御/trace能力に加え、明示した`admission_policy='reject-overflow'`と`pending`を提供する。service観測予算は1〜1000ms（サンプル100ms）を使う。全入力/出力、要求/応答、制御時刻を記録し、公開opを新設しない。
 
 ```python
 import os
