@@ -5,13 +5,13 @@ core/transports本文SHAとregistry待ち値を照合する。private設備・OS
 現在のCore.handle(defer_send=True)とresponse_sentを、3本の論理writerと明示millisecond時計で通す。
 fn1/op16は資源を作るサンプル拡張で、標準OEP操作ではない。
 
-6種類×lease1000/60000の条件。
+次の6種類を、それぞれlease 1000/60000 msで実行する（RESPONSE-RACE-<種類>-<lease>）。
 
 - FORCE：旧所有者7の成功応答が待つ間に8がforceし、新資源を作る。後で旧応答を完了しても新lease/資源/cacheを変えない。
 - REJECTED：旧所有者の要求が拒否された応答の場合も、旧完了通知が新しい所有者を更新しない。
 - DOUBLE-FORCE：7→8→9とforceし、7と8の応答を遅く完了する。どちらも9へ影響しない。
 - EXPIRE-NEW：8の新leaseを正確な期限で終了させてから7の応答を完了する。資源・ロックを復活させない。
-- NO-FORCE：8のopenをlockedで拒否する。その拒否応答は7のleaseを更新せず、7自身の応答完了だけが期限を更新する。再送は更新しない。
+- NO-FORCE：8のopenをlockedで拒否する。その拒否応答は7のleaseを更新しない。7の期限は7の応答の生成時に決まり、その応答の送信完了でも再送でも変わらない（core §6.1）。
 - RETURN-ID：raw Probe刺激として7→8→7とforceする。内部の所有期間が違うため、古い7の完了通知を新しい7へ適用しない。Hostは終了したsession_idを再使用してはならず、この条件をHost使用例とはしない。旧wire要求は再送しない。
 
 実request/reply byte、完了token、時刻、Core owner/generation/lease、資源番号とlive状態、cacheを保存する。

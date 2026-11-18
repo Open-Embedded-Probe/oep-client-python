@@ -17,12 +17,12 @@ SPECのrestart_max_msは上限であり、一般のProbeが49ms応答を止め�
 
 再起動区間ではUART bridge/vendor bulk/TCPの論理3経路でconfirmと同じrestart要求に答えない。
 write完了から49/50ms境界をfixture条件として使い、50msでは新bootで全経路がconfirmに答える。
-新bootの時計は0、保持者/plan/drive/cacheは空きの状態。旧restartの同じcorr/全byteもno_sessionとなり、古い成功を返さない。
+新bootの時計は0、保持者/plan/pinの駆動/cacheは空きの状態。旧restartの同じcorr/全byteもno_sessionとなり、古い成功を返さない。
 raw制御の要求/返信とwrite/quiet/bootイベントを、通常のChecks traceとは別に保存する。
 physicalフレーミング・USB列挙・TCP待ち受け直しの時刻を測るものではない。
 
 `uv run pytest -q tests/test_conformance_restart.py`で実行する。
-正常1、共通宣言1、wire故障3、状態故障12、再起動後clock成功/boot故障2、制御不足7、fixture遅延条件1。
+正常例、共通宣言、wire故障、状態故障、再起動後のclock成功とboot故障、制御不足、fixtureの遅延条件を含む。
 応答前再起動、再起動欠落、boot再使用、plan/pin/cache/保持者残留、時計の非初期化、
 再起動中応答、経路復帰欠落、critical tag書換え、拒否時pin変更を注入して検出する。
 失敗時の保留write後始末は元の違反を別のcleanup拒否で隠さない。
