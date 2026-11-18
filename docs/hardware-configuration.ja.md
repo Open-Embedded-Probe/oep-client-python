@@ -1,15 +1,15 @@
-# 実機構成と配線を探索して確定する設計
+# 実機構成と配線を探索して確定する
 
-[全体テスト方針](testing-policy.ja.md)から導く構成管理の設計。キー、選択と判定、処理の入口は [実機設定形式](hardware-schema.ja.md)にある。
+[全体テスト方針](testing-policy.ja.md)から導く構成管理。キー、選択と判定、処理の入口は [実機設定形式](hardware-schema.ja.md)にある。
 
-一つの probe に一つの target を束ねた設定をやめ、物理個体、接続、探索候補、確定情報、試験時の役割を分ける。テスト本体は固定 channel や個体名を持たず、論理信号と必要な能力を要求する。設定を読み込んだだけで探索、書込み、firmware 更新が始まる構成にはしない。
+物理個体、接続、探索候補、確定情報、試験時の役割を分ける。一つの probe に一つの target を束ねない。テスト本体は固定 channel や個体名を持たず、論理信号と必要な能力を要求する。設定を読み込んだだけで探索、書込み、firmware 更新が始まる構成にはしない。
 
 ## 1. 管理する情報
 
 | 情報 | 内容と正本 |
 |---|---|
 | probe 個体 | ID、識別方法、host からの transport、firmware 更新経路。交換可能な物理ノード |
-| target 個体 | chip/board/package、UID 等の個体識別。probe の slot や port とは独立 |
+| target 個体 | chip/board/package、UID 等の個体識別。probe の channel や port とは独立 |
 | 観測器・電源・switch | 使用方法、計測条件、資源 ID、操作によって影響する個体群 |
 | 接続 | debug、GPIO/UART、USB data、給電の経路。異なる種類の接続を別々に表現 |
 | 探索範囲 | 操作してよい probe channel と target pad、除外、電圧・給電、探索に許す操作 |
@@ -30,7 +30,7 @@ probe 自身の USB transport と target 間の USB data は別の接続であ�
 
 初期設定は、操作対象 probe の識別、探索可能な channel、target の候補または期待する種類、既知の給電・接続範囲を持つ。target の UID がまだ分からない場合は探索で取得し、確定時に関連づける。取得できない場合は明示的な手動関連づけを記録し、chip family だけで同型の複数個体を一意とみなさない。
 
-probe の describe は機能と許される channel の情報として利用する。候補範囲と宣言の交差を取るが、宣言を電気的な実配線の証明として扱わない。予約 pin、既存 connection、plan、slot、capture、他の操作中の資源を照合する。
+probe の describe は機能と許される channel の情報として利用する。候補範囲と宣言の交差を取るが、宣言を電気的な実配線の証明として扱わない。予約 pin、既存 connection、plan、capture、他の操作中の資源を照合する。
 
 ## 3. 探索と確定の手順
 
@@ -41,7 +41,7 @@ probe の describe は機能と許される channel の情報として利用す�
 5. debug/control が確定した target へ既知の診断 image を書き込む場合は、探索処理とは別に書込みを明示する。image の出所と hash、元の image の扱い、終了状態を記録する。
 6. 必要な GPIO/UART 等を論理信号へ対応づける。target pad ごとの識別パターンを、独立した観測側の probe channel で照合する。必要な場合は逆方向の刺激も行い、候補・分岐・短絡・方向を区別する。
 7. USB ケーブルや給電など探索できない接続を入力情報と独立確認で確定する。debug が繋がったという理由だけで USB 相手を割り当てない。
-8. 曖昧な対応を除き、確定構成を新しい世代として保存する。必要なら probe.config の slot/label を派生設定として生成し、適用を明示してから probe の state と照合する。
+8. 曖昧な対応を除き、確定構成を新しい世代として保存する。必要なら probe の設定（core §13 の `channel.<ピン>.label` など）を派生設定として生成し、適用を明示してから probe の値と照合する。
 9. 変更後の構成と診断 image の状態を表示し、ロックと出力を解放する。探索失敗も artifact として残す。
 
 GPIO の識別パターンは「任意 pad を一斉に駆動」するものにしない。候補に含めた機能・pad の条件に従い、他の出力と衝突しない順序で行う。観測されない信号は未接続・未確定として残し、必須ではない配線まで揃えることを要求しない。
@@ -85,7 +85,7 @@ probe 一台で複数 target を control する割当と、複数 probe で両�
 
 排他対象は probe、target、共有電源、USB switch、計測器を含む。同じ target への別 backend、同じ probe の別 transport、同じハブ電源で影響を受ける機器群は別名でも競合する。
 
-初期実装では設定で渡されたホスト共通ロックを使用し、全実機操作を直列にしてよい。将来の並列化は資源集合から判断し、複数ロックの取得順を固定して deadlock を防ぐ。ロックの意味は公開側の汎用契約にし、私的リポジトリの位置から計算しない。
+設定で渡されたホスト共通ロックを使い、全実機操作を直列にする。ロックの意味は公開側の汎用契約にし、私的リポジトリの位置から計算しない。
 
 同じ probe 上の target A/B は probe の OEP session を共有する。pytest の DUT/peer ごとの lifecycle と、probe の transport/session の所有を別層にし、同じ probe を二度排他的に開かない。書込みは必要なら直列に行い、両側が READY になってから通信を開始する。片側終了で他方の stream/session を破棄しない。
 
@@ -115,13 +115,13 @@ OEP_HW_CONFIG=./hardware.resolved.local.toml
 OEP_HW_RESULTS=./.pytest-results
 ```
 
-`.env` は `uv run --env-file .env ...` によって明示的に渡す。自動読込みを実装しない。config はこの変数または明示 CLI で指定したファイルだけを読み、兄弟ディレクトリやホームから探索しない。CLI に同じ項目がある場合は CLI を優先する。既存 Arduino plugin の primary/peer port/profile の優先順位は維持し、解決済み経路を一箇所から渡す。
+`.env` は `uv run --env-file .env ...` によって明示的に渡す。自動読込みを実装しない。config はこの変数または明示 CLI で指定したファイルだけを読み、兄弟ディレクトリやホームから探索しない。CLI に同じ項目がある場合は CLI を優先する。Arduino plugin の primary/peer port/profile の優先順位はそのままで、解決済み経路を一箇所から渡す。
 
 相対 `OEP_HW_CONFIG` は実行時の作業ディレクトリ基準とし、このリポジトリの雛形は `tests/hw/` から実行する想定とする。TOML 内の相対パスはその TOML の所在基準とする。log に解決した絶対パスを残す。CI では `.env` を置かず、同じ値を環境変数や CLI で渡せるようにする。
 
 大量の per-device channel 上書きを `.env` に列挙しない。個体と配線は TOML で持ち、build 条件・期待値は試験所有側で持つ。秘密値が必要なケースでは環境から別途渡し、生成 TOML と artifact に含めない。
 
-初期はホストまたは用途ごとに1つの self-contained TOML を選ぶ。複数ファイルの include、暗黙の探索、配列の merge は導入しない。規模が増えたときの分割は私的台帳側で行え、公開側へ渡す export は一つに保てる。
+ホストまたは用途ごとに1つの self-contained TOML を選ぶ。複数ファイルの include、暗黙の探索、配列の merge はしない。規模が増えたときの分割は私的台帳側で行え、公開側へ渡す export は一つに保てる。
 
 ## 8. 生成と更新
 
@@ -129,4 +129,4 @@ OEP_HW_RESULTS=./.pytest-results
 
 既存 `.env` を無条件に上書きしない。生成は出力先を明示し、差分確認と置換を別段階にする。ユーザーが指定する実行対象と、機械が確定した signal map の所有を分ける。派生設定を更新しても手編集した秘密値や実行オプションを消さない。
 
-再生成はファイルを作るだけで、firmware 更新、slot 保存、電源操作を行わない。それらは明示的な別の処理として扱う。通常の client/Core テストは設置済み probe を使う。probe 更新後は影響する確定情報を再確認し、新しい export を作る。
+再生成はファイルを作るだけで、firmware 更新、設定の保存、電源操作を行わない。それらは明示的な別の処理として扱う。通常の client/Core テストは設置済み probe を使う。probe 更新後は影響する確定情報を再確認し、新しい export を作る。

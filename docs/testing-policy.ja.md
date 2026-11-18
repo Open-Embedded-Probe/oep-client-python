@@ -8,7 +8,7 @@ OEP、利用プロジェクト、計測・pytest 統合の保証対象と責任�
 
 利用側の入口は [OEP を使うプロジェクトのテストガイド](testing-consumers.ja.md)。基盤の設計は [構成と配線の確定](hardware-configuration.ja.md)と[実機設定形式](hardware-schema.ja.md)。Python 実機ハーネスの手順は [tests/hw](../tests/hw/README.ja.md)に分ける。
 
-適合検査は「core」「interface共通」「OEPインターフェース固有」の3段階に分ける。最初の2段階は独自拡張にも使い、3段階目は各規範の検査と独自拡張向けの雛形を持つ。定義は [SPEC の適合ガイド](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/conformance.ja.md)、検査器の実行範囲は [適合検査入口](conformance-checks.ja.md)を参照する。仕様 → テスト → コアの確定 → 共通インターフェース → OEP固有 → 実装追従の順で進める。
+適合検査は「core」「interface共通」「OEPインターフェース固有」の3段階に分ける。最初の2段階は独自拡張にも使い、3段階目は各規範の検査と独自拡張向けの雛形を持つ。定義は [SPEC の適合ガイド](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/conformance.ja.md)、検査器の実行範囲は [適合検査入口](conformance-checks.ja.md)を参照する。
 
 ## 1. 保証する単位
 
@@ -55,7 +55,7 @@ OEP、利用プロジェクト、計測・pytest 統合の保証対象と責任�
 | BROKER-OWNERSHIP | monitor/flash/GDB の共存、終了した client の資源解放、target 間の混線防止 | client 数、target 数、同じ/別 probe |
 | PROBE-DECLARE | revision/ops/limits と挙動の一致、未知機能の拒否、個体識別 | model/profile、transport、実装 SPEC |
 | PROBE-SESSION | end/lease/force、pins/streams/plans の解放、競合拒否 | 資源数、複数経路、途中失敗 |
-| PROBE-CONFIG | get/set/save/erase、再起動、slot/bind、壊れた保存内容、設定復元 | storage、設定項目、適用順 |
+| PROBE-SETTINGS | get/set/unset/save、再起動、壊れた保存内容と部分適用、設定ファイルの書き出し・読み込み、設定復元 | storage、設定項目、適用順 |
 | DEBUG-WIRE | 候補探索、曖昧性、既存接続維持、attach/reset、wire lost、時間上限 | RVSWD/SWIO/SWD、target 系統、clock |
 | DEBUG-MULTI | 同じ probe 上の A/B の状態・stream・reset の分離、上限時の拒否 | connection 上限、wire/slot 数、実際の同時性 |
 | TOOL-FLASH | 空/非整列/境界/最大 image、部分更新、readback、誤個体拒否、途中失敗 | chip/erase 粒度/ABI、probe backend、transport |
@@ -112,7 +112,7 @@ OEP、利用プロジェクト、計測・pytest 統合の保証対象と責任�
   → 実行・観測・終了処理・証拠保存
 ```
 
-探索自体が書込みや reset を伴う場合があるため、通常の pytest 収集で自動実行しない。試験中に配線が成立しなくなっても、勝手に別 target を探索して継続しない。探索は範囲を明示した準備処理で、失敗原因の候補も記録する。詳細は [構成管理案](hardware-configuration.ja.md) に定義する。
+探索自体が書込みや reset を伴う場合があるため、通常の pytest 収集で自動実行しない。試験中に配線が成立しなくなっても、勝手に別 target を探索して継続しない。探索は範囲を明示した準備処理で、失敗原因の候補も記録する。詳細は [構成と配線の確定](hardware-configuration.ja.md) に定義する。
 
 ## 6. 複数ターゲットと USB ペア
 
@@ -130,7 +130,7 @@ debug/control は RVSWD による書込みと DM console 等、USB data は被�
 
 設定モデルは一つの probe に複数 target、複数 probe、一つの target への複数 backend を表現できるようにする。target 個体と debug 経路を分離する。
 
-一つの probe 上で A/B を同時に制御する構成は、wire の max_connections、console 数、pin/CPU 資源が実際に満たされる必要がある。現在の単一 DebugPort や slot の制約を理由に構成モデルを 1:1 へ戻さず、必要な platform の probe/console/config を改修し、実際の上限を宣言する。小さい platform では上限 1 も許容するが、同時制御を要求する契約には割り当てない。
+一つの probe 上で A/B を同時に制御する構成は、wire の max_connections、console 数、pin/CPU 資源が実際に満たされる必要がある。構成モデルは probe と target を 1:1 に限らない。probe は実際の上限を宣言する。小さい platform では上限 1 も許容するが、同時制御を要求する契約には割り当てない。
 
 順番に書込み、接続を切り替えて READY/status を確認する構成も別の能力として表現する。ただし切替の間の log 欠損、DM mailbox の待ち、状態保存に制約がある。常時両側制御・同時観測が必要な契約の代用品にはしない。複数 probe で両側を制御する構成も同じ契約へ割り当てられるようにする。
 
@@ -188,4 +188,4 @@ log、readback、waveform、capture layout/rate、時刻不確かさ、双方の
 - [ch32rv の OEP と broker](https://github.com/ch32-riscv-ug/ch32rv/blob/main/docs/oep-host.ja.md)、[仮想 OEP](https://github.com/ch32-riscv-ug/ch32rv/blob/main/crates/oep/tests/virtual_bench.rs)、[仮想環境取得](https://github.com/ch32-riscv-ug/ch32rv/blob/main/crates/oep/tests/virtual_bench/uv.rs)、[flash E2E](https://github.com/ch32-riscv-ug/ch32rv/blob/main/cli/tests/oep_flash.rs)、[monitor E2E](https://github.com/ch32-riscv-ug/ch32rv/blob/main/cli/tests/oep_monitor.rs)。
 - [ArduinoCore の計画](https://github.com/ch32-riscv-ug/ArduinoCore-CH32RV/blob/main/tests/TEST_PLAN.ja.md)、[実装との照合](https://github.com/ch32-riscv-ug/ArduinoCore-CH32RV/blob/main/docs/test-coverage.ja.md)、[構成 loader](https://github.com/ch32-riscv-ug/ArduinoCore-CH32RV/blob/main/tests/harness/bench.py)。
 - [pytest Arduino 基礎](https://github.com/tanakamasayuki/pytest-embedded-arduino-cli/blob/main/TESTING_BASICS.ja.md)、[詳細と peer の原則](https://github.com/tanakamasayuki/pytest-embedded-arduino-cli/blob/main/TESTING_ADVANCED.ja.md)、[peer lifecycle の例](https://github.com/tanakamasayuki/pytest-embedded-arduino-cli/blob/main/examples/12_peer_host_core/README.ja.md)。
-- [WireSkein の取得試験](https://github.com/Open-Embedded-Probe/wireskein/blob/main/tests/test_oep_virtual_bench.py)、[capture の照合](https://github.com/Open-Embedded-Probe/wireskein/blob/main/docs/capture-test-guide.ja.md)、[pytest 記録統合](https://github.com/Open-Embedded-Probe/pytest-embedded-wireskein/blob/main/tests/test_plugin.py)、[JS client のリリース確認](https://github.com/Open-Embedded-Probe/oep-client-js/blob/main/docs/release.ja.md)、[web viewer のリリース確認](https://github.com/Open-Embedded-Probe/wireskein-web/blob/main/docs/release.ja.md)。
+- [WireSkein の取得試験](https://github.com/Open-Embedded-Probe/wireskein/blob/main/tests/test_oep_virtual_bench.py)、[capture の照合](https://github.com/Open-Embedded-Probe/wireskein/blob/main/docs/capture-test-guide.ja.md)、[pytest 記録統合](https://github.com/Open-Embedded-Probe/pytest-embedded-wireskein/blob/main/tests/test_plugin.py)、[JS client の公開前の確認](https://github.com/Open-Embedded-Probe/oep-client-js/blob/main/docs/publish.ja.md)、[web viewer のリリース確認](https://github.com/Open-Embedded-Probe/wireskein-web/blob/main/docs/release.ja.md)。

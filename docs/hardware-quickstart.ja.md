@@ -39,8 +39,6 @@ uv run --project ../.. --locked --env-file .env.virtual oep-hardware smoke \
 
 `--probe` は対象 probe を絞ります。plan は `--target` / `--link` も契約に応じて使えます。明示した対象が存在しない、割当が成立しない場合は設定エラーです。通常の仮想 smoke はすべての選択 probe が virtual transport であることを操作前に検査し、実 transport を一台でも含むと拒否します。
 
-次の段階は、target の確定配線と必要能力を照合する adapter、独立診断と複数 connection への対応です。
-
 ## 実機 probe の単体確認
 
 公開雛形をコピーし、`example = false`、実際の OEP unit ID と serial/TCP/USB transport を記入した resolved TOML を用意します。probe 宣言だけの確認なら targets/配線の表は不要です。共通ロックは設備管理者が指定する既存ファイルを使います。`.env.example` をコピーし、設定・結果・ロックの path を設定します。

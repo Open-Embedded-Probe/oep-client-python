@@ -26,7 +26,7 @@ OEP プローブを使って、自分のクライアント、tool、組込みソ
 
 仮想プローブの版と依存は利用プロジェクトの lock/CI で固定し、入手方法を明示します。指定していない兄弟 checkout やホームから自動探索しません。必須の仮想検査で依存がない場合は準備エラーとし、テスト関数から return して成功にしません。
 
-新コアの要求・session・再送・framingを検証する場合は、[適合検査入口](conformance-checks.ja.md)の `core-v1` を使えます。これはfn 0のみの最小profileです。flash/debugなどinterfaceを使う利用テストでは、該当interfaceが追従したtarget付きprofileを選び、そのSPEC版を記録します。
+コアの要求・session・再送・framingを検証する場合は、[適合検査入口](conformance-checks.ja.md)の `core-v1` を使えます。これはfn 0のみの最小profileです。flash/debugなどinterfaceを使う利用テストでは、そのinterfaceを持つtarget付きprofileを選び、そのSPEC版を記録します。
 
 仮想での成功は電圧、配線、実時間精度、実 USB の品質保証にはなりません。また、自分の client と同じ実装系統の仮想プローブだけでは、共通の誤りを見逃す場合があります。規範からの期待値、独立実装、実機を組み合わせます。
 
@@ -34,9 +34,9 @@ OEP プローブを使って、自分のクライアント、tool、組込みソ
 
 テストコードは `dut` / `peer` / `observer` 等の役割と必要な機能・接続を宣言します。個体 ID、serial port、channel、target pad をコードへ固定しません。設備を交換したときは設定と確定記録を更新します。
 
-新形式では、公開雛形をコピーして `.env` と `*.local.toml` を作り、Git 管理外にします。`.env` は `uv run --env-file .env ...` 等で明示的に渡し、個体と配線は TOML にまとめます。主要な指定は次の4つです。
+公開雛形をコピーして `.env` と `*.local.toml` を作り、Git 管理外にします。`.env` は `uv run --env-file .env ...` 等で明示的に渡し、個体と配線は TOML にまとめます。主要な指定は次の4つです。
 
-| 設定名（新形式） | 用途 |
+| 設定名 | 用途 |
 |---|---|
 | `OEP_HW_INPUT` | 個体・電気条件・操作してよい探索範囲 |
 | `OEP_HW_CONFIG` | 通常試験で使う確認済み構成 |

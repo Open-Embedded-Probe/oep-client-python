@@ -4,7 +4,7 @@
 
 ## 所有と境界
 
-汎用形式と参照 validator の保守窓口は、既存実機ハーネスと discovery を持つ `oep-client-python` とする。形式の文書、雛形、適合例を公開し、probe firmware の合否は `oep-probe-arduino`、client は各 client、Core の合否は Core が所有する。Python の実行依存を Rust client に強制しない。Arduino の build/upload/peer lifecycle は既存 pytest plugin に任せ、設備の役割解決と共有 control session を接続する adapter を設ける。
+汎用形式と参照 validator の保守窓口は、実機ハーネスと discovery を持つ `oep-client-python` とする。形式の文書、雛形、適合例を公開し、probe firmware の合否は `oep-probe-arduino`、client は各 client、Core の合否は Core が所有する。Python の実行依存をほかの言語の client に強制しない。Arduino の build/upload/peer lifecycle は pytest plugin に任せ、設備の役割解決と共有 control session を接続する adapter を設ける。
 
 この文書と同梱の雛形を汎用設定形式の正本として保守する。実設備の台帳と export は各設備管理者が別に持つ。runner がその台帳の path、checkout、生成器を参照しないこと、この雛形だけをコピーして手書きできることを必須条件とする。
 
@@ -40,9 +40,9 @@ resolved は input を include しない。1回の実行に1つの自己完結�
 
 node の ID は probe/target 全体で重複禁止。各種類の接続 ID と evidence ID も種類内で一意にする。参照切れ、型違い、未知キーはエラーとし、typo による設定の無視を防ぐ。相対 path は TOML の所在基準、環境変数の相対 path は実行時 CWD 基準である。TOML の値に環境変数展開や shell 展開をしない。
 
-identity は probe の `oep-unit-id`、target の `chip-uid` を優先する。`manual-label` は `reason` を必須とし、preflight で人の確認が必要な識別として扱う。serial port、chip family、slot label だけで物理個体の一致を判断しない。観測できない UID を生成しない。
+identity は probe の `oep-unit-id`、target の `chip-uid` を優先する。`manual-label` は `reason` を必須とし、preflight で人の確認が必要な識別として扱う。serial port、chip family、label だけで物理個体の一致を判断しない。観測できない UID を生成しない。
 
-v1 の transport は OEP `serial`、unit ID で名指す `usb`、明示指定 `tcp`、実機を使わない `virtual`（既存仮想 profile を指定）、debug は `swio` / `rvswd` / `swd` を扱う。serial は path、tcp は host/port、usb は完全な unit_id（core §7.5: `a-z 0-9 -` の 1〜32 byte。`x-` で始まるものは名指しに使えない）を持つ。usb selector と identity の一致を validator で検証し、接続後も OEP describe の unit_id を照合する。channel 対応は `data`、`clock`、任意の `reset` を共通キーとし、protocol ごとの本数を offline validator で検証し、profile/pad 機能と予約 pin は検証しない。WCH-Link は別 backend であり OEP probe を装わない。WCH-Link、計測器、自動電源 switch の具体キーは v1 の雛形に無い。
+v1 の transport は OEP `serial`、unit ID で名指す `usb`、明示指定 `tcp`、実機を使わない `virtual`（仮想ベンチの profile を指定）、debug は `swio` / `rvswd` / `swd` を扱う。serial は path、tcp は host/port、usb は完全な unit_id（core §7.5: `a-z 0-9 -` の 1〜32 byte。`x-` で始まるものは名指しに使えない）を持つ。usb selector と identity の一致を validator で検証し、接続後も OEP describe の unit_id を照合する。channel 対応は `data`、`clock`、任意の `reset` を共通キーとし、protocol ごとの本数を offline validator で検証し、profile/pad 機能と予約 pin は検証しない。WCH-Link は別 backend であり OEP probe を装わない。WCH-Link、計測器、自動電源 switch の具体キーは v1 の雛形に無い。
 
 signal endpoint は target の pad または probe の非負 channel のいずれかを持つ。mode は `input-only` / `output-only` / `bidirectional` / `open-drain`。共有 bus の同時駆動条件、pull-up、アナログ値等は契約に必要な詳細を追加してからその試験を採用する。`digital` の接続だけで I2C、PWM 精度、電圧精度を保証しない。
 
@@ -73,22 +73,22 @@ probe の観測 firmware、protocol/interface revision、describe と限界値�
 
 ## 入口と優先順位
 
-CLI 名は各 runner 実装時に確定するが、処理境界は次で固定する。
+`oep-hardware` が持つ入口は validate / plan / smoke / preflight。ほかの入口を持つ runner も、処理の境界は次に従う。
 
 | 入口 | 入力と副作用 |
 |---|---|
 | validate / plan | 構文・参照・割当の offline 検査。port を開かない |
 | discover | 明示 input と範囲で探索。書込み禁止を既定とし、結果候補を保存 |
-| confirm / export | 候補選択と根拠から resolved を新規出力。firmware/slot/power を操作しない |
+| confirm / export | 候補選択と根拠から resolved を新規出力。firmware/設定/power を操作しない |
 | preflight | ロックを保持して個体・宣言・必要接続を照合。通常の接続に必要な操作は結果へ記録 |
 | test | 同じロック保持区間で preflight→upload→READY→試験→cleanup。設置済み probe を使用 |
-| probe update / diagnostic flash / slot apply | 書込み・設定変更を明示する独立入口。通常試験や export が暗黙に呼ばない |
+| probe update / diagnostic flash / 設定の適用 | 書込み・設定変更を明示する独立入口。通常試験や export が暗黙に呼ばない |
 
 共通の指定は `OEP_HW_INPUT`、`OEP_HW_CONFIG`、`OEP_HW_RESULTS`、`OEP_HW_LOCK`。同じ項目は明示 CLI が環境変数に優先する。`.env` は runner で自動読み込みしない。input/config のどちらかを path 探索して補完することもしない。
 
-OEP の経路は resolved から adapter が解決する。既存 Arduino plugin に直接指定した primary/peer port がある場合、**明示指定を無言で上書きせず、解決した経路と照合して不一致は設定エラー**にする。plugin 内の CLI→profile 環境変数→共通環境変数→sketch の優先順は保持する。一般の serial upload/monitor と OEP debug control を別の経路として扱い、同じ文字列の port に押し込まない。
+OEP の経路は resolved から adapter が解決する。Arduino plugin に直接指定した primary/peer port がある場合、**明示指定を無言で上書きせず、解決した経路と照合して不一致は設定エラー**にする。plugin 内の CLI→profile 環境変数→共通環境変数→sketch の優先順は保持する。一般の serial upload/monitor と OEP debug control を別の経路として扱い、同じ文字列の port に押し込まない。
 
-`OEP_HW_LOCK` のホスト共通ロックで実機を直列化する。path は明示必須とし、checkout 内に別ロックを自動生成しない。後に個体単位へ細分化する場合も、probe transport alias、target、電源影響先を含めて一括取得する。DUT/peer が同一 probe を使うときは一つの session と broker を共有する。
+`OEP_HW_LOCK` のホスト共通ロックで実機を直列化する。path は明示必須とし、checkout 内に別ロックを自動生成しない。DUT/peer が同一 probe を使うときは一つの session と broker を共有する。
 
 ## 雛形と生成の運用
 
