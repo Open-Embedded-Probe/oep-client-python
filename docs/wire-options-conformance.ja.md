@@ -45,3 +45,7 @@ reset role 3はchannel 6、max_op_ms=5、最も遅い読出しは1000 Hzを宣�
 `full_conformance`はfalse。scanのidle_clock/targetsel、物理open-drain/level/hold/wake/DM timing、
 attachの速さ/scratchのアルゴリズム、線切れの応答/解放順、非RVSWDのidle=0の方針、
 plan統合/別容量、実応答writerとproduction Host統合は未検査。
+
+```sh
+uv run pytest -q tests/test_conformance_wire_options.py
+```

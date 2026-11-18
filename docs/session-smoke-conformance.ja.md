@@ -3,6 +3,10 @@
 `SessionSmokeChecks`は選択したsession寿命をraw要求で確認する。
 レビュー済みcoreのガードを持つ`CoreSmokeChecks`をcontextに使う。
 
+```sh
+uv run pytest -q tests/test_conformance_session_smoke.py
+```
+
 ```python
 from oep_client.conformance import spec_identity
 from oep_client.conformance.core_smoke import CoreSmokeChecks

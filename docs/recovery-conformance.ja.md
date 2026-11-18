@@ -25,6 +25,10 @@ probeの保持契約とsample hostの回復方針を分けて観測する。samp
 
 単独writer条件はこのfixtureの前提であり、一般的な資源増分の帰属を保証しない。close対象の現在の不在/存在も操作のoutcomeではない。外部副作用が状態へ現れない拡張は、拡張仕様に別の照合手順が必要になる。
 
+```sh
+uv run pytest -q tests/test_conformance_recovery.py
+```
+
 ```python
 import os
 from oep_client.conformance import Checks, spec_identity

@@ -17,6 +17,10 @@ lease=1000msで検査し、待機は100〜1050ms。adapterの独立したclock�
 
 sample adapterは`SamplePipelineAdapter`にclock_ms、wait_ms、timing_stateを加える。clock_ms/wait_msを渡さなければmonotonic時計と実sleepを使う。例とpytestは、モデルとadapterに同じ仮想時計を渡す。clockとwaitは外から指定でき、モデルのdeadlineに合わせて待機時間を捏造しない。`.env.example`のSPEC/共有lockを使い、私的ベンチ・設備の探索は加えない。
 
+```sh
+uv run pytest -q tests/test_conformance_lease.py
+```
+
 ```python
 import os
 from oep_client.conformance import Checks, spec_identity

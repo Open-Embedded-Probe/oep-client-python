@@ -40,3 +40,7 @@ resetを提供しないprobeへ実装を要求するものではない。
 前提不足、不正刺激、共通宣言を含む。`full_conformance`はfalse。
 物理ndmreset/wakeとDM復帰時間、havereset ack自体の失敗、
 実応答writer、run、別target/容量とproduction Host統合は未検査。
+
+```sh
+uv run pytest -q tests/test_conformance_reset.py
+```

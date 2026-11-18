@@ -44,3 +44,7 @@ CPU命令、CSR/抽象コマンド、実clock、実targetへの転送を実行�
 `full_conformance`はfalse。全transport経路のframe上限、未対応抽象reg/部分準備の方針、
 初期走行hart受付、結果読出し/DATA復元自体の失敗、programが実行中にmailboxへ書く場合、
 物理CSR/CPU/clock、実応答writer、他target/容量とproduction Host統合は未検査。
+
+```sh
+uv run pytest -q tests/test_conformance_run.py
+```

@@ -24,3 +24,7 @@ corr/結果/token、早い更新、資源・cache混入、force拒否、新lease
 corr故障は、順序から前の待ち要求を選んで独立にbyte照合する。
 論理順序を定めた競合で、実CPU同時実行・物理transport完了・全拡張資源の依存解放・production Host統合は別の検査。
 full_conformance=false。
+
+```sh
+uv run pytest -q tests/test_conformance_response_race.py
+```

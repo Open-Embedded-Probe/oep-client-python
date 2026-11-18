@@ -36,3 +36,7 @@ selectorはSWDだけで使い、Noneは省略。配線/実targetを探索する�
 このfixtureでのattachオプションを含む。`full_conformance`はfalse。
 物理wake/dmactive/idle cycles/時間、線切れの応答/解放順、他budget/frame経路とwriter並行性、
 plan統合とproduction Host統合は未検査。
+
+```sh
+uv run pytest -q tests/test_conformance_scan_options.py
+```

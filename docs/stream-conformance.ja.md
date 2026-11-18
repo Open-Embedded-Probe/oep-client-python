@@ -41,6 +41,10 @@ sample contractはfn 1、read 16（from u8/arg u64/max u16）、marks 17（from_
 MOVING-PAGESは要求と要求の間で順序を定めたproducer刺激である。要求処理中の同時threadを検証したとはしない。
 5markと次serialの保持spanはu32の1/4未満で、任意ring容量全域の証明へは広げない。
 
+```sh
+uv run pytest -q tests/test_conformance_stream.py
+```
+
 ```python
 import os
 from oep_client.conformance import Checks, spec_identity

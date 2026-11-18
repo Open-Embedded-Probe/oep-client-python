@@ -21,6 +21,10 @@ peerの個体/boot/宣言も照合する。
 
 adapterは`SampleRouteAdapter`の制御/trace能力に加え、明示した`admission_policy='reject-overflow'`と`pending`を提供する。service観測予算は1〜1000ms（サンプル100ms）を使う。全入力/出力、要求/応答、制御時刻を記録し、公開opを新設しない。
 
+```sh
+uv run pytest -q tests/test_conformance_pipeline.py
+```
+
 ```python
 import os
 from oep_client.conformance import Checks, spec_identity

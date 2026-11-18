@@ -38,3 +38,7 @@ optional stepを提供する明示論理fixtureを使う。
 前提不足、不正刺激、共通宣言を含む。`full_conformance`はfalse。
 物理命令/CSR操作、再停止の実時間、DATA復元自体の失敗、初めから走っているhartの受付、
 実応答writer、reset/run、他targetとproduction Host統合は未検査。
+
+```sh
+uv run pytest -q tests/test_conformance_step.py
+```

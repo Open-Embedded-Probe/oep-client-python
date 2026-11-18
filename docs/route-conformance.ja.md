@@ -20,6 +20,10 @@ queue残量・購読・再送履歴の保持はinstrumentationで観測する。
 
 実行例は公開Python環境またはArduinoのuv環境から、SPEC/共有lockを明示して使う。
 
+```sh
+uv run pytest -q tests/test_conformance_routes.py
+```
+
 ```python
 import os
 from oep_client.conformance import Checks, spec_identity

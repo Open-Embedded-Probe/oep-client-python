@@ -20,6 +20,10 @@ instrumentationはroute adapterの`state()`にholder、last、high、deadline、
 
 公開coreモデルは任意の`admission_reason`を受け、見出し/再送/session判定後にだけ拒否を適用する。通常のcoreには理由を渡さない。pipelineモデルの拒否も同じcoreの履歴管理を通る。公開wire opの追加やSPEC変更ではない。
 
+```sh
+uv run pytest -q tests/test_conformance_replay_pressure.py
+```
+
 ```python
 import os
 from oep_client.conformance import Checks, spec_identity

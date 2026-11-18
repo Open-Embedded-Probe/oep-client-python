@@ -28,6 +28,10 @@ adapterの能力は以下のとおり。
 
 `oep_client.conformance.subscription_sample.SampleSubscriptionAdapter`は上のサンプル契約を独立に復号する。probe実装をimportしない。`oep_client.conformance.notification_model.NotificationModel`は出来事と資源を持つin-processモデル。`.emit()`と`.drain()`は外部刺激/観測の入口であり、物理transportの応答優先や送信bufferを模擬しない。core-v1、資源だけのサンプル、target付きprofileと分けて使う。
 
+```sh
+uv run pytest -q tests/test_conformance_subscriptions.py
+```
+
 ```python
 import os
 from oep_client.conformance import Checks, spec_identity

@@ -25,3 +25,7 @@ confirm要求はOEP?とmin/max revisionで作り、SIDを含む全headerとdecod
 listの実応答byteと状態照会・再発見の順序も照合する。期限切れ後の履歴の成功と、現在有効な資源を区別する。
 任意のboot後カタログ/設定、leaseとの他の競合順、実OS TCP socket、production Hostの再接続手順、通知/同時接続は検査しない。
 full_conformance=false。
+
+```sh
+uv run pytest -q tests/test_conformance_tcp_recovery.py
+```

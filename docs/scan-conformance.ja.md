@@ -30,3 +30,7 @@
 `full_conformance`はfalse。物理wake/dmactive/scratch/pin idle、idle_clock、
 targetsel、電気的タイミング/max_op_ms、別frame上限・並行writer、production Host統合は
 未検査として報告する。標準consoleのmailboxやtarget debug操作も別の検査である。
+
+```sh
+uv run pytest -q tests/test_conformance_scan.py
+```

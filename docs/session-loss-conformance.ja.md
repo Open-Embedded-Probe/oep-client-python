@@ -19,6 +19,10 @@ openの確認はclock/boot確認/clockの順で行う。読み直し中のboot�
 
 単体では新corrの再送、状態から成功を推測、未知leaseの捏造、期限切れ無視、boot変更無視、barrier無視の6欠陥を検出する。入力/制御能力不足、読み直し中のboot変更、別sessionへforceされた後の旧open再送も検査する。fixture cleanupのendは回復hostが返した判断の後に別途行う。
 
+```sh
+uv run pytest -q tests/test_conformance_session_loss.py
+```
+
 ```python
 import os
 from oep_client.conformance import Checks, spec_identity

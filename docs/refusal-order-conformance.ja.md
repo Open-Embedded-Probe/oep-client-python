@@ -24,3 +24,7 @@ admission_reason=6は現Coreの明示モデルhookで、物理buffer容量の証
 終了した最後のSIDでの新規拒否の履歴更新も照合する。
 全拡張のpayload/資源状態の組合せ、実admission・transport・production Hostとの統合は検査しない。
 full_conformance=false。
+
+```sh
+uv run pytest -q tests/test_conformance_refusal_order.py
+```

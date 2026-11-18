@@ -15,6 +15,10 @@ reset能力はsession操作の前に確認し、`reset_scope='logical-model'`だ
 
 `RetentionModel.restart()`は異なるu32 boot_idのみ受け、同一boot・範囲外・boolは拒否する。sampleのbootを確実に変えるための制御で、実際のboot乱数源を模擬検証したものではない。core/通常profileや物理設備の再起動入口を追加しない。
 
+```sh
+uv run pytest -q tests/test_conformance_retention_lifecycle.py
+```
+
 ```python
 import os
 from oep_client.conformance import Checks, spec_identity

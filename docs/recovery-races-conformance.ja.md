@@ -42,6 +42,10 @@ peerのSID 0 inventoryで現在の状態を確認しても、unknownだった個
 
 このledgerは、decoderで取り出したmessageの記録処理であり、physical framingや操作固有payloadの検査を実装しない。検査器はbatchの応答header・createの資源ID/順序・peer clockのboot/payloadを別途検査する。ローカル世代の切替だけでTCP再接続やUSB再同期が完了するわけではない。
 
+```sh
+uv run pytest -q tests/test_conformance_recovery_races.py
+```
+
 ```python
 import os
 from oep_client.conformance import Checks, spec_identity
