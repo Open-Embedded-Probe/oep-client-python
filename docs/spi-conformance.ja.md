@@ -42,7 +42,7 @@ clockは取り込みedgeで実際のlogical MISO pinを読む。readyはarmを�
 他pin/channel_group、永続config、並行controller/writer/deferred response、production Hostは未検査。
 state 0への有効なarmはplanの有無にかかわらずunavailable・cause 6で状態を変えない。
 拒否した要求の再送はconfigure後も拒否を保ち、新しい要求だけがarmできる。
-設定済みの準備不可はcompleted failedと区別する。未設定と不正length等が重なる場合の優先順は検査しない。
+設定済みでarmの準備ができないときはcompleted failedで答え、未設定のunavailableと区別する。未設定と不正length等が重なる場合の優先順は検査しない。
 
 ```sh
 uv run pytest -q tests/test_conformance_spi.py

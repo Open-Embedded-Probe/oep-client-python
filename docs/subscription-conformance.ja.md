@@ -53,4 +53,4 @@ assert report['status'] == 'passed', report
 
 Arduinoのuv/pytest CLI plugin環境でも同じAPIを使う。SPEC/共有lockは明示pathを渡す。`.env.example`のSPEC/lock項目を使う。ADDRESS/FRAMING/TCP_PEERはこのモデルに使わない。JSONは新規pathを`open('x')`で予約し、SPEC/検査器/モデルsource hash、時刻、raw要求/応答とraw通知を保存する。公開テストから私的ベンチを参照しない。
 
-pytestでは`wait`を仮想時計に差し替えた単体検査も行う。実時計の記録と区別する。モデル単体の再起動検査はコア/資源/購読の履歴がbootを跨がないことを検証するが、公開補助レポートの実時計の検査には再起動を含めない。のコアと資源の検査も同じ通知モデルへ適用して回帰を確認する。
+pytestでは`wait`を仮想時計に差し替えた単体検査も行う。実時計の記録と区別する。モデル単体の再起動検査はコア/資源/購読の履歴がbootを跨がないことを検証するが、公開補助レポートの実時計の検査には再起動を含めない。コアと資源の検査も同じ通知モデルへ適用して回帰を確認する。

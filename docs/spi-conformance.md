@@ -42,7 +42,7 @@ omission of optional timestamp/setup, unused bits of an empty read, missing prec
 other pins/channel_group, persistent config, concurrent controllers/writers/deferred responses and the production Host are not checked.
 A valid arm in state 0 is unavailable with cause 6 regardless of the plan and does not change the state.
 A resend of a refused request stays refused even after configure; only a new request can arm.
-Inability to prepare while configured is told apart from completed failed. The priority order when unconfigured and invalid length and so on overlap is not checked.
+When configured but unable to prepare an arm, the probe answers completed failed, told apart from the unconfigured state's unavailable. The priority order when unconfigured and invalid length and so on overlap is not checked.
 
 ```sh
 uv run pytest -q tests/test_conformance_spi.py

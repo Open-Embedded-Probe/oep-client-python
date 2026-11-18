@@ -55,4 +55,4 @@ with equipment_lock(os.environ['OEP_HW_LOCK']):
 assert report['status'] == 'passed', report
 ```
 
-保存時は新規ファイルを`open('x')`で予約し、SPEC commit/dirty/hashと検査器source hash、モデルsource hash、実行日時をraw交換とともに残す。の通常CLI/USBモデルと出力先を分ける。モデルにはADDRESS/FRAMINGの設定を使わず、実機adapterを自動選択しない。
+保存時は新規ファイルを`open('x')`で予約し、SPEC commit/dirty/hashと検査器source hash、モデルsource hash、実行日時をraw交換とともに残す。通常のCLI/USBモデルと出力先を分ける。モデルにはADDRESS/FRAMINGの設定を使わず、実機adapterを自動選択しない。

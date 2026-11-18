@@ -19,7 +19,7 @@ The targets are Arm core 0 of RP2040 and RP2350 boards (Raspberry Pi Pico, Pico 
   ```
 
   If you do not know which channels they are connected to, you can find them with `oep pins` (README, "Finding pins").
-- To use a UART for the console, connect the board's TX to a free channel of the probe (3.4).
+- To use a UART for the console, connect the board's TX to a free channel of the probe (2.4).
 
 ## 2. From the Arduino IDE
 
