@@ -37,5 +37,9 @@ listはflagsなしの6byte entryを読む。名前付き機能なしでもよく
 転送の失敗ではopenが実行されたか不明な場合もあるため、呼び出す側が経路と状態を確認して回復する。
 この検査はforceで他のセッションを奪わない。対象が使用中なら実行前に調整する。
 
+```sh
+uv run pytest -q tests/test_conformance_core_smoke.py
+```
+
 全core準拠ではない。CRC/COBS/USB/TCP障害、leaseの全時間条件、fn 0の短い処理上限（core_quick_op_max_ms）、方針判定、force、owner表示を提供する場合の全規則、資源寿命、Hostの半周制限/古い応答の排出、個別interface動作は別の検査である。
 reportは常にfull_conformance=falseで、scopeとuncheckedを結果と一緒に扱う。

@@ -26,7 +26,11 @@ sample fn 1/2のown create(op 16)はkind u8、reply_size u8、[TLV]を受け、r
 
 `state()`のcacheにはcorrと実際の要求/応答bytesまたはNone markerを含め、deadline、high、last、資源一覧、next_resource_idも観測する。再送前後は状態そのものが一致する。5ms待機を独立時計で確認し、deadline誤更新を見逃さない。新corrの作成が次の番号を一度だけ返すことも確認する。単なる成功回数の自己申告で代用しない。
 
-`SampleRetentionAdapter`はの明示lease adapterに`retention_state()`を加え、保持サイズと件数を返す。機能/型/幾何条件/個体/資源opの宣言をsession操作前に確認する。これはモデルinstrumentationで、実機に新しい公開opを追加するものではない。
+`SampleRetentionAdapter`は明示lease adapterに`retention_state()`を加え、保持サイズと件数を返す。機能/型/幾何条件/個体/資源opの宣言をsession操作前に確認する。これはモデルinstrumentationで、実機に新しい公開opを追加するものではない。
+
+```sh
+uv run pytest -q tests/test_conformance_retention.py
+```
 
 ```python
 import os

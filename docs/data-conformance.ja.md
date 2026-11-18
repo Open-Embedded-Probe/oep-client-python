@@ -4,7 +4,7 @@ SPEC core §10.2/10.3の、data/event共通seq、データの形、min_bytes/max
 
 条件は明示した2 fn、既知bytesのデータ刺激と既知markerの出来事刺激、全raw通知の受信。データ位置はinterfaceが決めるので、adapterは外部刺激の開始位置を返す。probeが返したpositionを期待値へ転記してはいけない。共通検査はdata見出し、position:u64、len:u16、後続TLVと、データ内容を独立に検証する。
 
-検査する契約は、両方0で即送信、min_bytesのみ、delayのみ、どちらかの条件で送信、最初のbyteからのdelay、eventをmin_bytesに数えない、data/event共通seq、fn別seq、max_frame以内の分割、まとめ送り後の次のbatch、subscribe再送が未送信データ/seqを壊さない、session終了時に旧データを引き継がないこと。データの分割数は固定せず、位置と連結bytes、各フレームのseqと長さを検査する。
+検査する契約は、両方0で即送信、min_bytesのみ、delayのみ、どちらかの条件で送信、最初のbyteからのdelay、eventをmin_bytesに数えない、data/event共通seq、fn別seq、max_frame以内の分割、まとめ送り後の次のbatch、subscribe再送と同sessionのopen（新corrと再送）が未送信データ/seqを壊さない、session終了時に旧データを引き継がないこと。データの分割数は固定せず、位置と連結bytes、各フレームのseqと長さを検査する。
 
 ## サンプル契約
 
@@ -16,7 +16,7 @@ SPEC core §10.2/10.3の、data/event共通seq、データの形、min_bytes/max
 
 ## adapterと実行
 
-`DataChecks`は購読の検査に、data adapterの前提検証とデータ契約を加える。コアと資源の検査も同じモデルへ別に適用する。通常CLIへ自動追加せず、補助レポートは常に`full_conformance=false`。
+`DataChecks`はIF-DATA-ADAPTER（adapterの前提）の後に[購読の検査](subscription-conformance.ja.md)を実行し、続けてIF-DATA-*のデータ契約を報告する。コアと資源の検査も同じモデルへ別に適用する。通常CLIへ自動追加せず、補助レポートは常に`full_conformance=false`。
 
 adapterは[購読adapter](subscription-conformance.ja.md)のfunctions / stimulate / receive / decode_eventに、次を提供する。
 
@@ -28,7 +28,11 @@ SPECではqueueに入らない通知のdropが認められる。この検査は�
 
 実時計ではOSのmonotonic時計を使う。仮想時計では`wait`と`clock_ms`を明示的に同じ外部テスト時計へ接続する。最初のbyteからのdelay検査は、受信時にfirstのdeadlineを過ぎ、lastのdeadlineには達していないことも記録・検証する。遅い観測で両方を過ぎてしまった実行をPASSにしない。OR条件のmin_bytes側もdelay以前の観測を確認する。無通知のPASSは指定した観測窓に対する結果。
 
-`virtual_data_model.DataModel`は独立したprobe側モデル。`conformance_data_sample.SampleDataAdapter`は検査側のbyte cursorを持ち、外部入力した位置から期待値を作る。raw通知は検証前に保存する。壊れたframe、欠落/重複bytes、未知fn、IO失敗もskipへ変えない。IO失敗後は後続をBLOCKEDにする。
+`oep_client.conformance.data_model.DataModel`は独立したprobe側モデル。`oep_client.conformance.data_sample.SampleDataAdapter`は検査側のbyte cursorを持ち、外部入力した位置から期待値を作る。raw通知は検証前に保存する。壊れたframe、欠落/重複bytes、未知fn、IO失敗もskipへ変えない。IO失敗後は後続をBLOCKEDにする。
+
+```sh
+uv run pytest -q tests/test_conformance_data.py
+```
 
 ```python
 import os
@@ -51,4 +55,4 @@ assert report['status'] == 'passed', report
 
 単体検査はu64 position/u16 lenのliteral bytes、壊れた通知、閾値/時刻/seq/再送/旧bufferのmutant、再起動を含む。seq一周では65,538個のdata/eventを交互に生成・復号し、65535→0を検証する。内部counterをseedしていないが、これは仮想時計・in-process配信の検査であり、実時計の検査や実機wireのseq一周の証拠とは区別する。
 
-応答優先、通知経路/切断、送信queue上限、dropのseq消費、物理非同期動作、未指定fn、実時計実行での再起動とseq一周は残件。
+応答優先、通知経路/切断、送信queue上限、dropのseq消費、物理非同期動作、未指定fn、実時計実行での再起動とseq一周は未検査。

@@ -19,7 +19,7 @@ adapter未提供をPASSにしない。この入口は任意の補助APIで、通
 
 ## 最小サンプル拡張
 
-`virtual_resource_model.ResourceModel`はin-processで動くサンプル。実機やUSB stackではない。`core-v1`のコアに明示的な拡張hookを渡す。サンプル名は`io.github.open-embedded-probe.resource`、revision 1、fn 1と2、instance 0と1。OEP標準interfaceではなく、規範registryにも登録しない。
+`oep_client.conformance.resource_model.ResourceModel`はin-processで動くサンプル。実機やUSB stackではない。`core-v1`のコアに明示的な拡張hookを渡す。サンプル名は`io.github.open-embedded-probe.resource`、revision 1、fn 1と2、instance 0と1。OEP標準interfaceではなく、規範registryにも登録しない。
 
 | op | 要求固定部 | 成功応答 | session |
 |---|---|---|---|
@@ -30,7 +30,7 @@ adapter未提供をPASSにしない。この入口は任意の補助APIで、通
 
 整数はlittle endian。要求の後続TLVは現コアの規則で検証する。snapshotは要求fnの全生存資源を返す。全fn/種類で同時8資源。9個目または番号枯渇でunavailable cause 2。snapshot以外のkindが1/2以外ならmalformed。作成以外のIDが未存在ならno_resource、他のfn/種類ならunavailable cause 6。購読は宣言しない。
 
-`conformance_resource_sample.SampleResourceAdapter`は上表を検査側で独立に符号化する。probe実装をimportしない。利用例は`tests/test_conformance_resources.py`。明示したSPECのregistryを読み込んだChecksと組み合わせ、functions=(1, 2)、kinds=(1, 2)、capacity=8を指定する。モデル起動時のbootはOS乱数、テストでのみ固定値を渡す。
+`oep_client.conformance.resource_sample.SampleResourceAdapter`は上表を検査側で独立に符号化する。probe実装をimportしない。利用例は`tests/test_conformance_resources.py`。明示したSPECのregistryを読み込んだChecksと組み合わせ、functions=(1, 2)、kinds=(1, 2)、capacity=8を指定する。モデル起動時のbootはOS乱数、テストでのみ固定値を渡す。
 
 モデル単体では再起動とID上限の境界も検査する。内部counterを65535に進める刺激はモデルの境界検査であり、実機で65535個作った証拠にはならない。
 

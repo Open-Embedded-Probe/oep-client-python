@@ -35,7 +35,7 @@ locked/lock_stateのownerは、設定した場合だけ存在するTLV。owner�
 
 検査はCoreFixedFieldChecksを、採用する結果decoderと、独立な論理Probe Checksを返すfactoryに対して実行する。
 `CoreFixedFieldChecks(decoder, probe_factory, spec="/explicit/oep-spec").run()`。
-公開結果reader部品`conformance_host_core_sample.decode`とResourceModelのCoreを参照例として使える。
+公開結果reader部品`oep_client.conformance.host_core_sample.decode`とResourceModelのCoreを参照例として使える。
 factoryは検査用の独立状態を毎回返す。実機での無断session操作を行うためのAPIではない。
 REVIEW、REQUEST-FIELDS、RESPONSE-FIELDS、ZERO-VALUES、OWNER-TLVを検査する。
 各要求/応答の固定fieldを丸ごと抜いた刺激と、list要素の各field欠落を確認する。

@@ -3,7 +3,7 @@
 `HostCoreShapeChecks(decoder, spec=...)`は第一段階のHost部品検査。
 明示したSPECのcore revision 1について、実際の8操作の成功応答、11拒否理由、
 33の既知TLV文脈を独立したバイト列と照合する。
-`conformance_host_core_sample.decode`は接続例であり、production Hostへ自動で組み込まない。
+`oep_client.conformance.host_core_sample.decode`は接続例であり、production Hostへ自動で組み込まない。
 私的ベンチ、設備設定、兄弟checkoutの探索は不要。
 
 decoderへ渡すのは応答frameと要求したop、describeなら対象のfn。

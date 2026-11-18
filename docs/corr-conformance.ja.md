@@ -4,6 +4,7 @@ core §4.1/§5.1のcorrは0を使わない循環番号である。hostはsession
 前進距離 `d = (new − last) mod 65536` が1〜32767なら新しい要求、それ以外（同じ番号とちょうど半周を含む）は記録に無ければresult_lost。
 半周以上過去の記録は捨て、照合に使わない。SID 0の番号はsessionの履歴へ影響しない。異なるIDの新規sessionのopenが成功したときだけ再送状態を置き換える。
 
+`CorrChecks`は先に[再送cacheの保持上限の検査](retention-conformance.ja.md)（CORE-RETENTION-*）を同じadapterで実行し、続けて次のCORE-CORR-*を報告する。
 通常coreの検査に加える補助検査で、一般probeに16 byteの保持サイズやsample資源opを要求するものではない。
 
 - ASCENDING: 32767/32768/32769/65534へ半周未満の歩幅で進め、各新要求が一度だけ資源を作り、同一再送が保存結果を返す。
@@ -14,6 +15,10 @@ core §4.1/§5.1のcorrは0を使わない循環番号である。hostはsession
 - WRAP-END: 一周後のendで資源を解放し、終了後もendと直前の要求を保存結果で再送できる。別sessionのopen 1で履歴を置換し、次の要求を2から作る。
 
 `SampleRetentionAdapter`を明示して使い、raw交換、cache/high/last/deadline、資源とallocatorを観測する。再送の前に独立時計で5ms待ち、誤ったlease更新も検出する。
+
+```sh
+uv run pytest -q tests/test_conformance_corr.py
+```
 
 ```python
 import os

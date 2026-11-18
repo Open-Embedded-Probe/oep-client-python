@@ -26,7 +26,7 @@ adapterの能力は以下のとおり。
 - `receive(timeout_ms)`：指定した時間の観測を行い、その窓に受信した全通知フレームをbytesのlist/tupleで返す。未知/破損/重複通知をhost実装で捨ててはいけない。
 - `decode_event(frame)`：interface固有kind/固定部/後続TLVを検証してmarkerを返す。共通ヘッダのrole/fn/seq/長さと比較の合否は共通検査が担当する。このadapterは出来事のみを刺激するためdataの受信も期待値違反となる。
 
-`conformance_subscription_sample.SampleSubscriptionAdapter`は上のサンプル契約を独立に復号する。probe実装をimportしない。`virtual_notification_model.NotificationModel`は出来事と資源を持つin-processモデル。`.emit()`と`.drain()`は外部刺激/観測の入口であり、物理transportの応答優先や送信bufferを模擬しない。core-v1、資源だけのサンプル、target付きprofileと分けて使う。
+`oep_client.conformance.subscription_sample.SampleSubscriptionAdapter`は上のサンプル契約を独立に復号する。probe実装をimportしない。`oep_client.conformance.notification_model.NotificationModel`は出来事と資源を持つin-processモデル。`.emit()`と`.drain()`は外部刺激/観測の入口であり、物理transportの応答優先や送信bufferを模擬しない。core-v1、資源だけのサンプル、target付きprofileと分けて使う。
 
 ```python
 import os
