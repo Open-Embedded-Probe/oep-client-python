@@ -1,6 +1,6 @@
-# capture/configのdescribe検査
+# captureのdescribe検査
 
-`CaptureMetadataChecks(checks, selection).run()`はlogic/analog/capture-group/configのfn/nameを明示して実行する。
+`CaptureMetadataChecks(checks, selection).run()`はlogic/analog/capture-groupのfn/nameを明示して実行する。
 revision 1の第三段階で、登録op検査を含む。全要求はSID 0読出し。
 
 analogの取得操作は[analog操作ガイド](analog-conformance.ja.md)の別checkerで確認する。
@@ -14,12 +14,8 @@ describeの成功だけで取得操作やデータ寿命の適合を証明しな
   宣言するmodeは1つ以上で、1/2/3のどれを選ぶかは問わない。mode別に必須になるrelease/subscribeは[登録op検査](registered-ops-conformance.ja.md)が確かめる。
 - analog: frontendの9 byte固定形（frontend、range_min_mv、range_max_mv）を1つ以上、番号ごとに1行。
 - capture-group: tracksの要素数n≥1とu16列の形。
-- config: items（0x41）の存在、1つ以上、重複なし、項目番号0を含まない（probe.config §4）。
 
-storage max_bytesとsave/erase提供時の存在は既存SelectedMetadataChecksで別に確認する。
-itemsの未知tagを独自拡張でないと推測して禁止しない。
-
-`CaptureMetadataModel`は17 interfaceの宣言だけを持つ独立fixture。
+`CaptureMetadataModel`は標準インターフェースの宣言だけを持つ独立fixture。
 全fn共通宣言と登録opは別に確認する。
 fixtureはfn 14にmode 1/3とsubscribe/unsubscribe、fn 15にmode 1/2とreleaseを宣言し、probeのchannelsを3にする。
 広告opを実装せず、完全probeとして使わない。ここで検査した固定形を、容量/rate/frontendの実動作や

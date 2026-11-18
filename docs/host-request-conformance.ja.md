@@ -45,7 +45,7 @@ captureの基本設定はすべて実装する規則があるため、SPECが明
 ownerは表示用の任意情報なので非critical。すべてにbitを付ける方針ではこの仕様を満たさない。
 UART formatはすべてのUART fnが実装するTLVだが、指定した通信形を無視して8N1へ落ちないよう、Host方針としてcriticalにする。
 
-core/debug/capture/plan/fixture/config本文SHAとregistry SHAをレビュー時の値へ固定する。
+core/debug/capture/plan/fixture本文SHAとregistry SHAをレビュー時の値へ固定する。
 番号・文脈名・revisionの整合も確認し、変われば再レビューまで停止する。
 公開検査はprivateベンチや隣接SPECを自動探索しない。SPECと出力先を明示する。
 
@@ -85,11 +85,11 @@ planの割り当ては、無視した取得を避けるためcriticalを付け�
 ## 公開APIの送信箇所を確認する
 
 `tests/test_conformance_host_critical_calls.py`は実HostとUART/rvswd/swio/swdの公開APIを使う（gpio setは要求TLVを持たない）。
-この公開API検査は今の形（attachは固定部分method・swdio・swclk・max_speedの後にTLV）で送る。
+この公開API検査は（attachは固定部分method・swdio・swclk・max_speedの後にTLV）で送る。
 UART format、wire attachの固定部分とreset、rvswd idle_clock、swd targetselを、
 独立したliteral payloadと比較する。6種類の拒否tagをscripted peerからunsupportedで返し、
 Hostが受信したcritical tagを保持して例外にし、項目を外して再送しないことを確認する。
-各tagのcritical bitを落とす6故障も検出し、合計12件PASS。
+各tagのcritical bitを落とす故障も検出する。
 
 公開APIのop番号はregistryから引く。この検査はheaderのrole/corr/fn/sessionとpayloadを照合し、op番号は照合しない。
-scan/capture/config/planを含む公開API全体、物理副作用、未知項目を無視する実Probeとの連携は引き続き未確認。
+scan/capture/planを含む公開API全体、物理副作用、未知項目を無視する実Probeとの連携は検査しない。

@@ -150,20 +150,20 @@ consoleのlink-lost/closed、成功後の履歴消去と他connectionの保持�
 実行中の停止、送信時の再開始、writer待ち中の期限切れ、古いtokenによる所有権復活防止を
 明示logical clockで確認する。新fixtureの共通宣言と既存cut検査は第二/第三段階へ分ける。
 
-[登録標準opの検査](registered-ops-conformance.ja.md)は明示した17 interfaceの必須opと任意opの組を
+[登録標準opの検査](registered-ops-conformance.ja.md)は明示した標準インターフェースの必須opと任意opの組を
 第三段階で確認する。実動作を呼ばず、宣言だけのfixtureを完全probeと扱わない。
 必須describe metadataと固有payload/副作用は追加検査が必要。
 
-[選択したdescribe metadata](selected-metadata-conformance.ja.md)はrestart/config/RISC-V/ARM-ADIの4 fnを選ぶ。
-必須tag、固定幅、条件付きstorage、block上限と全経路のframe収容、ARM-ADIのfeatures禁止を検査する。
+[選択したdescribe metadata](selected-metadata-conformance.ja.md)はrestart/RISC-V/ARM-ADIのfnを選ぶ。
+必須tag、固定幅、blockのmax_length、ARM-ADIのfeaturesにbitが無いことを検査する。
 他のmetadataと広告opの実動作は別途検査が必要。
 
 [fixture系describe metadata](fixture-metadata-conformance.ja.md)はGPIO/UART/I2C/SPIを明示して検査する。
 GPIO入力とdrive、UART formats、I2C/SPIの固定形とframe上限、任意stretch/cs_setupの条件を確認する。
 広告opの動作とpin/plan lifetimeは別途検査が必要。
 
-[capture/configのdescribe](capture-metadata-conformance.ja.md)は4 fnを明示し、繰り返しmetadataの形、
-予約features、multirate条件、config items/slots/wifi条件を検査する。opの実動作は別途必要。
+[captureのdescribe](capture-metadata-conformance.ja.md)はlogic/analog/capture-groupのfnを明示し、繰り返しmetadataの形、
+予約features、mode・rate・triggerの形を検査する。opの実動作は別途必要。
 
 [GPIOとplanの動作](gpio-conformance.ja.md)は明示fixtureで、事前拒否、fn別原子置換、駆動順序、
 drive/read、再送とidle復元を第三段階で確認する。物理pin/他fixture/永続configは未検査。

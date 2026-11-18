@@ -44,4 +44,4 @@ REVIEW、REQUEST-FIELDS、RESPONSE-FIELDS、ZERO-VALUES、OWNER-TLVを検査す�
 `uv run pytest -q tests/test_conformance_core_fixed_fields.py`は17件。
 正常1、応答欠落受理の故障6、短い要求受理の故障4、ゼロ値/owner省略の混同5、旧confirm flags台帳の検出1。
 コアpayloadのレビューであり、全message header、拡張の要求/応答/event/data/TLV、
-config項目の固定形・省略条件は別途レビューが必要。full_conformance=false。
+設定（core §13）の値の固定形・省略条件は別途レビューが必要。full_conformance=false。
