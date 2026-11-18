@@ -745,6 +745,7 @@ class PinFinder:
             g = self.gpio
             chans = [c for c, k in self.kinds.items() if c not in never and k.kind in SAFE]
             again = [c for c, k in self.kinds.items() if c not in never and k.kind not in SAFE]
+            freed: list[int] = []
             if again:
                 self._plan(again, cycle=False)
                 pu, pd = self._series(again, g.INPUT_PULLUP), self._series(again, g.INPUT_PULLDOWN)
@@ -812,6 +813,41 @@ class PinFinder:
                 if keep and keep != cs:
                     self.say(f"map: {pad} followed {ranges(cs)}; with the others held low only {ranges(keep)} moves it")
                     wiring[pad] = keep
+            # a channel something else holds high or low (a board's pull-down: an L103 EVT's Type-C CC1 / CC2 on PB6 /
+            # PB7, 2026-11-18) is never driven by the probe; each pad not found yet drives it from the target instead,
+            # the probe only reading
+            still = [c for c in again if c not in freed and self.kinds[c].kind in (DRIVEN_LOW, DRIVEN_HIGH)]
+            if still and self.left() >= 2:
+                self._plan(still, cycle=False)
+                g.set([(c, g.INPUT) for c in still])
+                found_pads = {p for pad in wiring for p in pad.split("/")}
+                pads = [f"P{p}{b}" for p in fam.gpio_ports for b in range(fam.gpio_pads)]
+                pads = [pad for pad in pads if pad not in fam.debug_pads and pad not in moving and pad not in found_pads
+                        and pad != fam.nrst_pad]
+                for pad in pads:
+                    if self.left() < 2:
+                        self.note("time is up: the driven channels were not all mapped")
+                        break
+                    port, bit = pad[1], int(pad[2:])
+                    base, off = targets.gpio_base(port), targets.GPIO_CFG[bit // 8]
+                    floating = dm.read32(base + off)
+                    sh = 4 * (bit % 8)
+                    dm.write32(base + off, (floating & ~(0xF << sh)) | (targets.GPIO_PUSH_PULL << sh))
+                    follow = set(still)
+                    for _ in range(MAP_TRIES):                 # every try: a line that only happened to change is out
+                        dm.write32(base + targets.GPIO_BSHR, 1 << bit)
+                        self.sleep(MAP_SETTLE_S)
+                        hi = dict(zip(still, g.read(still)))
+                        dm.write32(base + targets.GPIO_BSHR, 1 << (bit + 16))
+                        self.sleep(MAP_SETTLE_S)
+                        lo = dict(zip(still, g.read(still)))
+                        follow &= {c for c in still if hi[c] and not lo[c]}
+                    dm.write32(base + off, floating)
+                    follow = sorted(follow)
+                    if follow:
+                        wiring.setdefault(pad, []).extend(follow)
+                        self.say(f"map: {pad} driven from the target moves {ranges(follow)} (held "
+                                 f"{'low' if self.kinds[follow[0]].kind == DRIVEN_LOW else 'high'} by something else)")
         except h.OepError as e:
             self.note(f"map: {e}")
         finally:
@@ -831,6 +867,21 @@ class PinFinder:
                 wiring["/".join(pads)] = wiring[hit[0]]
                 for p in hit:
                     del wiring[p]
+        # a channel that is some pad's only one is that pad's: an unwired pad keeps following whichever neighbour moves
+        # (L103 EVT, 2026-11-18: PB0 / PB1 followed 49, 50 and 52, which PA3 / PA2 / PA4 each had alone). It leaves the
+        # other pads' lists; a pad left with none was following its neighbours only (not wired)
+        owned = {cs[0] for cs in wiring.values() if len(cs) == 1}
+        for pad, cs in list(wiring.items()):
+            if len(cs) < 2:
+                continue
+            rest = [c for c in cs if c not in owned]
+            if rest == cs:
+                continue
+            if rest:
+                wiring[pad] = rest
+            else:
+                del wiring[pad]
+                self.say(f"map: {pad} followed only channels other pads have alone ({ranges(cs)}): not wired")
         order = sorted(wiring, key=lambda pad: (pad[1], int(pad[2:].split("/")[0])))
         r.wiring = {pad: wiring[pad] for pad in order}
         shared = sorted({c for pad in order for c in wiring[pad]

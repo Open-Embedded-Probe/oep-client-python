@@ -345,6 +345,80 @@ def test_map_holds_the_others_low_when_a_pad_seems_to_follow_two_channels():
     assert any("only 9 moves it" in line for line in lines)
 
 
+class FloatingPads(Pads):
+    """Pads with one not wired: it follows whichever of `follows` the probe drives high, the others held low or not."""
+
+    def __init__(self, *a, floating: str, follows: tuple[int, ...], **k):
+        super().__init__(*a, **k)
+        self.floating, self.follows = floating, follows
+        self.wired = {**self.wired, floating: follows[0]}
+
+    def level(self, pad: str, ch: int) -> int:
+        if pad == self.floating:
+            return int(any(self.ep.gpio_modes.get(c) == Gpio.OUTPUT_HIGH for c in self.follows))
+        return super().level(pad, ch)
+
+
+def test_map_drops_a_pad_that_follows_only_channels_other_pads_have():
+    """An unwired pad keeps following whichever neighbour moves, the others held low or not (L103 EVT: PB0 / PB1 with
+    49, 50 and 52): the channels other pads have alone stay theirs, the pad is not wired, and no label is given twice."""
+    ep, hst, t = bench(powered_by=None)
+    tg = ep.targets[(WIRE, (19, 0xFFFF))]
+    tg.mem = FloatingPads(ep, {"PC3": 6, "PD4": 9}, floating="PC7", follows=(6, 9))
+    tg.mem.update({targets.V00X_OPTION: OPTION_ON})
+    lines = []
+    r = finder(hst, t, lines, name="v003").run()
+    assert r.wiring == {"PC3": [6], "PD4": [9]}
+    assert any("PC7 followed only channels other pads have alone" in line for line in lines)
+    texts = [text for _, text in r.labels]
+    assert len(texts) == len(set(texts))
+
+
+class DrivenPads(Pads):
+    """Pads that keep what the target drives: a pad set as a push-pull output follows BSHR."""
+
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        self.out: dict[str, int] = {}
+
+    def __setitem__(self, address, value):
+        for port in "ACD":
+            base = targets.gpio_base(port)
+            if address == base + targets.GPIO_BSHR:
+                for b in range(16):
+                    if value >> b & 1:
+                        self.out[f"P{port}{b}"] = 1
+                    if value >> (b + 16) & 1:
+                        self.out[f"P{port}{b}"] = 0
+                return
+        super().__setitem__(address, value)
+
+    def driving(self, pad: str) -> int:
+        port, bit = pad[1], int(pad[2:])
+        cfg = self.get(targets.gpio_base(port) + targets.GPIO_CFG[bit // 8], 0) >> (4 * (bit % 8)) & 0xF
+        return self.out.get(pad, 0) if cfg == targets.GPIO_PUSH_PULL else 0
+
+
+def test_map_reads_a_channel_held_low_while_the_target_drives_a_pad():
+    """A channel something else holds low (a board's pull-down: an L103 EVT's CC1 on PB6) is never driven by the probe:
+    the pads not found yet are driven from the target one at a time, the probe reading it."""
+    ep, hst, t = bench(powered_by=None)
+    tg = ep.targets[(WIRE, (19, 0xFFFF))]
+    tg.mem = DrivenPads(ep, {"PC3": 6})
+    tg.mem.update({targets.V00X_OPTION: OPTION_ON})
+    world = ep.gpio_world
+    held = world.__call__
+
+    def lines_outside(ch, mode):
+        return tg.mem.driving("PC6") if ch == 3 else held(ch, mode)
+    ep.gpio_world = lines_outside
+    lines = []
+    r = finder(hst, t, lines).run()
+    assert r.wiring == {"PC3": [6], "PC6": [3]}
+    assert any("PC6 driven from the target moves 3" in line for line in lines)
+    assert not {c for c, m in ep.gpio_log if c == 3 and m in (Gpio.OUTPUT_LOW, Gpio.OUTPUT_HIGH)}   # only read
+
+
 def test_a_driven_low_channel_is_tried_as_swdio_after_the_floating_pairs_beside_it(monkeypatch):
     from oep_client import riscv
     ep, hst, t = bench(powered_by=None)

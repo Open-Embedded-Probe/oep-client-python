@@ -93,6 +93,8 @@ def x035_nrst(dm) -> NrstState:
 GPIO_BASE, GPIO_STEP = 0x40010800, 0x400
 GPIO_CFG = (0x00, 0x04, 0x1C)
 GPIO_INDR = 0x08
+GPIO_BSHR = 0x10                       # write 1 << b to set pad b, 1 << (b + 16) to clear it
+GPIO_PUSH_PULL = 0x2                   # a pad's configuration: push-pull output, 2 MHz
 GPIO_FLOATING = 0x4
 RCC_APB2PCENR = 0x40021018
 

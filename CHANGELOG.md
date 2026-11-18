@@ -1,6 +1,14 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) `oep pins` maps more of a board: a channel something else holds high or low (a board's pull-down: an L103 EVT's
+  Type-C CC1 / CC2 on PB6 / PB7) is found by driving each pad not found yet from the target, the probe only reading it;
+  a channel some pad has alone stays that pad's, so an unwired pad that follows its neighbours (the L103's PB0 / PB1) is
+  dropped instead of taking their labels (the same label twice was refused). The CH32L103 is identified by its id.
+- (JA) `oep pins` がボードのより多くのピンを対応づける。ほかの何かが high か low に保つチャネル（ボードのプルダウン: L103 の評価ボードの
+  Type-C の CC1 / CC2 が PB6 / PB7）は、まだ見つかっていない端子を target の側から 1 本ずつ動かして、プローブは読むだけで見つける。ある端子にだけ
+  付いていくチャネルはその端子のものとし、隣につられる配線の無い端子（L103 の PB0 / PB1）は、そのラベルを奪わずに外す（同じラベルを 2 回付けて
+  断られていた）。CH32L103 を ID で見分ける。
 - (EN) Conformance against the current spec: HostCoreShapeChecks / CoreFixedFieldChecks know describe's op_name /
   op_field (they stopped at "selected declaration tag spaces differ"); CORE-DISCOVERY-CHANNEL-NAMES checks core §7.5's
   channel_name (the describe label TLV is gone); the rvswd attach checks take the rest from the answer's idle_clock when
