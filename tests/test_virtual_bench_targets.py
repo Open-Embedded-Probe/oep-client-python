@@ -290,6 +290,28 @@ def spi():
     return ep, t, clock
 
 
+def test_spi_sck_filter(spi):
+    """fixture §4 sck_filter (features bit1, describe sck_filter_ns): configure's critical TLV, on with 1, off with 0 or
+    without it; 2 or more malformed. A probe that does not declare it refuses the TLV unsupported."""
+    ep, t, _ = spi
+    assert t.sck_filter and t.sck_filter_ns == 25
+    t.configure(0, sck_filter=True)
+    assert ep.spi[t.fn].sck_filter
+    t.configure(0)
+    assert not ep.spi[t.fn].sck_filter
+    t.configure(0, sck_filter=False)
+    assert not ep.spi[t.fn].sck_filter
+    with pytest.raises(host.Rejected) as e:
+        t._call(t.CONFIGURE, bytes([0, 0]) + m.tlv(t.TAG_SCK_FILTER, b"\x02", critical=True))
+    assert e.value.result.detail == m.MALFORMED
+    _, hst, _ = bench(virtual_bench.esp32_v003())
+    other = fixture.SpiTarget(hst)
+    core.plan_apply(hst, other.assignments(18, 19, 5, 4))
+    assert not other.sck_filter and other.sck_filter_ns == 0
+    with pytest.raises(host.Unsupported):
+        other.configure(0, sck_filter=True)
+
+
 def test_spi_channel_groups_match_exactly():
     ep, hst, _ = bench(virtual_bench.esp32_v003())
     t = fixture.SpiTarget(hst)
@@ -346,7 +368,9 @@ def test_spi_plan_holds_each_role_once():
             core.plan_apply(hst, bad)
         assert detail(e) == m.UNSUPPORTED                           # the role_assignment's tag (fixture §4)
     assert not any(a[0] == t.fn for a in ep.plan)
-    assert (t.max_length, t.max_clock_hz, t.features, t.queue_depth) == (64, 3_000_000, t.FEATURE_LSB_FIRST, 8)
+    assert (t.max_length, t.max_clock_hz, t.features, t.queue_depth) == (64, 3_000_000,
+                                                                       t.FEATURE_LSB_FIRST | t.FEATURE_SCK_FILTER, 8)
+    assert t.sck_filter and t.sck_filter_ns == 25
 
 
 def test_spi_armed_consumed_unarmed_and_overflow(spi):

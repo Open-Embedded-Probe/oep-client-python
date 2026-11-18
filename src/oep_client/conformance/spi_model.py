@@ -19,7 +19,7 @@ class Spi(Gpio):
         return bytes(page)
     def describe(self,fn):
         if fn==1:return super().describe(1)
-        return (tlv(7,b'\x10\x0f'),*(tlv(1,bytes((role,0,0,15))) for role in range(1,5)),tlv(2,struct.pack('<I',1000000)),tlv(3,struct.pack('<H',8)),tlv(5,struct.pack('<I',int(self.lsb_available))),tlv(64,b'\3'),tlv(65,bytes((self.modes,))),tlv(67,b'\0'*4))
+        return (tlv(7,b'\x10\x0f'),*(tlv(1,bytes((role,0,0,15))) for role in range(1,5)),tlv(2,struct.pack('<I',1000000)),tlv(3,struct.pack('<H',8)),tlv(5,struct.pack('<I',int(self.lsb_available))),tlv(64,b'\3'),tlv(65,bytes((self.modes,))),tlv(66,b'\0'*4))
     def request_tags(self,fn,op,data):
         if fn==1:return super().request_tags(fn,op,data)
         while data:

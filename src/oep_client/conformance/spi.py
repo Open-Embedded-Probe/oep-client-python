@@ -6,7 +6,7 @@ from .registered_ops import RegisteredOpsChecks, refusal_carries
 
 
 class SpiChecks:
-    cases=('STATE0','ARM-STATE0','PLAN-SHAPE','PLAN-TAGS','RUNNING-PLAN','CONFIGURE','CONFIGURE-FAIL','FORMAT','LSB-FEATURE','TLV','MODES','PARTIAL','EMPTY-TX','UNARMED','ZERO-BITS','TRUNCATE','OVERFLOW','DOUBLE-ERROR','FIFO','TIMESTAMP','ARM-LIMIT','ARM-BUSY','ARM-READY','RECONFIGURE','MISO-GATE','REPLAY-RX','REPLAY-ARM','REPLAY-CONFIG','RELEASE','END','EXPIRY','FORCE','ACTIVE-RELEASE','ACTIVE-END','ACTIVE-EXPIRY','ACTIVE-FORCE','SESSION','COUNTS')
+    cases=('STATE0','ARM-STATE0','PLAN-SHAPE','PLAN-TAGS','RUNNING-PLAN','CONFIGURE','CONFIGURE-FAIL','FORMAT','LSB-FEATURE','SCK-FILTER','TLV','MODES','PARTIAL','EMPTY-TX','UNARMED','ZERO-BITS','TRUNCATE','OVERFLOW','DOUBLE-ERROR','FIFO','TIMESTAMP','ARM-LIMIT','ARM-BUSY','ARM-READY','RECONFIGURE','MISO-GATE','REPLAY-RX','REPLAY-ARM','REPLAY-CONFIG','RELEASE','END','EXPIRY','FORCE','ACTIVE-RELEASE','ACTIVE-END','ACTIVE-EXPIRY','ACTIVE-FORCE','SESSION','COUNTS')
     def __init__(self,checks,adapter):self.c,self.a=checks,adapter
     @staticmethod
     def tlv(tag,value):return bytes((tag,))+struct.pack('<H',len(value))+value
@@ -85,6 +85,12 @@ class SpiChecks:
             elif kind=='LSB-FEATURE':
                 if self.lsb:self.configure(sid,3,1);require(self.status()[1:3]==(3,1),'LSB declared but refused')
                 else:self.refused(self.req(2,'configure',sid,b'\0\1'),'unsupported',b'\0')
+            elif kind=='SCK-FILTER':                                  # fixture §4 sck_filter (features bit1), critical
+                tag=self.filter_tag|128
+                if not self.filter_available:self.refused(self.req(2,'configure',sid,b'\0\0'+self.tlv(tag,b'\1')),'unsupported',bytes((tag,)));return
+                require(self.filter_ns>=1,'sck_filter declared without sck_filter_ns')
+                self.configure(sid,extra=self.tlv(tag,b'\1'));self.configure(sid,extra=self.tlv(tag,b'\0'));self.configure(sid)
+                self.refused(self.req(2,'configure',sid,b'\0\0'+self.tlv(tag,b'\2')),'malformed');self.refused(self.req(2,'configure',sid,b'\0\0'+self.tlv(tag,b'\1\0')),'malformed')
             elif kind=='TLV':
                 self.configure(sid,extra=self.tlv(126,b'x'));self.refused(self.req(2,'configure',sid,b'\0\0'+self.tlv(254,b'x')),'unsupported',b'\xfe');self.refused(self.req(2,'configure',sid,b'\0\0'+self.tlv(126,b'x')+self.tlv(254,b'x')),'unsupported',b'\xfe');self.refused(self.arm_request(sid,extra=b'\x7e\3\0x'),'malformed');self.ok(self.arm_request(sid,extra=self.tlv(126,b'x')))
             elif kind in ('MODES','PARTIAL'):
@@ -152,7 +158,7 @@ class SpiChecks:
     def run(self):
         start=len(self.c.results)
         def context():
-            require(self.a.reset_scope=='logical-model' and self.a.selection=={1:'oep.probe.plan',2:'oep.fixture.spi-target'},'explicit SPI fixture');base=RegisteredOpsChecks(self.c,self.a.selection);require(base.run()['status']=='passed','standard SPI ops');self.codes={fn:{row['name']:row['code'] for row in base.specs[name]['op']} for fn,name in self.a.selection.items()};self.assignment=base.specs['oep.probe.plan']['tlv']['plan_apply']['role_assignment'];spec=base.specs['oep.fixture.spi-target'];self.ns=spec['tlv']['read_rx_answer']['ns'];require(spec['enum']['role']=={'sck':1,'mosi':2,'miso':3,'cs':4} and spec['enum']['state']=={'unconfigured':0,'running':1} and spec['enum']['features']['lsb_first']==1,'selected SPI roles/states/features differ');values=dict(reversed(self.c.describe(2)));common=self.c.reg['describe_common'];self.maximum=struct.unpack('<H',values[common['max_length']])[0];self.depth=values[spec['tlv']['describe']['queue_depth']][0];self.lsb=bool(struct.unpack('<I',values.get(common['features'],b'\0'*4))[0]&1);setup=values.get(spec['tlv']['describe']['cs_setup_ns'],b'\0'*4);require(len(setup)==4 and struct.unpack('<I',setup)[0]==0 and self.maximum==8 and self.depth==3 and self.a.state()['clock_scope']=='explicit-logical-ms','logical fixture geometry/CS setup/clock differs')
+            require(self.a.reset_scope=='logical-model' and self.a.selection=={1:'oep.probe.plan',2:'oep.fixture.spi-target'},'explicit SPI fixture');base=RegisteredOpsChecks(self.c,self.a.selection);require(base.run()['status']=='passed','standard SPI ops');self.codes={fn:{row['name']:row['code'] for row in base.specs[name]['op']} for fn,name in self.a.selection.items()};self.assignment=base.specs['oep.probe.plan']['tlv']['plan_apply']['role_assignment'];spec=base.specs['oep.fixture.spi-target'];self.ns=spec['tlv']['read_rx_answer']['ns'];require(spec['enum']['role']=={'sck':1,'mosi':2,'miso':3,'cs':4} and spec['enum']['state']=={'unconfigured':0,'running':1} and spec['enum']['features']['lsb_first']==1,'selected SPI roles/states/features differ');values=dict(reversed(self.c.describe(2)));common=self.c.reg['describe_common'];self.maximum=struct.unpack('<H',values[common['max_length']])[0];self.depth=values[spec['tlv']['describe']['queue_depth']][0];self.lsb=bool(struct.unpack('<I',values.get(common['features'],b'\0'*4))[0]&1);self.filter_tag=spec['tlv']['configure']['sck_filter'];self.filter_available=bool(struct.unpack('<I',values.get(common['features'],b'\0'*4))[0]&spec['enum']['features']['sck_filter']);self.filter_ns=struct.unpack('<I',values.get(spec['tlv']['describe']['sck_filter_ns'],b'\0'*4))[0];setup=values.get(spec['tlv']['describe']['cs_setup_ns'],b'\0'*4);require(len(setup)==4 and struct.unpack('<I',setup)[0]==0 and self.maximum==8 and self.depth==3 and self.a.state()['clock_scope']=='explicit-logical-ms','logical fixture geometry/CS setup/clock differs')
         self.c.check('OEP-SPI-CONTEXT','fixture §4; plan §2',context)
         if self.c.results[-1]['status']!='passed':self.c.abort=True
         for kind in self.cases:

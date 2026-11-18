@@ -1,6 +1,13 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) spi-target's sck_filter (oep-spec baa2605, fixture §4): `SpiTarget.configure(mode, bit_order, sck_filter=True)`
+  sends the critical TLV (SCK pulses shorter than sck_filter_ns not counted), `sck_filter` / `sck_filter_ns` read the
+  declaration; virtual bench P4 declares it (25 ns), the endpoint model keeps it; conformance OEP-SPI-SCK-FILTER.
+  Registry synced, reviewed pins moved.
+- (JA) spi-target の sck_filter（oep-spec baa2605、fixture §4）: `SpiTarget.configure(mode, bit_order, sck_filter=True)` が critical の
+  TLV を送る（sck_filter_ns より短い SCK のパルスを数えない）。宣言は `sck_filter` / `sck_filter_ns` で読む。仮想ベンチの P4 が宣言し（25 ns）、
+  endpoint の模型が持つ。適合検査 OEP-SPI-SCK-FILTER。registry を取り込み、見直し済みの印を移した。
 
 ## 0.0.58
 - (EN) The settings file carries the memo area (oep-spec 526d273, settings file §2.4): `oep settings export` writes every

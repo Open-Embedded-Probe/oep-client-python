@@ -186,6 +186,7 @@ I2C_QUEUE_DEPTH = reg.FIXTURE_I2C_TARGET.tlv["describe"]["queue_depth"]
 I2C_MAX_STRETCH_US = reg.FIXTURE_I2C_TARGET.tlv["describe"]["max_stretch_us"]
 SPI_QUEUE_DEPTH = reg.FIXTURE_SPI_TARGET.tlv["describe"]["queue_depth"]
 SPI_CS_SETUP_NS = reg.FIXTURE_SPI_TARGET.tlv["describe"]["cs_setup_ns"]
+SPI_SCK_FILTER_NS = reg.FIXTURE_SPI_TARGET.tlv["describe"]["sck_filter_ns"]
 SPI_MODES = reg.FIXTURE_SPI_TARGET.tlv["describe"]["modes"]
 FORMATS_8 = (0x00, 0x04, 0x08, 0x10, 0x14, 0x18)   # 8N1 8E1 8O1 8N2 8E2 8O2: the formats the virtual bench UARTs take
 TRANSPORT = reg.CORE.enum["transport_kind"]
@@ -410,14 +411,16 @@ def _i2c_target(fn: int, channels: list[int], max_length: int, max_hz: int, feat
 
 
 def _spi_decl(max_length: int, max_hz: int, features: int, queue_depth: int,
-              cs_setup_ns: int = 0, modes: int = 0x0F) -> tuple[bytes, ...]:
+              cs_setup_ns: int = 0, modes: int = 0x0F, sck_filter_ns: int = 0) -> tuple[bytes, ...]:
     """oep.fixture.spi-target's declarations besides its pins (fixture §4): max_length (bytes a transaction),
     max_clock_hz, features (bit0 LSB first), queue_depth (tag 0x40 u8), modes (tag 0x41 u8, required: bit k = SPI mode
     k), and cs_setup_ns (tag 0x43 u32: the worst CS-active-to-first-SCK time for which MISO carries the first bit -
-    declared by a probe that drives MISO in software once it sees CS; 0 = left out, MISO driven at once)."""
+    declared by a probe that drives MISO in software once it sees CS; 0 = left out, MISO driven at once), and
+    sck_filter_ns (tag 0x43 u32, with features sck_filter: the shortest SCK pulse counted with the filter on)."""
     return ((catalog.u16(MAX_LENGTH, max_length), catalog.u32(MAX_CLOCK_HZ, max_hz), catalog.u32(FEATURES, features),
              catalog.u8(SPI_QUEUE_DEPTH, queue_depth), catalog.u8(SPI_MODES, modes))
-            + ((catalog.u32(SPI_CS_SETUP_NS, cs_setup_ns),) if cs_setup_ns else ()))
+            + ((catalog.u32(SPI_CS_SETUP_NS, cs_setup_ns),) if cs_setup_ns else ())
+            + ((catalog.u32(SPI_SCK_FILTER_NS, sck_filter_ns),) if sck_filter_ns else ()))
 
 
 _I2CC_D, _SPIC_D = reg.FIXTURE_I2C_CONTROLLER.tlv["describe"], reg.FIXTURE_SPI_CONTROLLER.tlv["describe"]
@@ -556,7 +559,9 @@ def p4_x035() -> VirtualProbe:
                     features=reg.FIXTURE_I2C_TARGET.enum["features"]["nack_from"], queue_depth=8,
                     max_stretch_us=100_000),                                                       # stretch, nack_from
         Offered(9, 0, "oep.fixture.spi-target", _roles({1: pins, 2: pins, 3: pins, 4: pins})
-                + _spi_decl(max_length=64, max_hz=3_000_000, features=0b1, queue_depth=8)),             # LSB first
+                + _spi_decl(max_length=64, max_hz=3_000_000, queue_depth=8, sck_filter_ns=25,
+                            features=reg.FIXTURE_SPI_TARGET.enum["features"]["lsb_first"]
+                            | reg.FIXTURE_SPI_TARGET.enum["features"]["sck_filter"])),             # LSB first, sck_filter
         # fn 10: the settings' interface before they moved into the core (core §13); its number left unused
         # the P4's ADC1 (GPIO16-23): one ADC for all its channels, 611 Hz - 83.3 kHz in all; ESP32-style attenuations
         Offered(11, 0, "oep.fixture.analog", _roles({k: list(range(16, 24)) for k in range(4)})

@@ -329,10 +329,24 @@ class SpiTarget(_TargetDeclarations, Interface):
     FEATURE_LSB_FIRST = _SPI.enum["features"]["lsb_first"]
     TAG_QUEUE_DEPTH = _SPI.tlv["describe"]["queue_depth"]
     TAG_CS_SETUP_NS = _SPI.tlv["describe"]["cs_setup_ns"]
+    FEATURE_SCK_FILTER = _SPI.enum["features"]["sck_filter"]
+    TAG_SCK_FILTER = _SPI.tlv["configure"]["sck_filter"]
+    TAG_SCK_FILTER_NS = _SPI.tlv["describe"]["sck_filter_ns"]
 
     def __init__(self, hst: h.Host, fn: int | None = None, name: str | None = None):
         super().__init__(hst, name, fn=fn)
         self.last_ns: int | None = None
+
+    @property
+    def sck_filter(self) -> bool:
+        """configure takes sck_filter (features bit1, fixture §4)."""
+        return bool(self.features & self.FEATURE_SCK_FILTER)
+
+    @property
+    def sck_filter_ns(self) -> int:
+        """With sck_filter on, SCK pulses shorter than this (ns) are not counted: the SCK high and low must each be
+        longer (describe tag 0x43, fixture §4); 0 when the probe has no sck_filter."""
+        return self._declared(self.TAG_SCK_FILTER_NS, "I") or 0
 
     @property
     def cs_setup_ns(self) -> int:
@@ -345,8 +359,14 @@ class SpiTarget(_TargetDeclarations, Interface):
         return [(self.fn, self.ROLE_SCK, sck), (self.fn, self.ROLE_MOSI, mosi), (self.fn, self.ROLE_MISO, miso),
                 (self.fn, self.ROLE_CS, cs)]
 
-    def configure(self, mode: int = 0, bit_order: int = 0) -> None:
-        self._call(self.CONFIGURE, struct.pack("<BB", mode, bit_order))
+    def configure(self, mode: int = 0, bit_order: int = 0, sck_filter: bool | None = None) -> None:
+        """The target made anew. sck_filter (optional, `sck_filter` true): SCK pulses shorter than sck_filter_ns not
+        counted - against a slow SCK edge or a neighbour's spike counted as an extra edge; only for a controller whose
+        SCK high and low are each longer. Sent critical, so a probe without it refuses unsupported."""
+        body = struct.pack("<BB", mode, bit_order)
+        if sck_filter is not None:
+            body += m.tlv(self.TAG_SCK_FILTER, bytes([1 if sck_filter else 0]), critical=True)
+        self._call(self.CONFIGURE, body)
 
     def arm(self, length: int, tx: bytes = b"") -> None:
         self._call(self.ARM, struct.pack("<HH", length, len(tx)) + tx)

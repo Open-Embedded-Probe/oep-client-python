@@ -7,7 +7,7 @@ import struct
 from . import ops, require, tlvs
 
 REVIEWED_INTERFACES = {  # oep-spec interfaces/
-    'oep-if-fixture.ja.md': 'a9cc430b42102a883b0e5deb489f52a6a9ccbc003cb5cfaf3da9489d85d6d964',
+    'oep-if-fixture.ja.md': '9601a9247ae1fe2a5a9eac8123849d902c2626e6d5a66987e745d1754aeaa0eb',
     'oep-if-plan.ja.md': 'da8bd60af53499573c07bc33dbd8c4df93eb61a93b91dc57907f26620ae36bbf',
     'oep-if-debug.ja.md': '6f21171b494e67d50bfc78b4da9e16949033c9e24d960efb42887335da021681',
     'oep-if-common.ja.md': '25fed0b1b8b7f246a8b71d02cea810249803b1c3c1e9c3df466c04f38687f70c',

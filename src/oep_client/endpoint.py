@@ -538,6 +538,7 @@ class SpiState:
     state: int = 0
     mode: int = 0
     bit_order: int = 0
+    sck_filter: bool = False             # configure's sck_filter (fixture §4)
     armed: tuple[int, bytes] | None = None      # (length, MISO bytes) of the one transaction it waits for
     queue: list = field(default_factory=list)   # (bits, MOSI bytes, ns)
     transactions: int = 0
@@ -3218,8 +3219,10 @@ class Endpoint(FixtureDrive):
         ops = _SPI.op
         if op == ops["configure"]:
             mode, order = t.take("BB")
-            t.tail()
-            if mode > 3 or order > 1:
+            filter_tag = _SPI.tlv["configure"]["sck_filter"]
+            got = t.tail({filter_tag} if features & SPI_FEATURES["sck_filter"] else set())   # undeclared: unsupported
+            sck = t.fixed(got, filter_tag, 1)                      # another length: malformed (core §2.3)
+            if mode > 3 or order > 1 or (sck is not None and sck[0] > 1):
                 raise Reject(m.MALFORMED)
             if order == 1 and not features & SPI_FEATURES["lsb_first"]:
                 raise unsupported_fixed()
@@ -3231,7 +3234,7 @@ class Endpoint(FixtureDrive):
                 self.target_fail_configure.discard(fn)             # queue and the arm's data gone (fixture §4)
                 self.spi[fn] = SpiState()
                 return self._answer(b"", m.FAILED)
-            self.spi[fn] = SpiState(state=1, mode=mode, bit_order=order)
+            self.spi[fn] = SpiState(state=1, mode=mode, bit_order=order, sck_filter=bool(sck and sck[0]))
             return self._answer(b"")
         if op == ops["arm"]:
             length, count = t.take("HH")

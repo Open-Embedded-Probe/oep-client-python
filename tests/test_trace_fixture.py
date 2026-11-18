@@ -866,7 +866,7 @@ def test_spi_counts_stop_at_their_limits_and_go_with_configure_or_release(spi):
 
 @pytest.mark.parametrize("profile, cs_setup", [(virtual_bench.p4_x035, 0), (virtual_bench.esp32_v003, 4000)])
 def test_spi_describe_declares_modes_and_cs_setup(profile, cs_setup):
-    """fixture §4 describe: ops, role_channels / channel_group, max_length, max_clock_hz, features (bit0 only),
+    """fixture §4 describe: ops, role_channels / channel_group, max_length, max_clock_hz, features (the enum's bits),
     queue_depth (0x40 u8), modes (0x41 u8, required: bits 4-7 0, at least one mode), cs_setup_ns (0x43 u32, left out
     = 0: MISO driven at once). The client shows cs_setup_ns."""
     ep, h = bench(profile)
@@ -875,7 +875,10 @@ def test_spi_describe_declares_modes_and_cs_setup(profile, cs_setup):
     assert {catalog.OPS, catalog.MAX_LENGTH, catalog.MAX_CLOCK_HZ, catalog.FEATURES, 0x40, 0x41} <= set(d)
     assert catalog.ROLE_CHANNELS in d or catalog.CHANNEL_GROUP in d
     assert len(d[0x41]) == 1 and 1 <= d[0x41][0] <= 0x0F
-    assert not struct.unpack("<I", d[catalog.FEATURES])[0] & ~0x01
+    features = struct.unpack("<I", d[catalog.FEATURES])[0]
+    assert not features & ~sum(reg.FIXTURE_SPI_TARGET.enum["features"].values())
+    FILTER = reg.FIXTURE_SPI_TARGET.tlv["describe"]["sck_filter_ns"]          # with features sck_filter, and only then
+    assert (FILTER in d) == bool(features & reg.FIXTURE_SPI_TARGET.enum["features"]["sck_filter"])
     assert len(d[0x40]) == 1 and d[0x40][0] >= 1
     CS = reg.FIXTURE_SPI_TARGET.tlv["describe"]["cs_setup_ns"]
     assert (CS in d) == bool(cs_setup) and (not cs_setup or struct.unpack("<I", d[CS])[0] == cs_setup)

@@ -7,6 +7,8 @@
 
 - state 0、plan開始前configure、未設定read_rx、role 1〜4の各1つ/別pin、拒否前不変を確認する。
 - configureのmode/bit_order幅、LSB featureの有無、未知TLV/raw tag、mode/statusを確認する。
+- sck_filter（SCK-FILTER）: features bit1 を宣言するなら sck_filter_ns が 1 以上で、TLV の 1・0・無しを受け、2 以上と長さ違いを malformed で断る。
+  宣言しないなら critical の TLV を unsupported（受け取った tag）で断る。論理 fixture は宣言しない構成。
 - 四つのmodeと宣言されたbit順で論理CS/SCK edgeを与え、CPOL/CPHAの取り込みedge、MISO、MOSI格納を確認する。
   byte途中で終わる11 bit転送はceil(bits/8)のbyte数で、未到着bitを0にする。
 - TXなし/足りないTX/未armのMISOは0。未armのMOSIは捨て、transactions/errorsを数える。
