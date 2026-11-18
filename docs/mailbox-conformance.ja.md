@@ -7,8 +7,8 @@
 
 対象はmechanism 0/1を明示提供する論理sampleである。
 
-- SDIはL=0〜7を検査し、L=1〜7ではDATA0→DATA1読出し→DATA0=0の順で受信する。L≥8は枠でないのでDATA0=0で消す（console §3.1）。
-  L=8〜255では受信も消去もしない。短い枠でもDATA1を読む。
+- SDIはL=0〜7を検査し、L=1〜7ではDATA0→DATA1読出し→DATA0=0の順で受信する。L=0では何もしない。短い枠でもDATA1を読む。
+  L=8〜255は枠でないので受信せず、DATA0=0で消す（console §3.1）。
 - SDIには送信列がない。SDI streamへのwriteはゼロ長を含めunsupported（payload 0）。
 - DMDATAはT=0の状態byte全128値で無操作。T=1ではL=4の空枠、L=5〜11の受信、
   L=0〜3/12〜63の消去を検査する。bit 6は無視する。DATA1は受信が4 byte以上の場合だけ読む。
@@ -30,6 +30,10 @@
 単体試験には誤動作注入を含む。DATA1の欠落/過剰読出し/書込み、不正枠消去の違反、
 自己応答の上書き、queueの誤消費/逆順/短縮、halt/debug中アクセス、DMSTATUS順序違反、
 SDI writeの受理、bit 6の誤解釈、ack未反映を独立検査で検出する。
+
+```sh
+uv run pytest -q tests/test_conformance_mailbox.py
+```
 
 `full_conformance`はfalse。dmseq、target自己reset/restart mark、実際の標準riscv-dm要求との
 arbitration、物理DMI/timing/配送、production Host統合、別queue/ring容量と並行pollerは未検査。

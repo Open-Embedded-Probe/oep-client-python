@@ -13,7 +13,7 @@ fn1はplan、fn2/3はGPIO、fn4はlink。経路max_frameは64、256、1024の3�
 GPIO fn2 role1へchannel1をplanし、高出力にする。plan・pin/idle・駆動journal・coreの所有権を
 実際のモデルからsnapshotし、転送/拒否/再送の前後で一致を要求する。
 leaseの更新時刻と再送cacheはcoreの正当な変更なので、この不変条件の対象にしない。
-reportのstate_observationsへseedと要求前後のsnapshotを保存する（各構成68観測）。
+reportのstate_observationsへseedと要求前後のsnapshotを保存する。
 seedが実際にplan・出力・所有権を作ったことも検査し、空のsnapshotだけでは通さない。
 
 共通インターフェース宣言はInterfaceChecks、必須opと任意opはRegisteredOpsChecksで先に確認する。
