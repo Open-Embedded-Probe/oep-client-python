@@ -1,5 +1,7 @@
 # 実機設定形式 v1
 
+[English](hardware-schema.md)
+
 [全体テスト方針](testing-policy.ja.md)と[構成管理方針](hardware-configuration.ja.md)を具体化する設定の形式。`oep-hardware` が offline の validate / plan、仮想 smoke、実機の probe 単体 preflight を行い、`tests/equipment` が明示 pytest 入口になる。配線の discovery と target の runner adapter は持たず、[tests/hw](../tests/hw/README.ja.md) の実機試験はこの形式を読まない。最小入口は [動作確認手順](hardware-quickstart.ja.md)。OEP の wire protocol や SPEC は変えない。
 
 ## 所有と境界

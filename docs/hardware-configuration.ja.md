@@ -1,5 +1,7 @@
 # 実機構成と配線を探索して確定する
 
+[English](hardware-configuration.md)
+
 [全体テスト方針](testing-policy.ja.md)から導く構成管理。キー、選択と判定、処理の入口は [実機設定形式](hardware-schema.ja.md)にある。
 
 物理個体、接続、探索候補、確定情報、試験時の役割を分ける。一つの probe に一つの target を束ねない。テスト本体は固定 channel や個体名を持たず、論理信号と必要な能力を要求する。設定を読み込んだだけで探索、書込み、firmware 更新が始まる構成にはしない。
