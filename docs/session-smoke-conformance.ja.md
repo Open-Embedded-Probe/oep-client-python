@@ -25,7 +25,7 @@ send/排他/framing/待ち時間/観測は[コア大枠検査](core-smoke-confor
 利用者が占有を許可した検査用の端点で実行する。FORCE caseは、この検査自身が作ったSIDから別のSIDへ所有を移す。
 他のHostが取得したロックはこの検査でforceしない。最初のopenがlockedなら前提caseが失敗して後続を止める。
 
-4caseで準備、再送と期限切れ、session判定後の拒否による期限更新、forceを確認する。
+SESSION-SMOKE-CONTEXT（準備）、EXPIRY（再送と期限切れ）、REJECTED-RENEWAL（session判定後の拒否による期限更新）、FORCEを確認する。
 leaseは1000ms。700ms後に再送/SID0/別SIDの拒否を挟み、400ms後に期限切れを確認する。
 期限切れ後の元のkeepaliveへの再送は過去の結果またはresult_lostを許し、ロックが復活しないことも確認する。
 別caseでは700ms後に所有者の不正なkeepaliveを送り、さらに700ms後も所有が続くことを確認する。

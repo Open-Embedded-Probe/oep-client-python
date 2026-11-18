@@ -17,7 +17,7 @@ core §4.1/5.1/6/9に基づき、end（その時点の次のcorr）と新session
 
 openの確認はclock/boot確認/clockの順で行う。読み直し中のboot変更では観測を破棄する。lock_stateがheldでもSの所有権とは判断しない。読み出しはatomic snapshotではなく、並行writerがいないfixture条件に限定する。古い資源を再bindingせず、操作結果と現在の状態を分けて記録する。
 
-単体では新corrの再送、状態から成功を推測、未知leaseの捏造、期限切れ無視、boot変更無視、barrier無視の6欠陥を検出する。入力/制御能力不足、読み直し中のboot変更、別sessionへforceされた後の旧open再送も検査する。fixture cleanupのendは回復hostが返した判断の後に別途行う。
+単体では新corrの再送、状態から成功を推測、未知leaseの捏造、期限切れ無視、boot変更無視、barrier無視の欠陥を検出する。入力/制御能力不足、読み直し中のboot変更、別sessionへforceされた後の旧open再送も検査する。fixture cleanupのendは回復hostが返した判断の後に別途行う。
 
 ```sh
 uv run pytest -q tests/test_conformance_session_loss.py
