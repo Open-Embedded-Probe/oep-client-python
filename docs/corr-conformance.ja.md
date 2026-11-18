@@ -1,5 +1,7 @@
 # corr u16の境界検査
 
+[English](corr-conformance.md)
+
 core §4.1/§5.1のcorrは0を使わない循環番号である。hostはsession_idごとに番号を前へ進め、65535の次は1にする。
 前進距離 `d = (new − last) mod 65536` が1〜32767なら新しい要求、それ以外（同じ番号とちょうど半周を含む）は記録に無ければresult_lost。
 半周以上過去の記録は捨て、照合に使わない。SID 0の番号はsessionの履歴へ影響しない。異なるIDの新規sessionのopenが成功したときだけ再送状態を置き換える。

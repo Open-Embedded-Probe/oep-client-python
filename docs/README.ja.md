@@ -1,5 +1,7 @@
 # docs の文書
 
+[English](README.md)
+
 | 文書 | 対象と状態 |
 |---|---|
 | [最小構成の動作確認](hardware-quickstart.ja.md) | validate/plan/仮想 smoke と `.env` の実行手順 |

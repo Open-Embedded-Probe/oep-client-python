@@ -1,5 +1,7 @@
 # 標準consoleのSDI/DMDATA mailbox検査
 
+[English](mailbox-conformance.md)
+
 `MailboxChecks`は選択SPECの`oep-if-console.ja.md` §1〜3を第三段階
 `oep-interface`で検査する。`Checks(send, registry, unit)`と
 `SampleMailboxAdapter(source)`を明示して`MailboxChecks(checks, adapter).run()`を呼ぶ。

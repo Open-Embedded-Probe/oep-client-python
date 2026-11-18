@@ -1,5 +1,7 @@
 # コア大枠検査
 
+[English](core-smoke-conformance.md)
+
 `CoreSmokeChecks`は、coreの選択した契約を、小さいraw messageの検査で確認するAPIである。
 選択したSPECのcore SHAとheader/corr定義を確認し、レビューしていない本文では送信前に止める。
 固定の仕方は[適合検査とSPECの版](conformance-spec-compatibility.ja.md)にある。

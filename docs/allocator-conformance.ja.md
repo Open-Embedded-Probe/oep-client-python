@@ -1,5 +1,7 @@
 # 資源番号の上限と再起動の検査
 
+[English](allocator-conformance.md)
+
 `AllocatorChecks`はcore §2.3/5.1/6/9に基づく第一段階の補助検査である。
 公開`AllocatorModel`と`SampleAllocatorAdapter`を使い、SPEC checkoutと出力先を明示する。
 privateベンチや隣接checkoutは探索しない。資源opの符号化はresource-conformance.ja.mdの独自sampleを採用し、

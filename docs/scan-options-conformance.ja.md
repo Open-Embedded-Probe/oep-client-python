@@ -1,5 +1,7 @@
 # scanのidle_clockとtargetselの検査
 
+[English](scan-options-conformance.md)
+
 `ScanOptionsChecks`は選択SPECの`oep-if-debug.ja.md` §1/3/5とcore §2.3/5/8.1を
 第三段階`oep-interface`で検査する。`Checks(send, registry, unit)`と
 `SampleScanOptionsAdapter(source)`を明示して`ScanOptionsChecks(checks, adapter).run()`を呼ぶ。

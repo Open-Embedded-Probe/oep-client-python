@@ -1,5 +1,7 @@
 # 線切れの応答と解放の論理検査
 
+[English](cut-conformance.md)
+
 `CutChecks`と独立した`CutModel`/`SampleCutAdapter`はOEP debug §2、common §1/2、
 core §5.1/9を検査する。共通宣言は第二段階、前提と動作は第三段階。
 動作caseはRVSWD接続のRISC-V DMIとdmseq consoleを使う。

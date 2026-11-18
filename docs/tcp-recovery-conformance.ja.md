@@ -1,5 +1,7 @@
 # TCPフレームの途中休止と再接続
 
+[English](tcp-recovery-conformance.md)
+
 SPEC checkoutを明示し、`TcpRecoveryChecks(SampleTcpRecoveryAdapter(), spec=path).run()`を実行する。
 core/transports本文SHAと待ち数値を照合する。private設備設定やOS socketを使わない。
 実LengthFrames/Result decoderとvirtual Core/ResourceModelを、仮想時計・TCP特性のstreamで接続する。
