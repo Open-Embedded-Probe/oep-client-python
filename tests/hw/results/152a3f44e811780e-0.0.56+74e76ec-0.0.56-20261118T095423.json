@@ -1,0 +1,122 @@
+{
+  "schema": 1,
+  "board": {
+    "id": "152a3f44e811780e",
+    "kind": "rp2",
+    "profile": "rp2040",
+    "model": "rp2040",
+    "port": "oep://152a3f44e811780e?via=cdc",
+    "unit_id": "152a3f44e811780e",
+    "gpio": [
+      2,
+      3
+    ],
+    "disable": 4,
+    "uart": [
+      13,
+      12
+    ],
+    "notes": "Raspberry Pi Pico (RP2040), ours: a CH32V003's SWIO on GP1 (v003.swio@pd1), a Pico's SWD on GP10 / GP8 (pico.swdio / pico.swclk), a Pico 2's (RP2350) on GP21 / GP22 (pico2.swdio / pico2.swclk): OEP_HW_RP2=pico or pico2 for the rp2_swd test; keyed by unit id"
+  },
+  "client": {
+    "version": "0.0.56",
+    "python": "3.13.16",
+    "commit": "16c6e18",
+    "dirty": false
+  },
+  "firmware": {
+    "before": {
+      "boot_id": 3075948406,
+      "revision": 1,
+      "max_frame": 1024,
+      "max_inflight": 8,
+      "window": 4096,
+      "firmware": "0.0.56+74e76ec",
+      "model": "rp2040",
+      "unit_id": "152a3f44e811780e",
+      "chip": "rp2040 v2",
+      "transports": [
+        {
+          "index": 0,
+          "kind": 2
+        },
+        {
+          "index": 1,
+          "kind": 4
+        },
+        {
+          "index": 2,
+          "kind": 5
+        }
+      ],
+      "max_op_ms": 10000,
+      "link_fn": 9,
+      "plan_fn": 21,
+      "restart_fn": 22,
+      "restart_max_ms": 2000
+    },
+    "source": {
+      "kind": "on-board",
+      "why": "OEP_HW_NOFLASH"
+    },
+    "expected": null,
+    "flashed": false,
+    "after": {
+      "boot_id": 3075948406,
+      "revision": 1,
+      "max_frame": 1024,
+      "max_inflight": 8,
+      "window": 4096,
+      "firmware": "0.0.56+74e76ec",
+      "model": "rp2040",
+      "unit_id": "152a3f44e811780e",
+      "chip": "rp2040 v2",
+      "transports": [
+        {
+          "index": 0,
+          "kind": 2
+        },
+        {
+          "index": 1,
+          "kind": 4
+        },
+        {
+          "index": 2,
+          "kind": 5
+        }
+      ],
+      "max_op_ms": 10000,
+      "link_fn": 9,
+      "plan_fn": 21,
+      "restart_fn": 22,
+      "restart_max_ms": 2000
+    }
+  },
+  "started": "2026-11-18T09:54:23+09:00",
+  "seconds": 1.8,
+  "host": {
+    "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+    "python": "3.13.16"
+  },
+  "environment": {
+    "OEP_HW_RP2": "pico2",
+    "OEP_HW_NOFLASH": "1",
+    "OEP_HW_BOARDS": "152a3f44e811780e"
+  },
+  "tests": {
+    "flash": {
+      "port": "oep://152a3f44e811780e?via=cdc",
+      "skipped": "nothing flashed: OEP_HW_NOFLASH",
+      "boot_seconds": 0.5,
+      "firmware_after": "0.0.56+74e76ec",
+      "verdict": "passed"
+    },
+    "rp2_swd": {
+      "port": "pico2",
+      "chip": "rp2350",
+      "dpidr": "0x4c013477",
+      "halted_pc": "0x10004390",
+      "verdict": "passed"
+    }
+  }
+}
