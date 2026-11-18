@@ -2,57 +2,55 @@
 
 [日本語](swd.ja.md)
 
-An Arm board on an OEP probe's SWD is written, run, stopped and inspected. Two ways:
+An Arm board connected to an OEP probe's SWD is written, run, stopped and inspected. There are two ways.
 
-- **From the Arduino IDE**: its Upload and Debug buttons. Neither the core nor the IDE's settings change: one IDE server is
-  started beforehand, and Debug takes a `debug_custom.json` in the sketch folder.
-- **From an OEP host directly**: commands, gdb, pytest, Python.
+- **From the Arduino IDE**: the "Upload" button and the "Debug" button. Neither the core nor the IDE's settings are changed. Start one IDE server, and for debugging put `debug_custom.json` in the sketch folder.
+- **Directly from the OEP host**: commands, gdb, pytest, Python.
 
-The target is an RP2040 or RP2350 board's Arm core 0 (a Raspberry Pi Pico, Pico 2 and the like, arduino-pico). The chip is told by the DPIDR it answers with on attach (the RP2040: core 0 picked by TARGETSEL; the RP2350: ADIv6, the MEM-AP at 0x2000).
+The targets are Arm core 0 of RP2040 and RP2350 boards (Raspberry Pi Pico, Pico 2 and so on, arduino-pico). Which chip it is is told by the DPIDR at connection (RP2040 selects core 0 with TARGETSEL; RP2350 uses ADIv6 MEM-AP 0x2000).
 
-## 1. Wiring
+## 1. Connecting
 
-- Three wires: SWDIO, SWCLK, GND. The board powers itself.
-- Label the probe's two channels with a port name, `<port>.swdio` and `<port>.swclk`. The board is then
-  `oep://<unit id>/<port>`.
+- Three wires: SWDIO, SWCLK and GND. The board's power is provided on the board side.
+- Give the probe's 2 channels the labels `<port>.swdio` and `<port>.swclk` with the port's name. From then on, the board is addressed as `oep://<unit id>/<port>`.
 
   ```
   oep settings set oep://<unit id> core channel.GPIO28.label=pico.swdio channel.GPIO27.label=pico.swclk --save
   ```
 
-  `oep pins` finds the channels when you do not know them (README, "Finding the pins").
-- For a UART console, wire the board's TX to a free channel of the probe (3.4).
+  If you do not know which channels they are connected to, you can find them with `oep pins` (README, "Finding pins").
+- To use a UART for the console, connect the board's TX to a free channel of the probe (3.4).
 
 ## 2. From the Arduino IDE
 
-### 2.1 Start the IDE server
+### 2.1 Starting the IDE server
 
 ```
 pip install oep-client-python
 python -m oep_client.ide oep://<unit id>/pico=rpipico --gdb-port 3333
 ```
 
-- `=rpipico` is the board name the IDE is shown (`rpipico` when left out). Give as many ports as you like: each gets a
-  network port and a GDB port (from `--gdb-port` on).
-- The IDE server uses the probe only while an upload comes in and while gdb is connected; other tools have it otherwise.
-- Its first lines give each port's name, UDP port and GDB port.
+- `=rpipico` is the board name shown to the IDE (`rpipico` when omitted). Any number of ports can be listed. Per port, one network port and
+  one gdb port (counting up from `--gdb-port`) are created.
+- The IDE server uses the probe only when an upload comes and while gdb is connected. At other times, other tools can use that probe.
+- The startup line shows each port's name, UDP port and gdb port.
 
-### 2.2 Upload
+### 2.2 Uploading
 
-1. Pick the board (Raspberry Pi Pico or another) in the IDE.
-2. In Tools > Port pick the network port `oep-<unit id>-<port> at <address>`. It may take a few seconds after the
-   IDE server starts to be listed.
-3. Press Upload. Leave the password empty when asked.
+1. Choose the board (Raspberry Pi Pico and so on) in the IDE.
+2. In "Tools > Port", choose the network port `oep-<unit id>-<port> at <address>`. After starting the IDE server, it can take a few seconds
+   to appear in the list.
+3. Press "Upload". If asked for a password, leave it empty and press OK.
 
-The IDE server checks the `.bin` the IDE sends by its MD5, writes it over SWD, reads it back and restarts the board.
+The IDE server checks the `.bin` the IDE sends with MD5, writes it over SWD, reads it back to verify, and restarts the board.
 
-How: for each port the IDE server announces `_arduino._tcp` over mDNS (TXT `board`, `auth_upload=no`, `tcp_check=no`,
-`ssh_upload=no`) and answers the core's network upload (arduino-pico's `tools/espota.py`). It announces one address, a
-LAN one (`--interface` picks it).
+How it works: the IDE server announces mDNS `_arduino._tcp` per port (TXT is `board`, `auth_upload=no`, `tcp_check=no`, `ssh_upload=no`),
+and acts as the receiver of the core's network upload (arduino-pico's `tools/espota.py`). It announces one address, the one on the LAN (chosen with
+`--interface`).
 
-### 2.3 Debug
+### 2.3 Debugging
 
-Put `debug_custom.json` in the sketch folder to point the IDE's debugger at the IDE server's GDB server:
+Put `debug_custom.json` in the sketch folder, and point the IDE's debugging at the IDE server's gdb server.
 
 ```json
 [
@@ -64,54 +62,51 @@ Put `debug_custom.json` in the sketch folder to point the IDE's debugger at the 
 ]
 ```
 
-- The file is an array. `configId` is the string of the IDE's own debug configuration: the board's FQBN, with the board
-  menu's values when they were changed from the defaults. An element that does not match is silently ignored; the sure
-  way is to copy the value the IDE writes to the sketch folder's `.theia/launch.json` once a debug session has started.
-- Debug writes the sketch (gdb's `load`), resets the core halted and stops at `main`. Breakpoints, stepping, pausing,
-  variables and registers work.
-- The GDB server listens on 127.0.0.1 only: run the IDE on the IDE server's PC.
-- Upload while debugging keeps gdb connected: the IDE server writes within gdb's session and resets the core alone to run.
+- The file is an array. `configId` is the same string as the `configId` of the debug configuration the IDE builds. It is the board's FQBN, and if the board menus are changed from the default
+  their values are attached too. Elements that do not match are silently ignored, so the reliable way is to copy the value the IDE writes to
+  `.theia/launch.json` in the sketch folder after it has started debugging once.
+- Pressing "Debug" makes the IDE upload the sketch (gdb's `load`), reset and stop the core, and stop at `main`. Breakpoints, stepping,
+  pausing, and display of variables and registers work.
+- The gdb server listens only on 127.0.0.1. Run the IDE on the same PC as the IDE server.
+- Pressing "Upload" during debugging does not disconnect gdb. The IDE server writes within the gdb session, resets only the core and runs it.
 
 ### 2.4 Console
 
-Pass the board's UART through to the probe's USB serial port (CDC) and open the probe's port in the IDE's Serial
-Monitor:
+Put in a setting that passes the board's UART straight through to the probe's USB serial (CDC), and open the probe's port in the IDE's serial monitor.
 
 ```
 oep settings set oep://<unit id> oep.fixture.uart/0 passthrough.cdc0.rx=GPIO12 passthrough.cdc0.baud=115200 --save
 ```
 
-- `GPIO12` is the channel the board's TX is wired to, `cdc0` the probe's first CDC port (route names: oep-spec core
-  §13.3).
-- The setting works outside any session; `--save` keeps it across restarts.
+- `GPIO12` is the channel the board's TX is connected to, and `cdc0` is the probe's first CDC (transport names are in oep-spec core §13.3).
+- The setting works regardless of sessions, and with `--save` it survives a restart.
 
-### 2.5 Limits
+### 2.5 What it cannot do
 
 - Core 1 is not handled (core 0 only).
-- As many hardware breakpoints as the FPB has comparators (four on the RP2040). gdb makes breakpoints in flash hardware ones by itself. On the RP2040 none at 0x20000000 and up (RAM).
-- The RP2350's RISC-V cores are not handled.
-- No watchpoints.
+- Hardware breakpoints are limited to the number of FPB comparators (4 on RP2040). gdb automatically makes breakpoints in flash hardware ones. On RP2040 they cannot be placed at 0x20000000 and above (RAM).
+- The RISC-V cores of RP2350 are not handled.
+- There are no watchpoints.
 
-## 3. From an OEP host directly
+## 3. Directly from the OEP host
 
-### 3.1 Write
+### 3.1 Writing
 
 ```
 python -m oep_client.rp2040_swd flash oep://<unit id>/pico sketch.ino.elf
 ```
 
-An ELF (its loadable parts in flash, laid out) or a `.bin` (the flash from 0x10000000) is written, read back and the
-board restarted.
+It writes an ELF (laying out the loadable parts in flash) or a `.bin` (flash content from 0x10000000), reads it back to verify, and restarts the board.
 
 ### 3.2 Console (SEGGER RTT)
 
-Without a UART wire, the board's RTT rings in RAM are read over SWD (when the sketch uses RTT):
+Even without a UART wire, the RTT ring in the board's RAM can be read over SWD (when the sketch uses RTT).
 
 ```
-python -m oep_client.rp2040_swd console oep://<unit id>/pico 10       # print the output for 10 s
+python -m oep_client.rp2040_swd console oep://<unit id>/pico 10       # show the output for 10 seconds
 ```
 
-From pyserial, `oep://` opens once `oep_client.pyserial` is registered:
+From pyserial, registering `oep_client.pyserial` lets you open `oep://`.
 
 ```python
 import serial
@@ -121,8 +116,8 @@ port = serial.serial_for_url("oep://<unit id>/pico")
 
 ### 3.3 With gdb
 
-Connect the core's own gdb (arduino-pico's `arm-none-eabi-gdb`) to the IDE server's GDB server. An IDE server started for this
-alone works the same when no upload is needed.
+Connect to the IDE server's gdb server with the gdb that comes with the core (`arm-none-eabi-gdb` for arduino-pico). If you do not need the upload receiver,
+starting the IDE server for this use only works the same.
 
 ```
 arm-none-eabi-gdb sketch.ino.elf
@@ -134,19 +129,19 @@ arm-none-eabi-gdb sketch.ino.elf
 (gdb) continue
 ```
 
-| monitor command | what it does |
+| monitor command | Action |
 |---|---|
-| `reset halt` (`reset init`) | reset the core and stop at its first instruction |
-| `reset` (`reset run`) | reset the core and run |
-| `halt` | stop |
-| `resume` (`go`) | run |
+| `reset halt` (`reset init`) | Resets the core and stops at the first instruction |
+| `reset` (`reset run`) | Resets the core and runs it |
+| `halt` | Stops |
+| `resume` (`go`) | Runs |
 
-While gdb is connected the IDE server holds the probe's lock, a keepalive every 5 s.
+While gdb is connected, the IDE server holds the probe's lock and sends a keepalive every 5 seconds.
 
 ### 3.4 pytest (pytest-embedded-arduino-cli)
 
-A test's DUT or peer Pico is written over SWD and its RTT is the console, by the plugin `oep_client.pytest_plugin`.
-The port is `.env`'s `TEST_SERIAL_PORT_*=oep://<unit id>/<port>`. See [pytest.md](pytest.md).
+The test's DUT and peer Pico are written over SWD by the plugin `oep_client.pytest_plugin`, which makes RTT the console. The port is
+`TEST_SERIAL_PORT_*=oep://<unit id>/<port>` in `.env`. Details are in [pytest.md](pytest.md).
 
 ### 3.5 From Python
 
@@ -169,14 +164,13 @@ hst.end()
 hst.link.close()
 ```
 
-- `oep_client.arm`: `SwdWire` (`oep.wire.swd`), `ArmAdi` (`oep.target.arm-adi`), `MemAp`, `CortexM` (halt, registers,
-  calling a function).
-- `oep_client.rp2040`, `oep_client.rp2350`: writing the flash through the boot ROM (`program_and_verify`) and restarting.
-- An RP2350 is attached without TARGETSEL: `arm.ArmAdi(hst, conn, adiv6=True)`, `arm.MemAp(adi, 0x2000)`,
-  `rp2350.core_of(mem)`. `rp2040_swd.Target` tells the chip and opens it (`.chip`: which one).
+- `oep_client.arm`: `SwdWire` (`oep.wire.swd`), `ArmAdi` (`oep.target.arm-adi`), `MemAp`, `CortexM` (halt, registers, function calls).
+- `oep_client.rp2040`, `oep_client.rp2350`: flash writing through the boot ROM (`program_and_verify`) and restart.
+- RP2350 attaches without TARGETSEL, and uses `arm.ArmAdi(hst, conn, adiv6=True)`, `arm.MemAp(adi, 0x2000)`, `rp2350.core_of(mem)`.
+  `rp2040_swd.Target` tells the chips apart and opens them (`.chip` is the chip it identified).
 
 ### 3.6 Sharing the probe with other tools
 
-When a broker (OEP host guide §7) serves the probe, `rp2040_swd` and the IDE server share its lock (`oep_client.brokers`:
-the environment variable `OEP_BROKER`, the user's `oep/brokers/<unit_id>.json`, the sharing extension
-`oep.probe.share`). Without a broker they open the probe directly.
+When a broker (OEP host guide §7) handles the same probe, `rp2040_swd` and the IDE server get a share of its lock
+(`oep_client.brokers`: the environment variable `OEP_BROKER`, the user's `oep/brokers/<unit_id>.json`, the sharing extension `oep.probe.share`). Without a
+broker, they open the probe directly.

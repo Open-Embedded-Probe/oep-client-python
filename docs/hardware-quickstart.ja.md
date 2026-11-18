@@ -1,5 +1,7 @@
 # 最小構成の動作確認
 
+[English](hardware-quickstart.md)
+
 設備 TOML の offline 検査・構造上の役割解決、OEP メッセージを使う仮想 smoke、共通ロック付き実機 preflight が使用できます。明示 preflight は実機 probe の単体確認に対応します。target 書込み・配線探索・USB 通信契約は未対応です。Python 3.10 以降と uv を使います。
 
 repository root から、同梱の設定だけで確認できます。
