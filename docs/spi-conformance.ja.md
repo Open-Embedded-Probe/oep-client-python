@@ -1,5 +1,7 @@
 # SPI targetの論理検査
 
+[English](spi-conformance.md)
+
 `SpiChecks(checks, adapter).run()` は選択SPECのfixture §4、plan §2、core §6/8/9を第三段階で検査する。
 `Checks(send, registry, unit)` と `SampleSpiAdapter(source)` を明示して渡す。
 公開checkerは私的ベンチや隣接リポジトリ、設備設定を探索しない。

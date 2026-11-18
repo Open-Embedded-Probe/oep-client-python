@@ -1,5 +1,7 @@
 # 全インターフェイスに使う宣言の準拠検査
 
+[English](interface-conformance.md)
+
 `InterfaceChecks`は標準・独自インターフェイスに同じ検査を適用する。OEP固有opの期待値や私的設備を参照しない。明示したSPEC registryとwire交換だけを受け取り、結果を`interface`段階で報告する。
 
 前提に加え、各fnへ同じ検査を実行する。掲載順は9/2/5とし、fn 2/9は同じ名前・revision 1、fn 5は同じ名前・revision 2を使う。

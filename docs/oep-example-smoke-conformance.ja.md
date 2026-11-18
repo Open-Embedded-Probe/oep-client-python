@@ -1,5 +1,7 @@
 # OEP固有の代表シナリオ検査
 
+[English](oep-example-smoke-conformance.md)
+
 `OepExampleSmokeChecks`は、GPIO・受信専用UART・raw ARMを題材に、独自拡張の試験にも使える「準備→要求→応答→作用→解放」の例を提供する。
 コア検査や全拡張共通の検査へ、これらの固有操作を必須として混ぜない。
 

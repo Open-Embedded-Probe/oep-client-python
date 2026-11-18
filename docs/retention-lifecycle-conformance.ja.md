@@ -1,5 +1,7 @@
 # 保持欠落・履歴の追い出しとsession/boot寿命の補助検査
 
+[English](retention-lifecycle-conformance.md)
+
 core §5.1/6/9を、明示した16 byte / 8件の[retention sample](retention-conformance.ja.md)で検査する。要求欠落、応答欠落、記録追い出しをそれぞれ作り、期限切れと異なるIDのforceでの扱いを分ける。終了と同じboot内のID継続、boot変更時の無効化は別の契約。
 
 `RetentionLifecycleChecks`はCORE-LIFECYCLE-CONTROLの後に[retention検査](retention-conformance.ja.md)（CORE-RETENTION-*）を実行し、続けてCORE-LIFECYCLE-EXPIRY-*／FORCE-*（REQUEST、RESPONSE、EVICTED）とCORE-LIFECYCLE-REBOOTを報告する。

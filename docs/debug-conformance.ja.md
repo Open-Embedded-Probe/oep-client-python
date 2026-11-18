@@ -1,5 +1,7 @@
 # riscv-dmのdmi・halt/resumeとconsole調停の論理検査
 
+[English](debug-conformance.md)
+
 `DebugChecks`は選択SPECの`oep-if-debug.ja.md` §4/4.1/4.2と
 `oep-if-console.ja.md` §3を第三段階`oep-interface`で検査する。
 `Checks(send, registry, unit)`と`SampleDebugAdapter(source)`を明示して

@@ -1,5 +1,7 @@
 # 経路ごとの要求受付と回復の補助検査
 
+[English](pipeline-conformance.md)
+
 SPEC core §4.4/7.1から、経路ごとのmax_frame、window、max_inflightと要求/応答の順序を検査する。windowは見出しを含む未解決要求のOEP message bytesの合計で、COBS/CRC/lengthの包みを含めない。受けたTCP接続はそれぞれ独立した枠を持つ（transports §3）。再送cacheはprobe全体に一つで、その経路の受付枠とは別。
 
 hostは宣言した上限を守る。**超過要求へのwindow_exceeded応答は任意**で、容量を超えた要求には応答がない場合も許される。従って超過拒否の検査をすべてのprobeに課さない。この補助検査は`reject-overflow`を明示した論理モデル専用。実機wireの上限検査、silent lossを選ぶprobe、実際のhost schedulerは別に扱う。
