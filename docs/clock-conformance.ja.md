@@ -33,9 +33,8 @@ raw交換を保存する例（SPECのcheckoutと新規出力先を明示する�
 
 ```sh
 uv run python - /path/to/oep-spec /path/to/clock-report.json <<'PY'
-import hashlib, json, sys
+import json, sys
 from pathlib import Path
-from oep_client import virtual_clock_model
 from oep_client.conformance import Checks, checker_sources_sha256, spec_identity
 from oep_client.conformance.clock import ClockChecks
 from oep_client.conformance.clock_sample import SampleClockAdapter
@@ -45,9 +44,7 @@ model = ClockModel()
 checks = Checks(model.handle, registry, 'virtual-resource-1')
 report = ClockChecks(checks, SampleClockAdapter(model)).run()
 report.update(spec=identity, wire_trace=checks.trace,
-              checker_sources_sha256=checker_sources_sha256(),
-              model_sources_sha256={name:hashlib.sha256((Path(virtual_clock_model.__file__).parent/name).read_bytes()).hexdigest()
-                  for name in ('virtual_clock_model.py','virtual_resource_model.py','virtual_core.py','virtual_stream_model.py','endpoint.py','virtual_bench.py')})
+              checker_sources_sha256=checker_sources_sha256())
 with Path(sys.argv[2]).open('x') as output:
     json.dump(report, output, indent=2)
     output.write('\n')

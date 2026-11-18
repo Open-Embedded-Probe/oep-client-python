@@ -38,9 +38,8 @@ SPEC identity、送受信raw、刺激/観測、checker/model SHAを保存する�
 
 ```sh
 uv run python - /path/to/oep-spec /path/to/notification-report.json <<'PY'
-import hashlib, json, sys
+import json, sys
 from pathlib import Path
-from oep_client import virtual_route_model
 from oep_client.conformance import Checks, checker_sources_sha256, spec_identity
 from oep_client.conformance.routes import RouteChecks
 from oep_client.conformance.route_sample import SampleRouteAdapter
@@ -56,10 +55,7 @@ report = NotificationSequenceChecks(checks, SampleNotificationSequenceAdapter(mo
 report['sequence_status'] = report['status']
 report['status'] = 'passed' if report['sequence_status'] == routes['status'] == 'passed' else 'failed'
 report.update(spec=identity, route_checks=routes, wire_trace=checks.trace,
-              checker_sources_sha256=checker_sources_sha256(),
-              model_sources_sha256={name:hashlib.sha256((Path(virtual_route_model.__file__).parent/name).read_bytes()).hexdigest()
-                  for name in ('virtual_route_model.py','virtual_data_model.py','virtual_notification_model.py',
-                               'virtual_resource_model.py','virtual_core.py','endpoint.py','virtual_bench.py')})
+              checker_sources_sha256=checker_sources_sha256())
 with Path(sys.argv[2]).open('x') as output:
     json.dump(report, output, indent=2)
     output.write('\n')

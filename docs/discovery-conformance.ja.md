@@ -31,9 +31,8 @@ SPEC identity、checker/model SHA、raw交換を保存する例:
 
 ```sh
 uv run python - /path/to/oep-spec /path/to/discovery-report.json <<'PY'
-import hashlib, json, struct, sys
+import json, struct, sys
 from pathlib import Path
-from oep_client import virtual_declaration_model
 from oep_client.conformance import Checks, checker_sources_sha256, spec_identity
 from oep_client.conformance.discovery import DiscoveryChecks
 from oep_client.conformance.declaration_model import DeclarationModel
@@ -51,9 +50,7 @@ for geometry in ('short', 'long', 'empty'):
     reports[geometry]['wire_trace'] = checks.trace
 report = dict(status='passed' if all(r['status']=='passed' for r in reports.values()) else 'failed',
               full_conformance=False, spec=identity, fixtures=reports,
-              checker_sources_sha256=checker_sources_sha256(),
-              model_sources_sha256={name:hashlib.sha256((Path(virtual_declaration_model.__file__).parent/name).read_bytes()).hexdigest()
-                  for name in ('virtual_declaration_model.py','virtual_resource_model.py','virtual_core.py','endpoint.py','virtual_bench.py')})
+              checker_sources_sha256=checker_sources_sha256())
 with Path(sys.argv[2]).open('x') as output:
     json.dump(report, output, indent=2)
     output.write('\n')

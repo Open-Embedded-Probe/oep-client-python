@@ -54,9 +54,8 @@ SPECを選択したraw交換の保存例:
 
 ```sh
 uv run python - /path/to/oep-spec /path/to/arm-report.json <<'PY'
-import hashlib, json, sys
+import json, sys
 from pathlib import Path
-from oep_client import virtual_arm_adi_model
 from oep_client.conformance import Checks, checker_sources_sha256, spec_identity
 from oep_client.conformance.arm_adi_blocks import ArmAdiBlockChecks
 from oep_client.conformance.arm_adi_sample import SampleArmAdiAdapter
@@ -71,10 +70,7 @@ report = ArmAdiBlockChecks(checks, SampleArmAdiAdapter(model)).run()
 report['arm_status'] = report['status']
 report['status'] = 'passed' if report['arm_status'] == common['status'] == 'passed' else 'failed'
 report.update(spec=identity, interface_checks=common, wire_trace=checks.trace,
-              checker_sources_sha256=checker_sources_sha256(),
-              model_sources_sha256={name:hashlib.sha256((Path(virtual_arm_adi_model.__file__).parent/name).read_bytes()).hexdigest()
-                  for name in ('virtual_arm_adi_model.py','virtual_attach_model.py','virtual_dependency_model.py',
-                               'virtual_resource_model.py','virtual_stream_model.py','virtual_core.py','endpoint.py','virtual_bench.py')})
+              checker_sources_sha256=checker_sources_sha256())
 with Path(sys.argv[2]).open('x') as output:
     json.dump(report, output, indent=2)
     output.write('\n')
