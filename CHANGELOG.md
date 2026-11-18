@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 0.0.58
 - (EN) The settings file carries the memo area (oep-spec 526d273, settings file §2.4): `oep settings export` writes every
   memo object under `memo` (UTF-8 data as a string, other data as {"bytes": hex}; a torn object or one whose name is not
   UTF-8 left out and named), and `oep settings import` deletes the objects the file lacks and writes the ones that differ,
