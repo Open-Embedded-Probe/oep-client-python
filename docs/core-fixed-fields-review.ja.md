@@ -1,5 +1,7 @@
 # コアの固定フィールドと省略のレビュー
 
+[English](core-fixed-fields-review.md)
+
 core §2.3の「固定部分に省略できるフィールドを置かない」を、revision1のコアpayloadへ適用する。
 本文SHAは[core形の検査](host-core-shapes-conformance.ja.md)の固定を共有する。
 CoreFixedFieldChecksはSPECを明示指定し、本文・番号が変わればレビューし直す。

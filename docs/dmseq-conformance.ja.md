@@ -1,5 +1,7 @@
 # probe側dmseq framingの検査
 
+[English](dmseq-conformance.md)
+
 `DmseqChecks`は選択SPECの`target-console-dmseq.ja.md`のhost規則と
 `oep-if-console.ja.md` §1〜3、`oep-if-debug.ja.md` §4.6を第三段階
 `oep-interface`で検査する。ここでdmseq文書のhostはOEP probe側を指す。

@@ -1,5 +1,7 @@
 # optional runとloader状態の検査
 
+[English](run-conformance.md)
+
 `RunChecks`は選択SPECの`oep-if-debug.ja.md` §4/4.4とconsole §3を
 第三段階`oep-interface`で検査する。`Checks(send, registry, unit)`と
 `SampleRunAdapter(source)`を明示して`RunChecks(checks, adapter).run()`を呼ぶ。

@@ -1,5 +1,7 @@
 # 同一要求の再送と結果不明後の復帰
 
+[English](host-resend-conformance.md)
+
 SPEC checkoutを明示し、`HostResendChecks(SampleHostResendAdapter(), spec=path).run()`を実行する。
 core/transports本文のレビュー済みSHA（待受け期限の検査と共有）と待ちの数値を照合する。private設備やOSの口を使わない。
 SerialLink.send/exchange/resync/recover_transport、virtual Core、ResourceModelを

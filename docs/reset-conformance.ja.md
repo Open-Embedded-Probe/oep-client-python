@@ -1,5 +1,7 @@
 # optional resetとDM復帰の検査
 
+[English](reset-conformance.md)
+
 `ResetChecks`は選択SPECの`oep-if-debug.ja.md` §4/4.3/4.6、console §2/3、
 共通mark §1を第三段階`oep-interface`で検査する。
 `Checks(send, registry, unit)`と`SampleResetAdapter(source)`を明示して

@@ -1,5 +1,7 @@
 # groupの即時開始と時刻の検査
 
+[English](capture-group-geometry-conformance.md)
+
 `CaptureGroupGeometryChecks(checks).run(...)`は、明示したSPECのcapture §2/3.3/4.1を第三段階で検査する。
 configure/start/statusの成功payloadと各trackの最初の37 byte区画recordを、そのまま渡す。
 probeのencoder、Host decoder、私的ベンチや兄弟checkoutは取り込まない。
