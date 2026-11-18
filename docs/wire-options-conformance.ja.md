@@ -10,10 +10,10 @@
 reset role 3はchannel 6、max_op_ms=5、最も遅い読出しは1000 Hzを宣言する。
 この番号・時間・速さを他probeや設備へ要求しない。
 
-- RVSWD idle_clockは省略/0でclock high、1でlow。dataはhigh。
+- RVSWD idle_clockは0でclock high、1でlow。dataはhigh。省略時、このfixtureのtargetはclock high。
   SWIOのdataはhigh、SWDはdata low / clock high。
   未定義idle値は受け取ったraw tagでunsupported。SWIO/SWDではidle_clockは未知のtagで、
-  criticalならunsupported 0x84、noncriticalなら無視してattachする。
+  criticalなら受け取ったtag（critical bit付き）でunsupported、noncriticalなら無視してattachする。
 - reset channelは毎回hostが指定する。role 3未提供、未宣言channel、hold_ms超過はunsupported。
   既存connection、自分のwire pins、外部予約との競合はcause 1、disable/出力idleはcause 5。
   max_speed 0、壊れた幅なども含め、reset前に全要求を検査する（固定部分はdebug §1）。
