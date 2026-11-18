@@ -159,14 +159,14 @@ consoleのlink-lost/closed、成功後の履歴消去と他connectionの保持�
 他のmetadataと広告opの実動作は別途検査が必要。
 
 [fixture系describe metadata](fixture-metadata-conformance.ja.md)はGPIO/UART/I2C/SPIを明示して検査する。
-GPIO入力とdrive、UART formats、I2C/SPIの固定形とframe上限、任意stretch/cs_setupの条件を確認する。
+GPIO入力mode、UART formatsとTX role、I2C/SPIの固定形とframe上限、SPI modes、任意stretch/cs_setupの条件を確認する。
 広告opの動作とpin/plan lifetimeは別途検査が必要。
 
 [captureのdescribe](capture-metadata-conformance.ja.md)はlogic/analog/capture-groupのfnを明示し、繰り返しmetadataの形、
-予約features、mode・rate・triggerの形を検査する。opの実動作は別途必要。
+featuresの形、mode・rate・triggerの形を検査する。opの実動作は別途必要。
 
 [GPIOとplanの動作](gpio-conformance.ja.md)は明示fixtureで、事前拒否、fn別原子置換、駆動順序、
-drive/read、再送とidle復元を第三段階で確認する。物理pin/他fixture/永続configは未検査。
+set/read、再送とidle復元を第三段階で確認する。物理pin/他fixture/永続configは未検査。
 
 [GPIO planでのcore寿命](gpio-lifecycle-conformance.ja.md)。
 明示時計で期限切れ、force、同じIDのopen、再送履歴、lease更新/非更新とpin/plan解放を確認する。
