@@ -184,7 +184,7 @@ uv run pytest -q tests/test_virtual_bench_capture_trigger_modes.py
 trigger通知と取得rawは同じ`VirtualCapture.value(role, sample)`の信号源を使う。
 
 このfixtureはtimestamp付きの入力関数であり、実機の非同期GPIO/ADC入力を証明しない。
-start時の未来トリガー探索とone-shotの将来data合成は廃止した。
+start時に未来のtriggerを探さず、one-shotのdataを先回りして合成しない。
 自然trigger/forceの成立時と取得完了時を分けて通知を照合する。
 実時間latency、storage gap・並行性の独立適合は別途必要。
 

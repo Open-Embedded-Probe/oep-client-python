@@ -5,7 +5,7 @@ byte ring 64 / mark ring 5 / TX queue 4という採用条件を明示する。
 StreamChecksの位置・ページング・あふれ・mark cursor/一周/eviction・u64境界のassertを再利用する。
 clearの再送とwrite受付/結果/prefix/再送も確認する。
 
-元の独立sampleはsession endでも受信bufferを保持するが、UARTはplanの資源としてendで消える。
+独立のstream sample（[stream検査](stream-conformance.ja.md)）はsession endでも受信bufferを保持するが、UARTはplanの資源としてendで消える。
 そのsample固有の持続性をUARTへ誤適用しない。各条件ではwire open/plan_applyを記録してから検査し、
 wire endで後始末する。UARTのconfigure/plan寿命は第三段階の検査へ分ける。
 

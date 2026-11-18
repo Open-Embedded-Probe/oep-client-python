@@ -18,7 +18,7 @@ fn 1のsample create(kind u8)で実際に資源を作り、返された非zero u
 
 instrumentationはroute adapterの`state()`にholder、last、high、deadline、cache、resourcesを明示して返す。要求/応答の全bytesとdeadlineそのものを比較し、単なる「再送回数」や成功カウンターで代用しない。sampleの資源opが宣言されていること、観測能力・フィールドの有無をsession操作前に確認する。
 
-公開coreモデルは任意の`admission_reason`を受け、見出し/再送/session判定後にだけ拒否を適用する。通常のcore/旧profileには理由を渡さない。pipelineモデルが独自に拒否frameを作る経路を廃し、拒否も同じcoreの履歴管理へ通す。公開wire opの追加やSPEC変更ではない。
+公開coreモデルは任意の`admission_reason`を受け、見出し/再送/session判定後にだけ拒否を適用する。通常のcoreには理由を渡さない。pipelineモデルの拒否も同じcoreの履歴管理を通る。公開wire opの追加やSPEC変更ではない。
 
 ```python
 import os

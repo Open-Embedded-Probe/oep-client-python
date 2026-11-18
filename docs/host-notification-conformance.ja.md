@@ -1,7 +1,7 @@
 # Hostの通知振り分けと期限の検査
 
 core §2.4/10.1/10.2のHost側を、明示したreaderアダプタと論理時計で検査する。
-production linkの置換は行わず、実装追従前の検査・仮想サンプルである。
+production linkは置き換えず、仮想サンプルで検査する。
 private設備設定や隣接SPECは探索しない。
 
 採用例はfn 7/8、既知event kind 1（固定部分1 byteとTLV）、標準data形。

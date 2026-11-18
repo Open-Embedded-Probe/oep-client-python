@@ -22,11 +22,11 @@ production Hostは要求ごとに処理上限を選ぶ（Host.op_bound_ms、host
 reportの`bound_source`にこの採用を記録する。
 
 
-- SINGLE16：length/COBS、(引数, max_op_ms)＝(0,1)/(0,5000)/(1500,5000)/(5000,5000)、write400/4000ms。返答は必要な待ちの1ms前に完成し、Hostがその完成まで受けられることを確認する。引数がmax_op_msより短い条件で引数だけの下限を検出する。
-- TIMEOUT4：length/COBS、(0,1)/(1500,5000)、write4000ms、応答なし。書き終わりから少なくとも必要な時間を待つ。
-- PIPELINE4：length/COBS、(0,1)/(1500,5000)、write4000ms。2つをまとめて送り、2つ目の待ちを1つ目の完全な応答受領から始める。
-- PIPELINE-TIMEOUT4：同じpipelineで2つ目だけ応答なし。1つ目の完全な応答受領から少なくとも必要な時間を待つ。
-- QUICK6：length/COBS、fn 0 clock（session 0）、max_op_ms未取得/300/5000。未取得と5000では1000 ms、300では300 msを処理上限とする。
+- HOST-DEADLINE-SINGLE：length/COBS、(引数, max_op_ms)＝(0,1)/(0,5000)/(1500,5000)/(5000,5000)、write400/4000ms。返答は必要な待ちの1ms前に完成し、Hostがその完成まで受けられることを確認する。引数がmax_op_msより短い条件で引数だけの下限を検出する。
+- HOST-DEADLINE-TIMEOUT：length/COBS、(0,1)/(1500,5000)、write4000ms、応答なし。書き終わりから少なくとも必要な時間を待つ。
+- HOST-DEADLINE-PIPELINE：length/COBS、(0,1)/(1500,5000)、write4000ms。2つをまとめて送り、2つ目の待ちを1つ目の完全な応答受領から始める。
+- HOST-DEADLINE-PIPELINE-TIMEOUT：同じpipelineで2つ目だけ応答なし。1つ目の完全な応答受領から少なくとも必要な時間を待つ。
+- HOST-DEADLINE-QUICK：length/COBS、fn 0 clock（session 0）、max_op_ms未取得/300/5000。未取得と5000では1000 ms、300では300 msを処理上限とする。
 
 各返答は先頭2byteと残りを10ms離して到着させる。
 2つ目の期限を最初のbyteの到着やbatchの書き終わりから数える故障を検出する。
@@ -40,3 +40,7 @@ timeout後の_recoverは観測用hookで止める。再送/resyncの検査へ結
 実時計の精度、物理transport、resync/retry/own-link交渉、pipeline内の異なる処理上限、
 操作が定める短い処理上限、production Hostによる処理上限の選択、
 production Hostとの統合は検査しない。full_conformance=false。
+
+```sh
+uv run pytest -q tests/test_conformance_host_deadline.py
+```
