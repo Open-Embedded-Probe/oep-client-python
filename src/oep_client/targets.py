@@ -123,9 +123,10 @@ FAMILIES: tuple[Family, ...] = (
            bonded=(("PC16", "PC11"), ("PC17", "PC10")),   # datasheet note 4: one lead each except on F8U6 / D8U6
            notes="SWCLK resting low does not connect; NRST on PA21 only while the option bytes' RST_MODE turns it on "
                  "(11, no NRST, as shipped)"),
-    Family("ch32l103", "rvswd", max_speed=1_000_000, idle_clock="low", gpio_ports="ABCD", gpio_pads=16,
-           debug_pads=("PA13", "PA14"),
-           notes="SWCLK resting high resets the debug link; over 1 MHz fails right after a reset; target_id not recorded"),
+    Family("ch32l103", "rvswd", ids=((0xFFF00000, 0x10300000),), max_speed=1_000_000, idle_clock="low",
+           gpio_ports="ABCD", gpio_pads=16, debug_pads=("PA13", "PA14"),
+           notes="the CH32L103 (target_id 0x10310710): SWCLK resting high resets the debug link; over 1 MHz fails right "
+                 "after a reset"),
     Family("ch32v20x", "rvswd", ids=((0xFFF00000, 0x20800000), (0xFFF00000, 0x20300000), (0xFFF00000, 0x20500000)),
            idle_clock="low", gpio_ports="ABCD", gpio_pads=16, debug_pads=("PA13", "PA14"),
            notes="the CH32V208 (target_id 0x2080051c, CH32V208WBU6), the CH32V203 (0x20310500, CH32V203C8T6) and the CH32V205 "
