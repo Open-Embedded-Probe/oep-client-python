@@ -17,8 +17,8 @@ pip install "oep-client-python[pytest]"
 
 ```sh
 # tests/.env
-TEST_SERIAL_PORT_X035C8T6_S3=oep://30eda0e31108/x035c8t6-s3
-TEST_SERIAL_PORT_PEER_PICO=oep://80f1b2d835d6/rp2040-x035
+TEST_SERIAL_PORT_DUT=oep://0123456789ab/dut
+TEST_SERIAL_PORT_PEER_PICO=oep://0123456789ab/pico
 ```
 
 アドレスは `oep://<unit_id>/<口>` です（口はプローブのラベル `<口>.<線>` の前半。OEP の host ガイド §5.3）。
@@ -60,19 +60,19 @@ def test_eth(dut, port_memo):
 
 ```sh
 # tests/.env
-OEP_PORT_MEMO_BC5F4B9807F7='{"parts": {"eth": {"to": "lan"}}}'
+OEP_PORT_MEMO_0123456789AB_DUT='{"parts": {"eth": {"to": "lan"}}}'
 ```
 
 メモ欄に書くのは pytest の外の道具です（`oep_client.memo` の `Memo.write` を使う道具など）。
 
 ## 4. コンソール
 
-pyserial は `oep://...` を開けます（`oep_client.pyserial`）。RP2040 のボードでは、SWD で読む SEGGER RTT がコンソールになります
+pyserial は `oep://...` を開けます（`oep_client.pyserial`）。RP2040 / RP2350 のボードでは、SWD で読む SEGGER RTT がコンソールになります
 （[swd.ja.md](swd.ja.md) §3.2）。スケッチは RTT を使います。
 
 ## 5. 書き込み
 
-ポートが `oep://<unit_id>/<口>` で、プロファイルが RP2040 のボード（fqbn が `rp2040:`）のとき、プラグインがビルドの ELF をプローブの SWD で書きます
+ポートが `oep://<unit_id>/<口>` で、プロファイルが RP2040 / RP2350 のボード（fqbn が `rp2040:`）のとき、プラグインがビルドの ELF をプローブの SWD で書きます
 （pytest-embedded-arduino-cli の書き込みの hook）。arduino-pico の書き込みの方式は問いません。それ以外は arduino-cli の書き込みのままです。
 
 ## 6. セッションと UART
