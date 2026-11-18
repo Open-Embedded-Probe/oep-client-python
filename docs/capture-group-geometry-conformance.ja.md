@@ -25,7 +25,7 @@ sample時刻の推定値は一般には実時間と完全には一致しない�
 `start_uncertainty_ns`はSPEC上の保証ではないため、報告された値から許容幅を自動で広げない。
 物理probeへこの論理fixtureの1ns許容幅をそのまま適用するものではない。
 
-`virtual_capture_group_geometry_model.fixtures()`は27の生payload/record例を作る。
+`capture_group_geometry_model.fixtures()`は生payload/record例を作る。
 整数/分数rate、20MHzと48kHzの組、trackごとの起点のずれ、trigger_index 0の例、
 大きいu32 num/denとu64端に近いstart_ns、3 trackと飛び番fnを含む。
 これはmetadata例の生成器で、取得エンジンや大量のsample bufferを実装するmodelではない。

@@ -19,6 +19,7 @@ max_length=8 byteを宣言する。この値を他のprobeへ要求しない。
 - 同じconnectionのconsoleをblock中にpollしてもscratchへ触れない。
   生きたdmseq frameを保存・復元し、resume後に元の出力が届くことを確認する。
 - read/writeの同一要求再送はbusアクセスを繰り返さず、結果を計算し直さない。
+- 存在しないconnectionはno_resource、console streamをconnectionに指定するとunavailable cause 6。
 - DATAの復元（後始末）に失敗したら、全語を転送してもcompleted partial（done>0）でstatusは失敗の値。
   応答の後でconnectionとそのstreamを閉じ、次の要求はno_resource（debug §4）。
 
@@ -34,3 +35,7 @@ max_length=8 byteを宣言する。この値を他のprobeへ要求しない。
 abstract command/program buffer/sysbusのアルゴリズム、RV32番地overflowとbusアクセス権、
 reset/step/run、実応答writer、別容量とproduction Host統合は未検査。
 外部memory刺激の検査だけでdmi/runによる実target memory変更まで証明したとは扱わない。
+
+```sh
+uv run pytest -q tests/test_conformance_blocks.py
+```

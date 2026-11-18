@@ -1,6 +1,6 @@
 # 混雑時のsession再送・拒否cacheの補助検査
 
-core §4.3/5.2/6.1を、[経路別受付モデル](pipeline-conformance.ja.md)の上で検査する。受付枠は接続ごと、最後に成功した新規sessionの再送履歴はprobeに一つ。拒否の順は見出し、再送、session、そのほかの状態判定で、window_exceededは最後の段階に属する。新しいsession要求が再送判定を通った場合、rejectedも記録する。単に受付が混雑しているためにこの順序を飛ばさない。
+core §4.3/5.1/6.1を、[経路別受付モデル](pipeline-conformance.ja.md)の上で検査する。受付枠は接続ごと、最後に成功した新規sessionの再送履歴はprobeに一つ。拒否の順は見出し、再送、session、そのほかの状態判定で、window_exceededは最後の段階に属する。新しいsession要求が再送判定を通った場合、rejectedも記録する。単に受付が混雑しているためにこの順序を飛ばさない。
 
 超過要求を落として応答しない選択もSPEC上許される。この検査は`reject-overflow`を選ぶ明示sample用であり、一般probeに超過拒否を必須化しない。範囲外刺激もfixtureの拒否方針を検査するために意図して送る。通常hostが上限を超えてよいという変更ではない。
 

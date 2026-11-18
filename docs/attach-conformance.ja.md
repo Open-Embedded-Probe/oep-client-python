@@ -16,6 +16,7 @@
 | 方式の競合 | mechanism 0〜2は1 connectionに1 stream。既存streamと同じ方式、別の方式のどちらのopenもcause 6。 |
 | 複数target | 別connectionには個別streamを作り、streamsの作成順・connection・mechanismを照合する。SID 0のreadは個別出力を読み、消費しない。 |
 | 再送 | detach/close後のattach/open再送は過去のID/応答を返すだけで、立ち上げ・資源作成を繰り返さない。作り直したstreamは新IDと空の状態。 |
+| session | SID 0のattach/console openはsession_required、他人のsessionのattachはlocked。未知critical TLVを付けてもsessionの判定が先。 |
 
 `SampleAttachAdapter`は標準名/fn、論理pin候補、方式の宣言subset、規範参照を明示する。`AttachModel`は物理targetを持たない独立fixture。fn 1 RVSWD、2 SWIO、3 SWD、4 console、8 logical channels、各wire最大2 connection、全体8資源、min_clock_hz 1000、consoleはSDI/DMDATAを宣言する。未宣言のdmseqを拒否する条件も検査する。
 
@@ -24,6 +25,10 @@
 仮想コアは`request_tags` / `dispatch_request`の明示拡張入口で、拡張固有critical TLVを検査・実行へ渡す。入口が無い拡張は共通の処理を使う。session・header・cacheの判定は入口より先に行う。同一要求再送でTLV解析や実行を繰り返さない。
 
 単体試験でmax_speed 0の受理、未知critical無視、既知noncritical拒否、raw tag喪失、後のtag優先、後のコピーの未検証、拒否時targetアクセス、console応答の余分なbyte、ARM console受理、方式競合無視、速度上限超過、再送再実行、connectionsのmetadata不正を検出する。採用条件/選択SPEC変更、所有中fixture再起動拒否、拡張入口とsession/cacheの優先順も確認する。
+
+```sh
+uv run pytest -q tests/test_conformance_attach.py
+```
 
 ```python
 import os

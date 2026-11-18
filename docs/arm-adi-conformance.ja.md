@@ -44,7 +44,7 @@ RDBUFFを繰り返し読んだ場合のUNKNOWN値を特定の値として適合�
 ## 実行
 
 以下のコマンドはclient checkoutのルートで実行する。
-pytestでは正常モデル、transfer側16種類とblock側10種類の意図的な違反、無効な前提、max_lengthの誤った幅を確認する。
+pytestでは正常モデル、transfer側とblock側の意図的な違反、無効な前提、max_lengthの誤った幅を確認する。
 
 ```sh
 uv run pytest -q tests/test_conformance_arm_adi.py tests/test_conformance_arm_adi_blocks.py
@@ -95,5 +95,5 @@ WAIT時のstore一回実行、block replay、失敗語/後続への不正アク�
 最適化したpipeline方式、全ての遅延FAULTの方針は検査しない。
 AP bank/SELECTの完全なdecode、sticky状態とABORT、ADIv6、SWD attachのTARGETSEL/tid、
 packetのparity/turnaround/idle、電気的な再試行と時間、CPUの実行状態は別途必要。
-全経路のframe容量、u32番地を越えるblockの扱い、production Hostとの統合も未完成である。
+全経路のframe容量、u32番地を越えるblockの扱い、production Hostとの統合も未検査。
 core/共通の全規範の確認を、この第三段階のPASSで置き換えない。

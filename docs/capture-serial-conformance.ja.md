@@ -24,3 +24,7 @@ readはu64位置を返し、既に解放した位置ならgap、未取得の未�
 この共通の区画手順を他のcapture拡張へ移す際は、明示adapter・独立のsample/packing oracleを用意する。
 mark保持、streaming/groupとの通知交錯、任意capacity、物理sampling、production Hostとの統合は検査しない。
 full_conformance=false。
+
+```sh
+uv run pytest -q tests/test_conformance_capture_serial.py
+```

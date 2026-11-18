@@ -1,6 +1,6 @@
 # 資源番号の上限と再起動の検査
 
-`AllocatorChecks`はcore §2.3/5.2/6/9に基づく第一段階の補助検査である。
+`AllocatorChecks`はcore §2.3/5.1/6/9に基づく第一段階の補助検査である。
 公開`AllocatorModel`と`SampleAllocatorAdapter`を使い、SPEC checkoutと出力先を明示する。
 privateベンチや隣接checkoutは探索しない。資源opの符号化はresource-conformance.ja.mdの独自sampleを採用し、
 資源番号だけはcore §9のとおりu32で運ぶ（create応答・close/use要求・snapshotの番号がu32、上限0xFFFFFFFF）。
@@ -9,9 +9,9 @@ privateベンチや隣接checkoutは探索しない。資源opの符号化はres
 - 0xFFFFFFFE/0xFFFFFFFFを異なるfn/kindへ割り当て、全slotでそれ以上のcreateをunavailable・cause 2とする。
   既存資源はuse/closeでき、種類違いはcause 6、閉じた番号はno_resource。
 - closeして空きができても、使い切った番号は同じbootで再使用しない。
-- endと1000 msのlease境界で資源を解放し、旧createの再送は歴史的な番号を返しても資源を復活させない。
-  新しいsessionでもallocatorは使い切ったまま。
-- forceで新しいsessionへ移っても番号を戻さず、旧資源は引き継がない。
+- endと1000 msのlease境界で資源を解放する。旧createの再送は記録した応答（同じ番号）かresult_lostで、資源を復活させない。
+  旧sessionでのuseはno_session。新しいsessionでもallocatorは使い切ったまま。
+- forceで新しいsessionへ移っても番号を戻さず、旧資源は引き継がない（旧番号のuseはno_resource、旧sessionのcreate再送はlocked）。
 - 失敗したcreateの再送は保存した同一応答で、allocator/資源を変えない。
 - 再起動でboot_idを変え、資源と履歴を無効化して番号を1から始める。
 

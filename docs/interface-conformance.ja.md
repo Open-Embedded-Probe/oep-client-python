@@ -6,7 +6,7 @@
 
 | case | 規範・観測 |
 | --- | --- |
-| NAME | core §13 規則1。2つ以上の非空label。先頭/末尾のhyphenを禁止。文字集合・1〜48 byteはlistの検査で確認。 |
+| NAME | core §12 規則1。2つ以上の非空label。先頭/末尾のhyphenを禁止。文字集合・1〜48 byteはlistの検査で確認。 |
 | OPS | §1.2/7.4/12。ops必須、bitmapの上限、共通予約番号禁止、subscribe/unsubscribeの対。 |
 | FIXED | §2.3/7.4。max/min_clock_hz・featuresはu32、max_lengthはu16。値域や意味を推測しない。 |
 | CHANNELS | §7.4/7.5。role_channelsのheaderと繰り返しの和集合、channel_groupのcount/固定要素、宣言channel数の範囲。 |

@@ -1,6 +1,6 @@
 # core clockの検査とlogical fixture
 
-`ClockChecks`はcore §2.6a/4.1/5.2/6/7.7の第一段階の補助検査である。
+`ClockChecks`はcore §2.7/4.1/5.1/6/7.6の第一段階の補助検査である。
 選択したSPECを明示し、公開Pythonパッケージの`ClockModel`と`SampleClockAdapter`で実行する。
 privateベンチ、設備設定、隣接リポジトリの自動探索は必要ない。
 

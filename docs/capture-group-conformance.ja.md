@@ -23,6 +23,7 @@
 - group stopで全trackを止め、各途中区画をshortとして残す。
 - repeatの個別pauseをgroup state 3とする。releaseはtrackごとで、peerの区画/bytesを変更しない。
 - ADC/logicそれぞれの取得失敗でgroup state 6、peerをstopし、完成区画を保持する。
+- SID 0のbind/start/stopはsession_required。statusはSID 0で読める。
 - bind/start/stop再送の二重副作用。end/lease expiry/強制openでbindとplanを解放し、
   世代を保ちながら未設定状態へ戻す。取得中にもpinの電気状態を変えていないことを観測する。
 
