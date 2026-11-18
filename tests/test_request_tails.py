@@ -295,12 +295,19 @@ def test_every_op_ignores_an_unknown_tlv_and_refuses_it_critical_esp32_v003():
     assert every_op(ep) - tag.seen == set()
 
 
-def test_tag_0x7f_is_an_unknown_tag_on_every_op():
-    """core §2.2: tag numbers are 0x01-0x7F; the virtual bench implements no 0x7F, so a request carrying one is read like
-    any unknown TLV - ignored plain, unsupported (the byte as received) critical."""
-    ep, tagging, hst = bench(virtual_bench.p4_x035(), tag=0x7F)
-    drive_all_p4_x035(hst, ep)
-    assert every_op(ep) - tagging.seen == set()
+def test_tag_0x7f_is_an_unknown_tag():
+    """core §2.2: tag numbers are 0x01-0x7F; 0x7F with a name the virtual bench does not know is read like any unknown
+    TLV - ignored plain, unsupported (the byte as received) critical. The tail is read by one reader for every op
+    (test_every_op_ignores_an_unknown_tlv_and_refuses_it_critical_*): the highest number on one op."""
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
+    hst = h.Host(lambda b: ep.handle(b, 1))
+    op, payload = reg.CORE.op["describe"], struct.pack("<HH", 0, 0)
+    plain = hst.request(m.CORE_FN, op, payload, locked=False)
+    assert plain.succeeded
+    assert hst.request(m.CORE_FN, op, payload + m.tlv(0x7F, b"\x04io.x"), locked=False).payload == plain.payload
+    with pytest.raises(h.Unsupported) as e:
+        hst.request(m.CORE_FN, op, payload + m.tlv(0x7F, b"\x04io.x", critical=True), locked=False)
+    assert e.value.result.payload == bytes([0x7F | m.TAG_CRITICAL])
 
 
 @pytest.mark.parametrize("tag", [0x00, 0x80])

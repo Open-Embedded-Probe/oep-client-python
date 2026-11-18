@@ -62,33 +62,6 @@ def test_core_profile_identity_override_keeps_current_contract(monkeypatch):
     check.declarations()
 
 
-def test_current_virtual_tcp_passes_core_and_tcp_faults():
-    # Real loopback socket and existing virtual-bench CLI/server; no private bench imports.
-    proc = subprocess.Popen([sys.executable, '-m', 'oep_client.virtual_bench_serve',
-                             '--tcp', '0', '--profile', 'core-v1', '--once'],
-                            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    wire = None
-    try:
-        line = proc.stdout.readline().split()
-        assert line and line[0] == 'PORT', proc.stderr.read() if proc.poll() is not None else line
-        wire = TcpWire.open('tcp://127.0.0.1:' + line[1])
-        check = Checks(wire.send, copy.deepcopy(REG), 'virtual-core-1')
-        check.tcp_wire = wire
-        report = check.run()
-        assert report['status'] == 'passed', [(x['id'], x.get('error')) for x in report['checks'] if x['status'] != 'passed']
-        assert len(report['checks']) == 54
-        assert report['framing_backend'] == 'independent TCP'
-        assert not report['full_conformance']
-        proc.wait(timeout=5)
-    finally:
-        if wire:
-            wire.close()
-        proc.stdin.close()
-        if proc.poll() is None:
-            proc.terminate()
-        proc.wait(timeout=5)
-
-
 def test_current_virtual_tcp_moves_a_session_to_a_new_connection():
     # The session, its lock, its replay record and its lease outlive the connection; a request whose answer went with
     # the closed connection is answered from the record or refused result_lost on the new one, never run again

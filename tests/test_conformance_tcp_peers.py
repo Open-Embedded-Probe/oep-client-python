@@ -50,6 +50,7 @@ def test_virtual_core_passes_all_tcp_peer_contracts():
         report = check.run()
         assert report['status'] == 'passed', [(r['id'], r.get('error')) for r in report['checks'] if r['status'] != 'passed']
         assert len(report['checks']) == 60 and not report['full_conformance']
+        assert report['framing_backend'] == 'independent TCP'
         assert check.session is None
         assert {r['id'] for r in report['checks']} >= {name for name, _ in TCP_PEER_CASES}
         assert all(r['exchanges'] for r in report['checks'] if r['id'].startswith('CORE-TCP-PEER-'))
