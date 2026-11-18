@@ -1,5 +1,7 @@
 # 異なるレートのgroup取得検査
 
+[English](capture-timeline-conformance.md)
+
 `CaptureTimelineChecks`は、明示したSPECのcapture §2/3.2/3.4/4.1とcore §10に基づく第三段階の検査。
 `SampleCaptureTimelineAdapter`で独立`CaptureTimelineModel`の時計と通知の取り出しを指定する。
 私的ベンチ、endpoint、兄弟checkout、Hostのcapture decoder、他のcapture checkerは取り込まない。

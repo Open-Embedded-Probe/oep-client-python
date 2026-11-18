@@ -1,5 +1,7 @@
 # core発見処理のcursor・channel名検査
 
+[English](discovery-conformance.md)
+
 `DiscoveryChecks`はcore §2.1/7.1–7.5に基づく第一段階の補助検査である。
 通常の順次ページングに加え、listのページ途中のentryとfn 0 describeのページ途中のTLVを指すcursorを確認する。
 privateベンチを参照せず、SPEC checkoutと出力先を明示する。

@@ -1,5 +1,7 @@
 # 通知経路・応答優先・送りかけqueueの検査
 
+[English](route-conformance.md)
+
 SPEC core §10.4、transports §3の契約を、2つの明示経路とinstrumentationを持つモデルで検査する。受信済み要求、通知生成、送信停止/部分送信を制御し、各経路の全raw messageと未送信suffixを観測する。設備の自動探索や私的ベンチへの依存はしない。
 
 共通契約は、応答が要求元に返る、通知がsubscribe元だけへ届く、受信済み要求の応答を通知より先に送る、送りかけ通知の残りbytes合計がmax_frame×2以内、送信停止中も他経路の処理が進む、probe内部で捨てた通知もdata/event共通seqを消費する、経路切断だけではsession/資源/購読/再送履歴を解放しないこと。

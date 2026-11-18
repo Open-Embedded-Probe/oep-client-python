@@ -1,5 +1,7 @@
 # 標準wire attachの事前検査とconsole open
 
+[English](attach-conformance.md)
+
 `AttachChecks`は第三段階`oep-interface`として、選択SPECに基づくwire attachの要求と拒否、console openの制約を検査する。コアと共通部品の準拠は別の検査を併用する。
 
 | 契約 | 検査 |
