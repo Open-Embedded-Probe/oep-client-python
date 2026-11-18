@@ -26,6 +26,10 @@ confirm/core describe/listを準備し、各fnの名前、ops、共通tagの固�
 各fnの前提caseに失敗したら、その後の追加要求を止める。失敗や準備不成立を設備不足としてskipしない。
 checker/core/helper/再利用した宣言検査のSHA、SPEC、要求/応答、観測を結果に記録する。
 
+```sh
+uv run pytest -q tests/test_conformance_interface_smoke.py
+```
+
 標準OEPの必須操作、提供する操作の動作、resources/終了時の寿命、全部の未提供op、全paging条件、電気的なpin挙動は、この検査の範囲外である。
 UARTでmarksやwriteが無くても、それを共通検査の失敗条件にしない。UART自身のconfigure/read/statusなどは固有の検査が確認する。
 独自の1操作だけの拡張も、同じ共通検査を使える。
