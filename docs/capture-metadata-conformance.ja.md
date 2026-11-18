@@ -1,5 +1,7 @@
 # captureのdescribe検査
 
+[English](capture-metadata-conformance.md)
+
 `CaptureMetadataChecks(checks, selection).run()`はlogic/analog/capture-groupのfn/nameを明示して実行する。
 revision 1の第三段階で、登録op検査を含む。全要求はSID 0読出し。
 

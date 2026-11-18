@@ -1,5 +1,7 @@
 # analog captureの論理操作検査
 
+[English](analog-conformance.md)
+
 `AnalogChecks(checks, adapter).run()`は、明示したSPECのcapture §1.2/2/3/3.7、plan §2、core §4.4/6/8/9を
 第三段階で確認する。`Checks(send, registry, unit)`と`SampleAnalogAdapter(source)`を渡す。
 公開checkerとadapterは私的ベンチ・兄弟checkout・設備設定を探索しない。

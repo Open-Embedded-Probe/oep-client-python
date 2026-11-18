@@ -1,5 +1,7 @@
 # logic captureの論理検査
 
+[English](logic-conformance.md)
+
 `LogicChecks(checks, adapter).run()` は選択SPECのcapture §1〜3、plan §2、core §6/8/9を第三段階で検査する。
 `Checks(send, registry, unit)` と `SampleLogicAdapter(source)` を明示する。
 公開側は私的ベンチ・隣接リポジトリ・設備設定を探索しない。
