@@ -1,5 +1,7 @@
 # UART bridgeのport_speedを検査する
 
+[English](port-speed-conformance.md)
+
 PortSpeedChecksはlink §3のProbe側の握手、phase表、復帰timerを、明示的な応答書き込み完了と論理時計で検査する。
 PortSpeedModelは現在のCore・GPIO/plan・linkを組み合わせ、UART bridge0/2とTCP1を宣言する。
 port_speed(0x12)とport_state(0x13)を宣言し、phaseを口ごとに持つ（0起動時、1試し、2決めた、3復帰保留）。
