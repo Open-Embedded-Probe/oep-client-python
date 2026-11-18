@@ -35,7 +35,7 @@ GPIOはplan/set/readを行い、後ろに未対応modeを持つbatchを実行前
 UARTはRXだけのplan、configure、明示したAB刺激、2回の非消費readを扱う。
 受信はconfigureから始まるため、刺激はconfigureの後に与える。configure前のstatusがbaud 0・format 0（未configureの印）であること、
 configure後のstatusがconfigureの返した実際のbaudと8N1であることも確認する。
-marks/writeが無ければ、それぞれfrom3のunsupportedと不在writeのunknown_operationを確認する。任意操作の不在を違反にはしない。
+marksが無ければreadのfrom 3（markから読む）がunsupported、writeが無ければwriteがunknown_operationで、作用を変えないことを確認する。任意操作の不在を違反にはしない。
 刺激callbackが無ければUARTはnot_run、全体はincompleteであり、PASSや設備不足skipにしない。
 
 ARMはSWD attachで得たconnectionを別target fnのtransferへ渡し、DP identityとACK/進捗を確認する。
@@ -47,6 +47,10 @@ read_block/write_blockを必須にせず、新しい世代番号やlarge result 
 observe_resourcesは、選択したplan/pin設定/buffer/connection/target作用などのJSON互換snapshotを返す。
 拒否でも変わりうるcoreのcorr/lease状態や、欠番にしてよい次の資源IDは、作用不変のsnapshotへ混ぜない。
 resources_releasedは選択した資源の解放を独立に確かめる。UART positionのように起動内で保持する値や、外部targetへの完了済み作用をゼロへ戻す意味ではない。
+
+```sh
+uv run pytest -q tests/test_conformance_oep_smoke.py
+```
 
 失敗後は追加シナリオを止め、未終了SIDを結果へ残す。通信が壊れた場合も無条件なcleanup要求を送らず、呼び出す側が状態と経路を確認して回復する。
 未提供のinterface全体はその例を適用外にする。この検査は全operation、全任意機能、全resource graph、電気条件、完全なOEP固有準拠を証明しない。

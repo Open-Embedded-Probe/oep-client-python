@@ -74,7 +74,7 @@ port_stateの古いphase/baud・非bridge受理・critical無視、起動速度�
 試したbaudでのcommit拒否、phase2/3中の第二port受理、end中のphase3欠落、保留を作らない即時復帰、
 保留中のstep受理、verify保留の取消、frame途中の切替、境界での復帰欠落、他sessionによる取消、
 所有sessionで取り消さない、取消後のstep1受理・step2拒否も注入して検出する。
-初期故障注入では、bufferを置換せず返り値だけ変えていたため通常送出へ効かなかった。実際の送信bufferも置換する。
+故障注入は返り値だけでなく実際の送信bufferも置換する。
 検査の失敗時にも準備した書き込みを完了してからcleanupし、未完了writeのエラーで元の違反を隠さない。
 
 応答を出さないdiscardではidleを更新しない（無効frameでidleを更新するモデルはFAILになる）。
@@ -83,7 +83,7 @@ port_stateの古いphase/baud・非bridge受理・critical無視、起動速度�
 
 ## セッション解放と古いwrite完了
 
-PortSpeedLifecycleChecksはcontext1と9ケースの部分検査を追加する。
+PortSpeedLifecycleChecksはcontextと次のケースの部分検査を追加する。
 共通宣言とPortSpeedChecksの後、独立なmodel/Checksを作り、同じ明示SPEC registryで実行する。
 `PortSpeedLifecycleChecks(checks, SamplePortSpeedAdapter(model)).run()`を呼び、traceとreportを保存する。
 
@@ -112,7 +112,7 @@ PortSpeedExecutionChecksとSamplePortSpeedExecutionAdapterを、PortSpeedExecuti
 明示SPECから読み込んだregistryでChecksを作り、InterfaceChecksの後に実行する。
 max_op_ms5000の宣言と明示execution controlが必要。部品はprivate設定を探索しない。
 
-source/sink × 実行1500/3500ms × lease1000/60000msの8ケース、VERIFY、OTHER-ROUTEとcontext1を扱う。
+contextと、source/sink × 実行1500/3500ms × lease1000/60000msの組合せ、VERIFY、OTHER-ROUTEを扱う。
 400ms経過後に正常なframeを受け、実行中はcommitted idle期限とlease期限を進めない。
 実行後のwrite待ちは、短leaseなら残り600msの599ms、長leaseならidle2999msまで進める。
 期限が待ち中にずれないこと、応答完了からidle3000msを数え直し、leaseは応答生成時から数えて送信完了で変えないこと（core §6.1）、

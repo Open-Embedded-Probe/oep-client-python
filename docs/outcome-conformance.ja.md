@@ -20,6 +20,10 @@ common §1.4のwrite、§3のdebug status/doneを採用したインターフェ�
 
 単体試験でoutcome誤り、先頭以外の受付、accepted過大、受け付けたdebug失敗のrejected化、done過大、結果不足、single失敗の形違い、cache再実行を検出する。未知status/outcomeの失敗分類、採用条件不足、選択SPECのstatus変更も確認する。仮想コアの最小拡張`Completed`でfailed/partialを応答とcacheへ保存する。新しいfailed/partial完了はleaseを更新し、cache再送は更新しないことも独立に検査する。
 
+```sh
+uv run pytest -q tests/test_conformance_outcomes.py
+```
+
 ```python
 import os
 from oep_client.conformance import Checks, spec_identity
