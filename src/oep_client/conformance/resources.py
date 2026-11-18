@@ -252,7 +252,7 @@ class ResourceChecks:
         if self.c.results[-1]['status'] != 'passed':
             self.c.abort = True
         for name, method in RESOURCE_CASES:
-            self.c.check(name, 'core §4.2/5.2/6/9', getattr(self, method))
+            self.c.check(name, 'core §4.2/5.1/6/9', getattr(self, method))
         rows = self.c.results[start:]
         return {'status': 'passed' if all(x['status'] == 'passed' for x in rows) else 'failed',
                 'full_conformance': False, 'scope': 'resource lifetime on explicit adapter slots',

@@ -32,6 +32,6 @@ class UartStreamChecks(StreamChecks):
                 finally:
                     if self.guard is not None:
                         guard,self.guard=self.guard,None;guard.__exit__(None,None,None)
-            first=len(self.a.trace);self.c.check('IF-UART-STREAM-'+name,'common §1; core §2.6/5.2; explicit plan lifecycle',owned_case);self.c.results[-1]['adapter_trace']=self.a.trace[first:]
+            first=len(self.a.trace);self.c.check('IF-UART-STREAM-'+name,'common §1; core §2.6/5.1; explicit plan lifecycle',owned_case);self.c.results[-1]['adapter_trace']=self.a.trace[first:]
         rows=self.c.results[start:]
         return dict(status='passed' if all(r['status']=='passed' for r in rows) else 'failed',checks=rows,observed=self.c.observed,adapter_trace=self.a.trace,full_conformance=False,scope='common positioned-stream read/marks/write for explicitly adopted plan-owned UART',unchecked=['UART configure/baud/TX idle and plan recreation: separate OEP checks','physical UART delivery and producer concurrency','notification data and other ring/frame geometries'])

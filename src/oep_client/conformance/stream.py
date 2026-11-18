@@ -227,7 +227,7 @@ class StreamChecks:
                           ('EVICTION',self.lost_marks),('EVICTION-WRAP',lambda:self.lost_marks(0xfffffffc)),
                           ('MOVING-PAGES',self.moving_pages),('MARK-EVICTED',self.mark_evicted),('MARK-GAP',self.mark_gap),
                           ('LIMIT',self.limit),('CLEAR',self.clear),('PERSISTENT',self.persistent),('REFUSALS',self.locks)]:
-            first=len(self.a.trace);self.c.check('IF-STREAM-'+name,'common §1.1–1.4; core §2.6/5.2/7.3',case)
+            first=len(self.a.trace);self.c.check('IF-STREAM-'+name,'common §1.1–1.4; core §2.6/5.1/7.3',case)
             self.c.results[-1]['adapter_trace']=self.a.trace[first:]
         checks=self.c.results[start:]
         return {'status':'passed' if all(row['status']=='passed' for row in checks) else 'failed','full_conformance':False,

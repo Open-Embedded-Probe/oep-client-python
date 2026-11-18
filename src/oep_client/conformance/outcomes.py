@@ -136,7 +136,7 @@ class OutcomeChecks:
         cases.extend((('DEBUG-REPLAY',lambda:self.debug_case('REPLAY')),('DEBUG-SINGLE',lambda:self.debug_case('SINGLE')),
                       ('DEBUG-MALFORMED',lambda:self.malformed('batch')),('LOCKS',self.locks)))
         for name,case in cases:
-            first=len(self.a.trace);self.c.check('IF-OUTCOME-'+name,'common §1.4/3; core §4.2/5.2',case)
+            first=len(self.a.trace);self.c.check('IF-OUTCOME-'+name,'common §1.4/3; core §4.2/5.1',case)
             self.c.results[-1]['adapter_trace']=self.a.trace[first:]
         checks=self.c.results[start:]
         return {'status':'passed' if all(row['status']=='passed' for row in checks) else 'failed','full_conformance':False,

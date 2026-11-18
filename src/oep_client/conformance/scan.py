@@ -111,7 +111,7 @@ class ScanChecks(AttachChecks):
         cases += [(kind,lambda kind=kind:self.refusal(kind)) for kind in ('ZERO','DUPLICATE','TRUNCATED','UNDECLARED-LATE','SWIO-CLOCK','BUSY-LATE','DISABLED-LATE','OUTPUT-LATE','LOW-SPEED','ZERO-SPEED','WIDTH','TWICE','TLV-STRUCTURE','CRITICAL')]
         cases += [('EXTRAS',self.extras),('REPLAY',self.replay),('RETAINED',self.retained),('LOCKS',self.lock_scan)]
         for name,case in cases:
-            first=len(self.a.trace);self.c.check('OEP-SCAN-'+name,'debug §1/3/5; core §2.3/5.2/8.1',case);self.c.results[-1]['adapter_trace']=self.a.trace[first:]
+            first=len(self.a.trace);self.c.check('OEP-SCAN-'+name,'debug §1/3/5; core §2.3/5.1/8.1',case);self.c.results[-1]['adapter_trace']=self.a.trace[first:]
         rows=self.c.results[start:]
         return {'status':'passed' if all(row['status']=='passed' for row in rows) else 'failed','full_conformance':False,
                 'scope':'finite explicit standard wire scan candidates and logical preflight/prefix/replay','checks':rows,'observed':self.c.observed,'adapter_trace':self.a.trace,

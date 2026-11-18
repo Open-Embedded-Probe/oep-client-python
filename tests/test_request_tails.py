@@ -108,7 +108,7 @@ def drive_core(hst, ep):
     hst.lock_state()
     hst.keepalive()
     hst.clock()
-    for name in ("oep.fixture.logic", "oep.fixture.analog", "oep.fixture.capture-group"):   # their own ops (§11.3)
+    for name in ("oep.fixture.logic", "oep.fixture.analog", "oep.fixture.capture-group"):   # their own ops (core §10.3)
         for fn in core.find_all(hst, name):
             hst.subscribe(fn, 0, 1000)
             hst.unsubscribe(fn)

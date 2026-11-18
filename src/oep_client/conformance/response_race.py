@@ -8,7 +8,7 @@ class ResponseRaceChecks:
     kinds=('FORCE','REJECTED','DOUBLE-FORCE','EXPIRE-NEW','NO-FORCE','RETURN-ID')
     def __init__(self,adapter,*,spec):self.a=adapter;self.identity=reviewed_identity(spec);self.checks=[];self.observations=[]
     def check(self,name,fn):
-        row=dict(id='RESPONSE-RACE-'+name,level='core',clause='core §4.3/5.2/6.1/6.4/9')
+        row=dict(id='RESPONSE-RACE-'+name,level='core',clause='core §4.3/5.1/6.1/6.4/9')
         try:fn();row['status']='passed'
         except Exception as exc:row.update(status='failed',error=f'{type(exc).__name__}: {exc}')
         self.checks.append(row)

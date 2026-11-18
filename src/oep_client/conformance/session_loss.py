@@ -83,7 +83,7 @@ class SessionLossChecks(RetentionChecks):
                             ('OPEN-EXPIRED',{'operation':'open','lease':1000}),
                             ('BOOT',{'operation':'open','transition':'boot'}),('BARRIER',{'operation':'end','transition':'barrier'})]:
             first=len(self.a.trace)
-            self.c.check('CORE-SESSION-LOSS-'+name,'core §4.1/5.2/6/9; sample host',lambda kwargs=kwargs:self.case(**kwargs))
+            self.c.check('CORE-SESSION-LOSS-'+name,'core §4.1/5.1/6/9; sample host',lambda kwargs=kwargs:self.case(**kwargs))
             self.c.results[-1]['adapter_trace']=self.a.trace[first:]
         from .route_sample import encoded
         report.update(status='passed' if all(row['status']=='passed' for row in self.c.results) else 'failed',

@@ -102,7 +102,7 @@ class ExhaustedChecks(RetentionChecks):
         report=super().run()
         if report['status']!='passed':self.c.abort=True
         first=len(self.a.trace)
-        self.c.check('CORE-EXHAUSTED-'+str(getattr(self.a,'batch_mode',None)).upper(),'core §4.1/4.4/5.2/6; fresh-route sample host',self.batch)
+        self.c.check('CORE-EXHAUSTED-'+str(getattr(self.a,'batch_mode',None)).upper(),'core §4.1/4.4/5.1/6; fresh-route sample host',self.batch)
         self.c.results[-1]['adapter_trace']=self.a.trace[first:]
         report.update(status='passed' if all(row['status']=='passed' for row in self.c.results) else 'failed',checks=self.c.results,
                       adapter_trace=self.a.trace,peer_exchanges=self.peer.trace,exhausted_observation=self.observation,

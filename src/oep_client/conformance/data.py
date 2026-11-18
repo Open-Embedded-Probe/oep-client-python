@@ -295,13 +295,13 @@ class DataChecks(SubscriptionChecks):
                     'adapter must explicitly declare this stimulus/observation setup loss-free')
             require(type(self.a.observation_ms) is int and 1 <= self.a.observation_ms <= 50,
                     'data suite observation window must be 1..50ms')
-        self.c.check('IF-DATA-ADAPTER', 'core §11; adapter contract', adapter)
+        self.c.check('IF-DATA-ADAPTER', 'core §10; adapter contract', adapter)
         if self.c.results[-1]['status'] != 'passed':
             self.c.abort = True
         super().run()
         for name, method in DATA_CASES:
             first = len(self.notifications)
-            self.c.check(name, 'core §10.2/11.3', getattr(self, method))
+            self.c.check(name, 'core §10.2/10.3', getattr(self, method))
             self.c.results[-1]['notification_observations'] = self.notifications[first:]
         rows = self.c.results[start:]
         return {'status': 'passed' if all(row['status'] == 'passed' for row in rows) else 'failed',

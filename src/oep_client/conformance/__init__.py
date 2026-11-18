@@ -45,7 +45,7 @@ EXTRA_CHECKS = (
     ('CORE-SESSION-BEFORE-PAYLOAD', 'core §4.3/6.2', 'invalid_request', 'session-before-payload'),
     ('CORE-UNSEEN-OLD', 'core §5.1', 'unseen_old', None),
     ('CORE-REJECTED-REPLAY', 'core §5.1', 'replay_rejected', False),
-    ('CORE-HEADER-BEFORE-REPLAY', 'core §4.3/5.2', 'replay_rejected', True),
+    ('CORE-HEADER-BEFORE-REPLAY', 'core §4.3/5.1', 'replay_rejected', True),
     ('CORE-OWNER', 'core §2.3/6.4', 'owners', None),
     ('CORE-HEADER-LEASE', 'core §4.3/6.1', 'lease_rejections', True),
     ('CORE-REJECTED-LEASE', 'core §4.3/6.1', 'lease_rejections', False),
@@ -984,7 +984,7 @@ class Checks:
         self.check('CORE-DECLARE', 'core §1.2/7.3/7.4/7.5', self.declarations)
         self.check('CORE-LIST', 'core §7.2/7.3/7.4', self.interfaces)
         self.check('CORE-CLOCK', 'core §7.6', self.clock_progress)
-        self.check('CORE-ZERO-CORR', 'core §4.1/5.2', lambda: self.rejected(
+        self.check('CORE-ZERO-CORR', 'core §4.1/5.1', lambda: self.rejected(
             self.request(self.core['clock'], corr=0), 'malformed'))
         self.check('CORE-ZERO-SESSION', 'core §4.1/6.1', lambda: self.rejected(
             self.request(self.core['open'], struct.pack('<IB', 3000, 0)), 'malformed'))
@@ -998,8 +998,8 @@ class Checks:
         self.check('CORE-REPLAY', 'core §5.1', self.replay)
         self.check('CORE-OPEN-HISTORY', 'core §5.1/6.2', lambda: self.replay(True))
         self.check('CORE-ALTERED-REPLAY', 'core §5.1', self.altered)
-        self.check('CORE-CORR-U16', 'core §4.1/5.2/6.2', self.highwater)
-        self.check('CORE-CORR-MAX', 'core §4.1/5.2', self.corr_maximum)
+        self.check('CORE-CORR-U16', 'core §4.1/5.1/6.2', self.highwater)
+        self.check('CORE-CORR-MAX', 'core §4.1/5.1', self.corr_maximum)
         self.check('CORE-END', 'core §5.1/6.2', self.ended)
         self.check('CORE-LEASE', 'core §6.1', self.lease_expiry)
         self.check('CORE-REPLAY-LEASE', 'core §5.1/6.1', lambda: self.lease_expiry(True))

@@ -17,7 +17,7 @@ def reviewed_identity(spec):
     require(registry['protocol']['revision']==1 and registry['protocol']['byte_order']=='little' and {r['name']:r['code'] for r in registry['core']['op']}=={**CORE_OPS,**SETTINGS_OPS} and registry['reject_reasons']==CORE_REASONS,'selected core revision/numbers differ')
     require(registry['roles']['result']==2 and registry['resolutions']=={'rejected':0,'completed':1} and registry['outcomes']=={'success':0,'failed':1,'partial':2},'selected result header meanings differ')
     tags=registry['core']['tlv'];require(tags['confirm_answer']=={'transport':1} and tags['locked_payload']=={'owner':1} and tags['lock_state_answer']=={'owner':1} and tags['unavailable_payload']=={'cause':1,'channel':2,'item':3,'fn':5} and tags['unsupported_payload']=={'supported':1,'channel':2,'item':3,'fn':5},'selected core response tag spaces differ')
-    require(registry['describe_common']=={'role_channels':1,'max_clock_hz':2,'max_length':3,'min_clock_hz':4,'features':5,'channel_group':6,'ops':7,'setting':8,'setting_choice':9} and tags['describe']=={'firmware':64,'model':65,'unit_id':66,'channels':67,'channel_name':68,'netif':69,'transport':73,'chip':76,'max_op_ms':77},'selected declaration tag spaces differ')
+    require(registry['describe_common']=={'role_channels':1,'max_clock_hz':2,'max_length':3,'min_clock_hz':4,'features':5,'channel_group':6,'ops':7,'setting':8,'setting_choice':9,'op_name':10,'op_field':11} and tags['describe']=={'firmware':64,'model':65,'unit_id':66,'channels':67,'channel_name':68,'netif':69,'transport':73,'chip':76,'max_op_ms':77},'selected declaration tag spaces differ')
     return dict(identity,reviewed_core_sha256=core_sha)
 
 

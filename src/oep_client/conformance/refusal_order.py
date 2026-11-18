@@ -12,7 +12,7 @@ class RefusalOrderChecks:
     cases=('ZERO','FN','OP','SID0','REPLAY','MISMATCH','HOLE','FOREIGN','OWN-BAD','OTHER-ANY')
     def __init__(self,adapter,*,spec):self.a=adapter;self.identity=reviewed_identity(spec);self.checks=[];self.observations=[]
     def check(self,name,fn):
-        row=dict(id='REFUSAL-ORDER-'+name,level='core',clause='core §4.3/5.2/6.1/6.2')
+        row=dict(id='REFUSAL-ORDER-'+name,level='core',clause='core §4.3/5.1/6.1/6.2')
         try:fn();row['status']='passed'
         except Exception as exc:row.update(status='failed',error=f'{type(exc).__name__}: {exc}')
         self.checks.append(row)

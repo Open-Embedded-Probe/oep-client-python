@@ -101,7 +101,7 @@ class CorrChecks(RetentionChecks):
         for name, method in [('ASCENDING', self.ascending), ('HALF-GAPS', self.half_gaps), ('WRAP', self.wrap),
                              ('ZERO', self.zero_precedence), ('FREE', self.free_corr), ('WRAP-END', self.wrap_end)]:
             first = len(self.a.trace)
-            self.c.check('CORE-CORR-' + name, 'core §4.1/5.2/6.1', method)
+            self.c.check('CORE-CORR-' + name, 'core §4.1/5.1/6.1', method)
             self.c.results[-1]['adapter_trace'] = self.a.trace[first:]
         report.update(status='passed' if all(x['status'] == 'passed' for x in self.c.results) else 'failed',
                       checks=self.c.results, adapter_trace=self.a.trace, peer_exchanges=self.peer.trace,

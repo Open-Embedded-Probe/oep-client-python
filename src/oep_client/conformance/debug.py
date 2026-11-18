@@ -174,4 +174,4 @@ class DebugChecks(DmseqChecks):
             first=len(self.a.trace);self.c.check('OEP-DEBUG-'+name,'debug §4.1/4.2; console §3; core §5/9',case);self.c.results[-1]['adapter_trace']=self.a.trace[first:]
         rows=self.c.results[start:]
         return {'status':'passed' if all(r['status']=='passed' for r in rows) else 'failed','checks':rows,'adapter_trace':self.a.trace,'observed':self.c.observed,'full_conformance':False,
-                'scope':'logical mandatory dmi/halt/resume and same-connection console arbitration','unchecked':['optional reset/step/run/block operations and state restoration','hartsel of optional operations and physical hart selection','physical DMI/timeouts/line retry','other-connection scheduling','actual response writer ordering','production Host integration']}
+                'scope':'logical dmi, halt/resume when declared and same-connection console arbitration','unchecked':['optional reset/step/run/block operations and state restoration','hartsel of optional operations and physical hart selection','physical DMI/timeouts/line retry','other-connection scheduling','actual response writer ordering','production Host integration']}

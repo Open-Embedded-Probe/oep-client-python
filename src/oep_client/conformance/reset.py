@@ -111,4 +111,4 @@ class ResetChecks(StepChecks):
         rows=self.c.results[start:]
         return {'status':'passed' if all(row['status']=='passed' for row in rows) else 'failed','checks':rows,'adapter_trace':self.a.trace,'observed':self.c.observed,'full_conformance':False,
                 'scope':'logical optional ndmreset flags, DM recovery and per-connection console reset',
-                'unchecked':['physical ndmreset/wake and DM response timing','failure while acknowledging havereset','console reset/restart mark kinds of the current console','actual response-writer ordering','run','other targets/capacities and production Host integration']}
+                'unchecked':['physical ndmreset/wake and DM response timing','failure while acknowledging havereset','actual response-writer ordering','run','other targets/capacities and production Host integration']}

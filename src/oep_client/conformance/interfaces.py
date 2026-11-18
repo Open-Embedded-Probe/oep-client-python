@@ -88,7 +88,7 @@ class InterfaceChecks:
         self.c.check('IF-DECLARATION-CONTEXT','core §7.1–7.5; explicit probe',prepare)
         if self.c.results[-1]['status']!='passed':self.c.abort=True
         for entry in getattr(self,'entries',[]):
-            for name,method,clause in [('NAME',self.name,'13 rule 1'),('OPS',self.declared_ops,'1.2/7.4/12'),
+            for name,method,clause in [('NAME',self.name,'12 rule 1'),('OPS',self.declared_ops,'1.2/7.4/12'),
                                       ('FIXED',self.fixed,'2.3/7.4'),('CHANNELS',self.channels,'7.4/7.5'),
                                       ('PAGES',self.pages,'7.3'),('STABLE',self.stable,'7.2/7.3'),
                                       ('ABSENT-OPS',self.absent_ops,'1.2/4.3')]:

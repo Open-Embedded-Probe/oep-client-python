@@ -145,7 +145,7 @@ class RecoveryRaceChecks(RecoveryChecks):
         cases.append(('BATCH-'+self.a.batch_mode.upper(),self.abandoned_batch))
         for name,method in cases:
             first,peer_first = len(self.a.trace),len(self.peer.trace)
-            self.c.check('CORE-RECOVERY-RACE-'+name,'core §4.1/4.4/5.2/6; explicit host sample',method)
+            self.c.check('CORE-RECOVERY-RACE-'+name,'core §4.1/4.4/5.1/6; explicit host sample',method)
             self.c.results[-1]['adapter_trace'] = self.a.trace[first:]
             self.c.results[-1]['peer_exchanges'] = self.peer.trace[peer_first:]
         report.update(status='passed' if all(row['status']=='passed' for row in self.c.results) else 'failed',

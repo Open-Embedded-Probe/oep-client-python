@@ -71,11 +71,11 @@ class ClockChecks:
             require(self.a.reset_scope=='logical-model' and self.a.reference,'explicit logical clock fixture required')
             require(self.c.core['clock']==4,'selected clock operation differs')
             self.c.confirm();self.c.identity();self.c.declarations();require(self.a.state()['scope']=='logical-ns','exact logical ns observations required')
-        self.c.check('CORE-CLOCK-CONTEXT','core §2.6a/6.5/7.7',context)
+        self.c.check('CORE-CLOCK-CONTEXT','core §2.7/6.5/7.6',context)
         if self.c.results[-1]['status']!='passed':self.c.abort=True
         cases=[('U64',self.wide),('SIDZERO-FRESH',self.fresh_zero),('READ-POINT',self.point),('SIDZERO-STATE',self.observer),('REPLAY',self.replay),('LEASE',self.lease),('BOOT',self.boots),('REFUSALS',self.refusals)]
         for name,case in cases:
-            first=len(self.a.trace);self.c.check('CORE-CLOCK-'+name,'core §2.6a/4.1/5.2/6/7.7',case);self.c.results[-1]['adapter_trace']=self.a.trace[first:]
+            first=len(self.a.trace);self.c.check('CORE-CLOCK-'+name,'core §2.7/4.1/5.1/6/7.6',case);self.c.results[-1]['adapter_trace']=self.a.trace[first:]
         rows=self.c.results[start:]
         return dict(status='passed' if all(x['status']=='passed' for x in rows) else 'failed',checks=rows,adapter_trace=self.a.trace,observed=self.c.observed,full_conformance=False,
                     scope='logical exact clock source reads, SID-zero isolation and cached owned replay exception',

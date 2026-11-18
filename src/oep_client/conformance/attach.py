@@ -188,7 +188,7 @@ class AttachChecks:
         cases=[('WIRE-'+kind,lambda kind=kind:self.wire_case(kind)) for kind in ('SHORT','ZERO-SPEED','WIDTH','LOW-SPEED','PINS','METHOD','TLV','MALFORMED','UNMARKED','TWICE','BUSY','CAPACITY','FAILED','REPLAY')]
         cases += [('CONSOLE-'+kind,lambda kind=kind:self.console_case(kind)) for kind in ('UNSUPPORTED','RESOURCE','DUPLICATE','MALFORMED','INDEPENDENT','RECREATE-REPLAY')]+[('LOCKS',self.locks)]
         for name,case in cases:
-            first=len(self.a.trace);self.c.check('OEP-ATTACH-'+name,'debug §1/3/5; console §1/2/3; core §2.3/5.2',case);self.c.results[-1]['adapter_trace']=self.a.trace[first:]
+            first=len(self.a.trace);self.c.check('OEP-ATTACH-'+name,'debug §1/3/5; console §1/2/3; core §2.3/5.1',case);self.c.results[-1]['adapter_trace']=self.a.trace[first:]
         rows=self.c.results[start:]
         return {'status':'passed' if all(row['status']=='passed' for row in rows) else 'failed','full_conformance':False,
                 'scope':'logical standard attach admission and console open constraints','checks':rows,'observed':self.c.observed,'adapter_trace':self.a.trace,

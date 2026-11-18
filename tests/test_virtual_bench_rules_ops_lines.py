@@ -140,7 +140,7 @@ def test_the_clock_has_the_resolution_it_is_given_and_never_goes_back():
     ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock(), now_ns=lambda: ns[0])
     assert ep.now_ns() == 5_123_456                                           # not cut to ms
     ns[0] = 5_000_000                                                         # a counter read out of order
-    assert ep.now_ns() == 5_123_456                                           # does not decrease (core §2.6a)
+    assert ep.now_ns() == 5_123_456                                           # does not decrease (core §2.7)
     ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
     ep.now.t = 7
     assert ep.now_ns() == 7_000_000                                           # ms clock: in ns
