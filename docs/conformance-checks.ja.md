@@ -1,5 +1,7 @@
 # SPEC からの適合検査
 
+[English](conformance-checks.md)
+
 検査器は指定した SPEC checkout を読み、実装側の registry から期待値を作らない。検査器はレビューした本文に固定する（[適合検査とSPECの版](conformance-spec-compatibility.ja.md)）。
 
 検査結果は次の3段階に分ける。
