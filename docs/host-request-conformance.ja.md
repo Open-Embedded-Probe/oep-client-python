@@ -1,5 +1,7 @@
 # Host要求のcritical指定を検査する
 
+[English](host-request-conformance.md)
+
 core §2.3は、無視されると要求の意味を失う、または害のあるTLVにHostがcriticalを付けることを要求する。
 Probeが未知criticalを拒否する検査だけでは、Hostの付け忘れを証明できない。
 HostRequestChecksは、明示したencoderが実際に返すpayloadを独立した期待byte列と比較する。

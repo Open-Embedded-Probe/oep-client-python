@@ -1,5 +1,7 @@
 # raw USBの適合検査
 
+[English](usb-conformance.md)
+
 bulk/HIDのprobe入力を、公開clientの独立した検査器で確認する。通常の `usb_stream` / `hid_stream` のencoder/decoder、再送、立て直しを通さない。SPECのtransport §1/2/3とcore §2.4が合否の根拠。backendは2つ: `core-v1` のソフトウェアUSBモデル（実際のUSB deviceではない）と、実機を開く `usb_hw`（pyusb）。
 
 ## 最小モデルの実行
