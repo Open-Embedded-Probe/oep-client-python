@@ -9,10 +9,10 @@ The host side of Open Embedded Probe. It speaks v1 (oep-spec's core `docs/oep-co
 does not fix the shapes, so an implementation names the commit of the spec it implements). The number tables and the shared vectors in `tests/vectors/` are copied from that commit.
 The history of changes is in [CHANGELOG.md](CHANGELOG.md).
 
-Until the freeze, the Japanese text (`.ja.md`) is the working text of the spec; the English documents are made from it at the freeze, and from then on the English is authoritative (until then oep-spec carries no English translation). Readers new to OEP start with oep-spec's
-[README](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/README.ja.md) and the [review guide](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/review-guide.ja.md) (what is written where).
-[Getting started](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/getting-started.ja.md) builds a minimal probe and host,
-[docs/oep-core.ja.md](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/oep-core.ja.md) is the body of the protocol, and [docs/conformance.ja.md](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/conformance.ja.md)
+oep-spec keeps its Japanese and English documents together: the Japanese is authoritative until the freeze (`v1.0.0`), the English normative from then. Readers new to OEP start with oep-spec's
+[README](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/README.md) and the [review guide](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/review-guide.md) (what is written where).
+[Getting started](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/getting-started.md) builds a minimal probe and host,
+[docs/oep-core.ja.md](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/oep-core.md) is the body of the protocol, and [docs/conformance.ja.md](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/conformance.md)
 states what host conformance needs.
 
 It follows OEP's division of work that target knowledge lives in the host. The probe knows only wires and DMI / DP·AP transfers; the CH32 flash
