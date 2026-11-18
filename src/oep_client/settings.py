@@ -10,7 +10,7 @@ and the value with references as names - are what a host keeps, shows and writes
     st.show()                                          # [(category, flat name, value)]
     st.set_named("core", {"channel.GPIO14.label": "NRST", "channel.GPIO14.idle": "pull-up"})
     st.save()
-    doc = st.export()                                   # the settings file (JSON), every value
+    doc = st.export()                                   # the settings file (JSON): every value, the memo area's objects
     plan = st.plan_import(doc); st.apply_import(plan)
 
 Secrets (core §13.5) are never read: get gives no data, the file a ``{"secret": true}``.
@@ -23,7 +23,9 @@ import re
 import struct
 from dataclasses import dataclass, field
 
-from . import catalog, core, message as m, registry as reg
+import zlib
+
+from . import catalog, core, memo as memo_area, message as m, registry as reg
 
 _C = reg.CORE
 OP = {k: _C.op[k] for k in ("get", "set", "unset", "save", "state", "network")}
@@ -40,6 +42,7 @@ SETTING, SETTING_CHOICE = reg.DESCRIBE_COMMON["setting"], reg.DESCRIBE_COMMON["s
 VALUE_HEADER = 7                                                   # fn number key len, get's and set's alike (core §13.5)
 FILE_VERSION = 1                                                   # the settings file's form (oep_settings)
 CORE_CATEGORY = "core"
+MEMO = "memo"                                                      # the file's memo area (settings file §2.4)
 
 
 @dataclass
@@ -103,6 +106,8 @@ class ImportPlan:
     secret_without_value: list[tuple[str, str]] = field(default_factory=list)
     unresolved: list[tuple[str, str]] = field(default_factory=list)
     other_probe: bool = False
+    memo_deletes: list[bytes] = field(default_factory=list)         # settings file §4: the memo objects to delete,
+    memo_writes: list[tuple[bytes, bytes]] = field(default_factory=list)   # then the ones to write (name, data)
 
 
 class Catalog:
@@ -441,24 +446,77 @@ class Settings:
         return self.unset(keys) if keys else None
 
     # -- the file (settings file §3, §4) --
+    def memo(self) -> memo_area.Memo | None:
+        """The probe's memo area (oep.probe.memo), None when it has none."""
+        fns = core.find_all(self.host, memo_area.NAME)
+        return memo_area.Memo(self.host, fns[0]) if fns else None
+
     def export(self) -> dict:
-        return export_file(self.catalog(), self.get()[1])
+        return self.export_all()[0]
+
+    def export_all(self) -> tuple[dict, list[bytes]]:
+        """The file (settings file §3) and the memo objects left out of it (torn, or a name not UTF-8)."""
+        mm = self.memo()
+        memo, left_out = (None, []) if mm is None else memo_file(
+            [(e.name, b"" if not _utf8(e.name) else mm.read(e.name, check=False), e.crc) for e in mm.list()])
+        return export_file(self.catalog(), self.get()[1], memo), left_out
 
     def plan_import(self, doc: dict) -> ImportPlan:
-        return plan_import(self.catalog(), self.get()[1], doc)
+        held = None
+        if isinstance(doc, dict) and MEMO in doc:
+            mm = self.memo()
+            held = None if mm is None else (mm.max_object, [(e.name, e.size, e.crc) for e in mm.list()])
+        return plan_import(self.catalog(), self.get()[1], doc, held)
 
     def apply_import(self, plan: ImportPlan) -> int | None:
-        """Unset first (a disable that replaces an idle), then set. Needs the lock."""
+        """Unset first (a disable that replaces an idle), then set; the memo objects to delete, then to write (settings
+        file §4). Needs the lock."""
         gen = None
         if plan.unsets:
             gen = self.unset(plan.unsets)
         if plan.sets:
             gen = self.set(plan.sets)
+        if plan.memo_deletes or plan.memo_writes:
+            mm = self.memo()
+            for name in plan.memo_deletes:
+                mm.delete(name)
+            for name, data in plan.memo_writes:
+                mm.write(name, data)
         return gen
 
 
-def export_file(cat: Catalog, values: list[Value]) -> dict:
-    """The settings file of every value (settings file §3)."""
+def _utf8(raw: bytes) -> bool:
+    try:
+        raw.decode("utf-8")
+        return True
+    except UnicodeDecodeError:
+        return False
+
+
+def memo_file(objects) -> tuple[dict, list[bytes]]:
+    """The file's memo (settings file §2.4, §3) from the memo objects (name, data, crc), in their order: UTF-8 data as a
+    string, other data as {"bytes": hex}. Left out (returned): a torn object (its data's CRC-32 not its crc) and one
+    whose name is not UTF-8."""
+    out, left_out = {}, []
+    for name, data, crc in objects:
+        if not _utf8(name) or zlib.crc32(data) != crc:
+            left_out.append(name)
+            continue
+        out[name.decode("utf-8")] = data.decode("utf-8") if _utf8(data) else {"bytes": data.hex()}
+    return out, left_out
+
+
+def memo_data(value) -> bytes:
+    """A file's memo value as the object's data (settings file §2.4); ValueError when it is neither form."""
+    if isinstance(value, str):
+        return value.encode("utf-8")
+    if isinstance(value, dict) and set(value) == {"bytes"} and isinstance(value["bytes"], str):
+        return bytes.fromhex(value["bytes"])
+    raise ValueError(f"memo: {value!r} is neither a string nor {{\"bytes\": hex}}")
+
+
+def export_file(cat: Catalog, values: list[Value], memo: dict | None = None) -> dict:
+    """The settings file of every value (settings file §3), with the memo area's objects when the probe has one."""
     out: dict = {}
     for v in values:
         it = cat.item(v.fn, v.number)
@@ -466,7 +524,10 @@ def export_file(cat: Catalog, values: list[Value]) -> dict:
         if flat is None:
             continue
         out.setdefault(cat.category[v.fn], {})[flat] = {"secret": True} if it.secret else cat.to_json(it, v.data)
-    return {"oep_settings": FILE_VERSION, "probe": dict(cat.probe), "settings": out}
+    doc = {"oep_settings": FILE_VERSION, "probe": dict(cat.probe), "settings": out}
+    if memo is not None:
+        doc[MEMO] = memo
+    return doc
 
 
 def check_file(doc) -> None:
@@ -475,10 +536,16 @@ def check_file(doc) -> None:
         raise ValueError(f"not a settings file of version {FILE_VERSION}")
     if not isinstance(doc.get("settings"), dict) or not all(isinstance(v, dict) for v in doc["settings"].values()):
         raise ValueError("settings: an object of categories, each an object of values")
+    if MEMO in doc:
+        if not isinstance(doc[MEMO], dict):
+            raise ValueError("memo: an object of names to data")
+        for value in doc[MEMO].values():
+            memo_data(value)
 
 
-def plan_import(cat: Catalog, current: list[Value], doc: dict) -> ImportPlan:
-    """What making the file's values the probe's takes (settings file §4)."""
+def plan_import(cat: Catalog, current: list[Value], doc: dict, memo=None) -> ImportPlan:
+    """What making the file's values the probe's takes (settings file §4). memo: the probe's memo area when the file has
+    one - (max_object, [(name, size, crc)]), None when the probe has none (each object unresolved)."""
     check_file(doc)
     plan = ImportPlan()
     probe = doc.get("probe", {})
@@ -506,6 +573,19 @@ def plan_import(cat: Catalog, current: list[Value], doc: dict) -> ImportPlan:
             if now is None or now.data != data:
                 plan.sets.append((it.fn, it.number, key, data))
     plan.unsets = [(v.fn, v.number, v.key) for v in current if (v.fn, v.number, v.key) not in wanted]
+    if MEMO in doc:
+        files = {name.encode("utf-8"): memo_data(value) for name, value in doc[MEMO].items()}
+        if memo is None:
+            plan.unresolved += [(MEMO, name.decode("utf-8")) for name in files]
+        else:
+            max_object, held = memo
+            have = {name: (size, crc) for name, size, crc in held}
+            for name, data in files.items():
+                if len(data) > max_object:
+                    plan.unresolved.append((MEMO, name.decode("utf-8")))
+                elif have.get(name) != (len(data), zlib.crc32(data)):
+                    plan.memo_writes.append((name, data))
+            plan.memo_deletes = [name for name in have if name not in files]
     return plan
 
 

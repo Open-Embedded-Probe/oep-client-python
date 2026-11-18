@@ -9,7 +9,7 @@ import struct
 
 import pytest
 
-from oep_client import __main__ as cli, core, endpoint, fixture, riscv, settings, virtual_bench, host as h, message as m, registry as reg
+from oep_client import __main__ as cli, core, endpoint, fixture, memo, riscv, settings, virtual_bench, host as h, message as m, registry as reg
 
 CORE = settings.CORE_CATEGORY
 OVERHEAD = reg.LIMITS["setting_get_overhead_bytes"]   # one value's get answer beyond its data (core §13.5)
@@ -619,20 +619,27 @@ def vector_catalog(probe) -> settings.Catalog:
 def test_settings_file_export_vectors(case):
     """settings file §2, §3: the values get gives, written with the probe's names."""
     values = settings.values_from([bytes.fromhex(case["get_values_hex"])])
-    assert settings.export_file(vector_catalog(case["probe"]), values) == case["file"]
+    memo, left_out = settings.memo_file([(bytes.fromhex(o["name_hex"]), bytes.fromhex(o["data_hex"]), o["crc"])
+                                         for o in case["memo_objects"]])
+    assert settings.export_file(vector_catalog(case["probe"]), values, memo) == case["file"]
+    assert [n.hex() for n in left_out] == case["memo_not_written_hex"]
 
 
 @pytest.mark.parametrize("case", FILE_VECTORS["import"], ids=lambda c: c["name"])
 def test_settings_file_import_vectors(case):
     """settings file §4: a file into a probe with other numbers - what to set and unset, the secrets it does not hold,
     what does not resolve."""
+    held = (case["memo_max_object"], [(bytes.fromhex(o["name_hex"]), o["size"], o["crc"]) for o in case["current_memo"]])
     plan = settings.plan_import(vector_catalog(case["probe"]),
-                                settings.values_from([bytes.fromhex(case["current_values_hex"])]), case["file"])
+                                settings.values_from([bytes.fromhex(case["current_values_hex"])]), case["file"], held)
     assert [(fn, n, k, d.hex()) for fn, n, k, d in plan.sets] == [
         (r["fn"], r["number"], r["key"], r["data_hex"]) for r in case["expected_set"]]
     assert plan.unsets == [(r["fn"], r["number"], r["key"]) for r in case["expected_unset"]]
     assert plan.secret_without_value == [tuple(r) for r in case["secret_without_value"]]
     assert plan.unresolved == [tuple(r) for r in case["unresolved"]]
+    assert [n.hex() for n in plan.memo_deletes] == case["expected_memo_delete_hex"]
+    assert [(n.hex(), d.hex()) for n, d in plan.memo_writes] == [(r["name_hex"], r["data_hex"])
+                                                                   for r in case["expected_memo_write"]]
 
 
 def test_unset_all_then_save_empties_the_storage():
@@ -684,6 +691,52 @@ def test_the_command(capsys, monkeypatch, tmp_path):
     assert cli.main(["settings", "import", "x", str(path), "--yes"]) == 0 and ep.disabled == {40}
     assert cli.main(["settings", "unset", "x", "--all", "--save"]) == 0 and ep.saved == {}
     assert cli.main(["settings", "set", "x", CORE, "channel.GPIO99.label=x"]) == 2
+
+
+def _memo_area(objects: dict, max_object=2048):
+    """An oep.probe.memo of the in-memory probe of test_memo (its ops on a dict of name -> (data, crc))."""
+    from test_memo import FakeProbe
+    fake = FakeProbe()
+    fake.objects = dict(objects)
+    mm = memo.Memo.__new__(memo.Memo)
+    mm.h, mm.fn, mm.max_object, mm.max_objects = fake, 7, max_object, 64
+    return mm, fake
+
+
+def test_the_file_carries_the_memo_area():
+    """settings file §2.4, §3, §4: export writes every memo object (a torn one left out), import into another probe
+    deletes what the file lacks and writes what differs, a file without memo leaves the memo area alone, and a probe
+    without one lists the file's objects as unresolved."""
+    rec = b'{"target":"ch32x035-1a2b3c4d"}'
+    ep, hst, st = open_bench()
+    mm, _ = _memo_area({b"oep.probe.memo/port/x035": (rec, memo.crc32(rec)),
+                        b"io.github.example.bench/blob": (b"\0\xff", memo.crc32(b"\0\xff")),
+                        b"io.github.example.bench/torn": (b"abc", memo.crc32(b"abd"))})
+    st.memo = lambda: mm
+    doc, left_out = st.export_all()
+    assert doc[settings.MEMO] == {"oep.probe.memo/port/x035": rec.decode(), "io.github.example.bench/blob": {"bytes": "00ff"}}
+    assert left_out == [b"io.github.example.bench/torn"]
+
+    ep2, hst2, st2 = open_bench()
+    mm2, fake2 = _memo_area({b"oep.probe.memo/port/x035": (rec, memo.crc32(rec)),
+                             b"io.github.example.bench/old": (b"o", memo.crc32(b"o"))})
+    st2.memo = lambda: mm2
+    plan = st2.plan_import(json.loads(json.dumps(doc)))
+    assert plan.memo_deletes == [b"io.github.example.bench/old"]
+    assert plan.memo_writes == [(b"io.github.example.bench/blob", b"\0\xff")]    # the port record is there already
+    st2.apply_import(plan)
+    assert {n: d for n, (d, _) in fake2.objects.items()} == {b"oep.probe.memo/port/x035": rec,
+                                                              b"io.github.example.bench/blob": b"\0\xff"}
+
+    del doc[settings.MEMO]
+    plan = st2.plan_import(doc)
+    assert not plan.memo_deletes and not plan.memo_writes and not plan.unresolved
+
+    st2.memo = lambda: None
+    plan = st2.plan_import({**doc, settings.MEMO: {"a/b": "x"}})
+    assert plan.unresolved == [(settings.MEMO, "a/b")] and not plan.memo_writes
+    with pytest.raises(ValueError):
+        settings.check_file({**doc, settings.MEMO: {"a/b": 1}})
 
 
 # ---- the label convention (host guide §5.3) -------------------------------------------------------------------------

@@ -122,8 +122,8 @@ oep settings items <probe>                   # what each owner declares (names, 
 oep settings set <probe> core channel.GPIO23.label=v003.nrst channel.GPIO20.idle=pull-up [--save]
 oep settings unset <probe> core channel.GPIO20.idle [--save]     # or --all (then --save empties the storage)
 oep settings save <probe>                    # kept over a restart
-oep settings export <probe> jig.oep-settings.json                # every value by name (secrets as present only)
-oep settings import <probe> jig.oep-settings.json [--save]       # shows the changes, asks, then sets / unsets
+oep settings export <probe> jig.oep-settings.json                # every value by name and the memo area's objects (secrets as present only)
+oep settings import <probe> jig.oep-settings.json [--save]       # shows the changes, asks, then sets / unsets and rewrites the memo area
 oep speed <probe> [921600,500000] [--verify] [--flows out:2]  # port_speed: raise a UART bridge (default 500000), print the report (below)
 oep pins <probe> --power 5 --wire swio       # where the target is wired: debug pins, reset line, labels (below)
 oep clock <probe> [-n 8] [--json]            # fn 0's clock: uptime_ns and boot_id against this host's time (shortest of n)

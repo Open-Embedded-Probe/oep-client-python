@@ -1,6 +1,15 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) The settings file carries the memo area (oep-spec 526d273, settings file §2.4): `oep settings export` writes every
+  memo object under `memo` (UTF-8 data as a string, other data as {"bytes": hex}; a torn object or one whose name is not
+  UTF-8 left out and named), and `oep settings import` deletes the objects the file lacks and writes the ones that differ,
+  shown with the values before it asks. A file without `memo` leaves the memo area alone. `Settings.export_all()`,
+  `settings.memo_file()`, `ImportPlan.memo_deletes` / `memo_writes`. Shared vectors.
+- (JA) 設定のファイルがメモ欄も運ぶ（oep-spec 526d273、settings file §2.4）。`oep settings export` は、メモ欄の全部のオブジェクトを
+  `memo` に書く（UTF-8 のデータは文字列、ほかは {"bytes": 16 進}。crc の合わないものと名前が UTF-8 でないものは入れずに名前を示す）。
+  `oep settings import` は、ファイルに無いオブジェクトを消し、違うものを書く。値と一緒に変わる所を見せてから確かめる。`memo` の無い
+  ファイルはメモ欄に触らない。`Settings.export_all()`、`settings.memo_file()`、`ImportPlan.memo_deletes` / `memo_writes`。共有ベクタ。
 
 ## 0.0.57
 - (EN) fixture.I2cTarget.configure(address, nack_from=None) and the nack_from property (oep-spec 1b5d056, fixture §3):

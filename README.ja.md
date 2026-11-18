@@ -115,8 +115,8 @@ oep settings items <probe>                   # 各持ち主が宣言する項目
 oep settings set <probe> core channel.GPIO23.label=v003.nrst channel.GPIO20.idle=pull-up [--save]
 oep settings unset <probe> core channel.GPIO20.idle [--save]     # --all なら全部（その後の --save で保存も空に）
 oep settings save <probe>                    # 再起動の後も残す
-oep settings export <probe> jig.oep-settings.json                # 全部の値を名前で書き出す（secret はあることだけ）
-oep settings import <probe> jig.oep-settings.json [--save]       # 変わる所を見せ、確かめてから set / unset
+oep settings export <probe> jig.oep-settings.json                # 全部の値を名前で、メモ欄のオブジェクトも書き出す（secret はあることだけ）
+oep settings import <probe> jig.oep-settings.json [--save]       # 変わる所を見せ、確かめてから set / unset とメモ欄の書き直し
 oep speed <probe> [921600,500000] [--verify] [--flows out:2]  # port_speed: UART bridge を速くし（既定 500000）、結果を出す（下）
 oep pins <probe> --power 5 --wire swio       # target のつながり方: debug のピン、リセットの線、label（下）
 oep clock <probe> [-n 8] [--json]            # fn 0 の clock: uptime_ns と boot_id をこの host の時刻に合わせて（n 回のうち往復が最短のもの）

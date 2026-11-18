@@ -465,10 +465,11 @@ def _settings_parser(sub) -> None:
     net = cs.add_parser("network", help="the network now: the TCP port, each netif's state and address (lock-free)")
     net.add_argument("probe")
     net.add_argument("--json", action="store_true")
-    ex = cs.add_parser("export", help="write every value to a settings file (JSON; a secret as present only)")
+    ex = cs.add_parser("export", help="write every value and the memo area's objects to a settings file (JSON; a secret "
+                                      "as present only)")
     ex.add_argument("probe")
     ex.add_argument("file", help="the file to write, - for stdout")
-    im = cs.add_parser("import", help="make the probe's values a settings file's (shows what changes first)")
+    im = cs.add_parser("import", help="make the probe's values and memo area a settings file's (shows what changes first)")
     im.add_argument("probe")
     im.add_argument("file")
     im.add_argument("--yes", action="store_true", help="apply without asking")
@@ -528,7 +529,9 @@ def _settings(args) -> int:
         elif args.action == "save":
             _change(hst, lambda: None, True)
         elif args.action == "export":
-            doc = st.export()
+            doc, left_out = st.export_all()
+            for name in left_out:
+                print(f"memo object not written (torn, or its name is not UTF-8): {name!r}", file=sys.stderr)
             text = json.dumps(doc, indent=2, ensure_ascii=False) + "\n"
             if args.file == "-":
                 sys.stdout.write(text)
@@ -536,7 +539,8 @@ def _settings(args) -> int:
                 with open(args.file, "w", encoding="utf-8") as f:
                     f.write(text)
                 n = sum(len(v) for v in doc["settings"].values())
-                print(f"wrote {n} values to {args.file}")
+                objects = f" and {len(doc[settings.MEMO])} memo objects" if settings.MEMO in doc else ""
+                print(f"wrote {n} values{objects} to {args.file}")
         elif args.action == "import":
             return _import(hst, st, args)
         return 0
@@ -572,6 +576,10 @@ def _import(hst, st, args) -> int:
     for fn, number, key in plan.unsets:
         it = cat.item(fn, number)
         print(f"  unset {cat.category[fn]} {cat.flat(it, key)}")
+    for name in plan.memo_deletes:
+        print(f"  delete memo {name!r}")
+    for name, data in plan.memo_writes:
+        print(f"  write  memo {name.decode()} ({len(data)} bytes)")
     for category, flat in plan.secret_without_value:
         if (category, flat) in secrets:
             it, key = cat.resolve(category, flat)
@@ -579,7 +587,7 @@ def _import(hst, st, args) -> int:
             print(f"  set   {category} {flat} (secret, from the environment)")
         else:
             print(f"  no value on the probe for secret {category} {flat}: give it with --secret-env")
-    if not plan.sets and not plan.unsets:
+    if not plan.sets and not plan.unsets and not plan.memo_deletes and not plan.memo_writes:
         print("nothing to change")
         if args.save:
             _change(hst, lambda: None, True)

@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from . import core, message as m, registry as reg
 
 _R = reg.PROBE_MEMO
+NAME = _R.name
 OP = _R.op
 REQUEST_HEADER = reg.LIMITS["request_header_bytes"]
 RESULT_HEADER = reg.LIMITS["result_header_bytes"]
