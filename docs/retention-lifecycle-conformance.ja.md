@@ -2,6 +2,8 @@
 
 core §5.1/6/9を、明示した16 byte / 8件の[retention sample](retention-conformance.ja.md)で検査する。要求欠落、応答欠落、記録追い出しをそれぞれ作り、期限切れと異なるIDのforceでの扱いを分ける。終了と同じboot内のID継続、boot変更時の無効化は別の契約。
 
+`RetentionLifecycleChecks`はCORE-LIFECYCLE-CONTROLの後に[retention検査](retention-conformance.ja.md)（CORE-RETENTION-*）を実行し、続けてCORE-LIFECYCLE-EXPIRY-*／FORCE-*（REQUEST、RESPONSE、EVICTED）とCORE-LIFECYCLE-REBOOTを報告する。
+
 reset能力はsession操作の前に確認し、`reset_scope='logical-model'`だけを許す。実機の再起動/転送をこのadapterへ渡さない。
 
 - 期限切れ×3状態: 1000msのleaseで資源と購読を作り、1050ms待つ。資源/購読は消えるが、cache/high/last/boot/次の資源番号は変わらない。同一再送はresult_lost、要求を保持している応答欠落では変更した同corrはmalformed。新corrのkeepaliveはno_session。

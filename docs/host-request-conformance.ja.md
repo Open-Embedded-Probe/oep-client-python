@@ -39,7 +39,7 @@ rvswd scanのidle_clockに、本文はcriticalの指定を書かない（attach�
 scanの休ませ方が無視されると指定した線の状態で探索する意味を失うため、Host方針でcriticalとする。
 swd scanのtargetselは、coreの「無視されると要求の意味が無い」条件に当たる。
 scanの指定したmultidrop targetを試す意味を保つためcriticalとする。
-attachのtargetselとscanのtargetselは番号が異なる。文脈間で番号だけの方針cacheを共有しない。
+attachのtargetselとscanのtargetselは別の文脈のTLVである。文脈間で番号だけの方針cacheを共有しない。
 captureの基本設定はすべて実装する規則があるため、SPECが明示的にcriticalなしとする。
 ownerは表示用の任意情報なので非critical。すべてにbitを付ける方針ではこの仕様を満たさない。
 UART formatはすべてのUART fnが実装するTLVだが、指定した通信形を無視して8N1へ落ちないよう、Host方針としてcriticalにする。

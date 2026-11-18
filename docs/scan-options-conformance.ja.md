@@ -6,14 +6,14 @@
 共通宣言は第二段階の`InterfaceChecks`へ分ける。公開コードは設備や私的ベンチを探索しない。
 
 明示候補だけを有限個試し、connectionを作らない。
-fixtureは前回のwire attachモデルにscanを追加し、max_op_ms=5、既定候補上限2、
+fixtureはwire attachオプションのモデル（[wire-options](wire-options-conformance.ja.md)）にscanを追加し、max_op_ms=5、既定候補上限2、
 最も遅い速さ1000 Hz、候補ごと1 msの論理時計を使う。他probeへこの値を要求しない。
 
 - RVSWD idle_clockは省略/0ならclock high、1ならlow。dataはhigh。
   SWIOのdata high、SWDのdata low/clock highと区別する。
   読出し時の実際の論理levelを記録し、各候補のreserve→drive→read→releaseの順を確認する。
   TARGETSELを送る場合はread前にselectを1回入れる。
-- SWDのscan targetselはtag 0x06で単一のu32を指定する。attachのtag 0x02と混同しない。
+- SWDのscan targetselは単一のu32を指定する（番号は選択SPECのregistryのscan文脈から引く。attachのtargetselとは別の文脈）。
   指定したtargetだけを試す。無指定はTARGETSELを送らず、multidrop targetを自動選択しない。
   別selectorへのフォールバックや複数selectorの自動検索をしない。明示0も省略と区別する。
 - DPIDRが読めればarm-adi entryを返す。RISC-VはDMSTATUS.version 2以上かつ15以外。

@@ -6,7 +6,7 @@
 
 `Checks(send, registry, unit)`と`SampleScanAdapter(source)`を明示して
 `ScanChecks(checks, adapter).run()`を呼ぶ。公開コードは設備設定や私的ベンチを
-探索しない。実装の版・SPEC identityと各検査のraw交換はの報告に残す。
+探索しない。実装の版・SPEC identityと各検査のraw交換は報告に残す。
 
 
 - RVSWD/SWIO/SWDの識別子、kind、候補順、triedとcount、未知応答TLV。
@@ -25,7 +25,7 @@
 
 単体では正常系、前提不足、無効な刺激に加え、tried/kind/pin/IDの破損、
 資源生成、pin残留、候補飛ばし・暗黙追加、拒否前アクセス、budget無視、
-無効versionの採用、再送結果破損の12種類を注入し、検査の検出力を確認する。
+無効versionの採用、再送結果破損を注入し、検査の検出力を確認する。
 
 `full_conformance`はfalse。物理wake/dmactive/scratch/pin idle、idle_clock、
 targetsel、電気的タイミング/max_op_ms、別frame上限・並行writer、production Host統合は
