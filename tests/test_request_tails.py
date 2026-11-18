@@ -299,15 +299,16 @@ def test_tag_0x7f_is_an_unknown_tag():
     """core §2.2: tag numbers are 0x01-0x7F; 0x7F with a name the virtual bench does not know is read like any unknown
     TLV - ignored plain, unsupported (the byte as received) critical. The tail is read by one reader for every op
     (test_every_op_ignores_an_unknown_tlv_and_refuses_it_critical_*): the highest number on one op."""
+    highest = m.TAG_CRITICAL - 1                               # the tag numbers end below the critical bit
     ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
     hst = h.Host(lambda b: ep.handle(b, 1))
     op, payload = reg.CORE.op["describe"], struct.pack("<HH", 0, 0)
     plain = hst.request(m.CORE_FN, op, payload, locked=False)
     assert plain.succeeded
-    assert hst.request(m.CORE_FN, op, payload + m.tlv(0x7F, b"\x04io.x"), locked=False).payload == plain.payload
+    assert hst.request(m.CORE_FN, op, payload + m.tlv(highest, b"\x04io.x"), locked=False).payload == plain.payload
     with pytest.raises(h.Unsupported) as e:
-        hst.request(m.CORE_FN, op, payload + m.tlv(0x7F, b"\x04io.x", critical=True), locked=False)
-    assert e.value.result.payload == bytes([0x7F | m.TAG_CRITICAL])
+        hst.request(m.CORE_FN, op, payload + m.tlv(highest, b"\x04io.x", critical=True), locked=False)
+    assert e.value.result.payload == bytes([highest | m.TAG_CRITICAL])
 
 
 @pytest.mark.parametrize("tag", [0x00, 0x80])
