@@ -1,4 +1,4 @@
-# テスト方針と実機基盤の文書
+# docs の文書
 
 | 文書 | 対象と状態 |
 |---|---|
@@ -20,5 +20,10 @@
 | [構成と配線の確定](hardware-configuration.ja.md) | 個体、探索、確認済み接続、役割、共有制御の設計 |
 | [実機設定形式](hardware-schema.ja.md) | 公開のキーと判定、入力と確定 TOML、`.env` の雛形 |
 | [Python 実機ハーネス](../tests/hw/README.ja.md) | 設定と手順 |
+| [pytest のプラグイン](pytest.ja.md) | pytest-embedded-arduino-cli から OEP のプローブを使う |
+| [SWD のボードを書く・デバッグする](swd.ja.md) | Arduino IDE と gdb から OEP のプローブ越しに |
+| [適合検査と SPEC の版](conformance-spec-compatibility.ja.md) | 検査器の本文の固定と共有ベクタ |
+| [規則ごとの対応表](trace/README.ja.md) | oep-spec の規範の単位と、それを確かめる試験 |
+| [仕様追従で見つけた負担](spec-follow-notes.ja.md) | 実装が不便な仕様の規則（見直しの材料） |
 
 ここにある文書の保守窓口は oep-client-python です。保証と合否の所有者は各実装に分かれ、通信の規範は oep-spec に置きます。全体方針はプロジェクト共通で、Python のテストだけの説明ではありません。実設備の台帳は外部で管理し、runner へ明示設定で渡します。

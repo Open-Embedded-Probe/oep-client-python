@@ -26,3 +26,6 @@
   `close_route`）に、再送記録 0 件で当てる。
 - core_policy: 全ケース。仮想ベンチの任意の受付方針（試験フック `Endpoint.policy`）に当てる。下流の応答は
   ベクトルの仮の値なので、方針で断られないことだけを比べる。
+
+ほかのベクトルはその機能の試験が読む: capture_formats は `tests/test_capture_blocks.py` と仮想ベンチの capture の試験、
+hid_reports は `tests/test_hid_stream.py`、settings_file は `tests/test_settings.py`。

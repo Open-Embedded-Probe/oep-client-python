@@ -14,7 +14,7 @@
 
 ## 実行
 
-`tests/equipment/.env.example` をコピーし、明示的に読み込む。設定は安定した port/名指しした USB/TCP、期待する unit ID、SPEC checkout、既存の共有 lock、新規 JSON 出力先。SPEC は隣接 checkout を自動探索しない。私的設備台帳への依存はない。配線・target の指定はこのコア検査には不要。`OEP_CONFORMANCE_FRAMING=serial` では独立した COBS/CRC 検査器を使い、メッセージ検査に wire 検査と再接続検査を加える。`tcp` は明示した `tcp://HOST:PORT` に独立したlength検査器を使い、メッセージ検査に TCP 検査を加える。DNS-SDや隣接設定を自動探索しない。`client` は通常の client backend を使い、USB/TCPでもメッセージ検査を実行できる。
+`tests/equipment/.env.example` をコピーし、明示的に読み込む。設定は安定した port/名指しした USB/TCP、期待する unit ID、SPEC checkout、共有 lock、新規 JSON 出力先。SPEC は隣接 checkout を自動探索しない。私的設備台帳への依存はない。配線・target の指定はこのコア検査には不要。`OEP_CONFORMANCE_FRAMING=serial` では独立した COBS/CRC 検査器を使い、メッセージ検査に wire 検査と再接続検査を加える。`tcp` は明示した `tcp://HOST:PORT` に独立したlength検査器を使い、メッセージ検査に TCP 検査を加える。DNS-SDや隣接設定を自動探索しない。`client` は通常の client backend を使い、USB/TCPでもメッセージ検査を実行できる。
 
 ```sh
 uv run --group dev --env-file tests/equipment/.env pytest tests/equipment/test_core_contract.py
@@ -22,11 +22,11 @@ uv run --group dev --env-file tests/equipment/.env pytest tests/equipment/test_c
 uv run --env-file tests/equipment/.env oep-conformance
 ```
 
-出力先の親ディレクトリを先に用意する。既存の結果を上書きしない。共有 lock を接続から close まで保持し、自分の session を終了する。forceは同じ検査器が取得したsession間の移譲だけを検査する。最初のopenが拒否されたらforceを送らない。別利用者のsessionは奪わない。pin 操作、設定変更、flash は行わない。仕様に合わない実装は FAIL として記録する。
+出力先の親ディレクトリを先に用意する。結果のファイルを上書きしない。共有 lock を接続から close まで保持し、自分の session を終了する。forceは同じ検査器が取得したsession間の移譲だけを検査する。最初のopenが拒否されたらforceを送らない。別利用者のsessionは奪わない。pin 操作、設定変更、flash は行わない。仕様に合わない実装は FAIL として記録する。
 
-## 新コアのバーチャルベンチ
+## コアだけの仮想ベンチ
 
-既存のCLIに `--profile core-v1` を指定すると、コアだけの最小端点を起動する。このprofileはfn 0のみで、target/fixture/interface/resource/subscriptionを持たない。共通インターフェースやOEP固有opまでPASSしたとは扱わない。
+`virtual_bench_serve` に `--profile core-v1` を指定すると、コアだけの最小端点を起動する。このprofileはfn 0のみで、target/fixture/interface/resource/subscriptionを持たない。共通インターフェースやOEP固有opまでPASSしたとは扱わない。
 
 ```sh
 uv run python -m oep_client.virtual_bench_serve --pty --profile core-v1
@@ -34,7 +34,7 @@ uv run python -m oep_client.virtual_bench_serve --pty --profile core-v1
 uv run python -m oep_client.virtual_bench_serve --tcp 0 --profile core-v1
 ```
 
-表示されたportと `OEP_CONFORMANCE_UNIT_ID=virtual-core-1` を明示設定に入れる。必須の `tests/test_virtual_core.py` はraw-message、実際のPTY、loopback TCPで同じ公開検査器を使い、子processを終了まで管理する。通常のテストでは実機を開かない。コアが通った後に、既存profileのinterfaceを新仕様へ順に追従させる。
+表示されたportと `OEP_CONFORMANCE_UNIT_ID=virtual-core-1` を明示設定に入れる。必須の `tests/test_virtual_core.py` はraw-message、実際のPTY、loopback TCPで同じ公開検査器を使い、子processを終了まで管理する。通常のテストでは実機を開かない。
 
 ## 明示したTCP peerとの検査
 
@@ -68,17 +68,17 @@ bulk/HIDには独立したraw adapter APIと、最小USBモデル、実機を開
 
 `result_lost` は仕様が許す保持サイズ上限を考慮して受ける。履歴の古い clock を送り直したとき、新しい時計値で completed を返せば再実行として失敗する。cacheの容量を実装固有の固定値と決めつけない。
 
-複数target・各opの動作は未検査（ピンの解放は、実機の `python -m oep_client.conformance.release_hw` が、targetのGPIOの入力で電気的に確かめる）。serialではclientのencoder/decoderを使わず、CRCは標準ライブラリ、COBSと受信は別コードで確認する。OSのport排他とportの開閉だけ既存clientを利用する。再接続はOS portのclose/openであり、USBの物理抜き差し・給電断・USB resetを模擬しない。DTR/RTSやbridge配線により再起動した場合、boot変化のFAILとして記録し、session保持の成否は確定しない。重複応答の検査は結果後30msの観測窓内、過大frameの無応答は宣言されたframe gap＋100msの観測窓内に限る。TCPは独立したlengthの受信・送信を使い、壊れた応答の後は立て直しで隠さず止める。framing=clientでは独立wire検査を実行しない。これらを埋める前に全コア準拠・全インターフェース準拠と名乗らない。
+複数target・各opの動作は未検査（ピンの解放は、実機の `python -m oep_client.conformance.release_hw` が、targetのGPIOの入力で電気的に確かめる）。serialではclientのencoder/decoderを使わず、CRCは標準ライブラリ、COBSと受信は別コードで確認する。OSのport排他とportの開閉だけclientを利用する。再接続はOS portのclose/openであり、USBの物理抜き差し・給電断・USB resetを模擬しない。DTR/RTSやbridge配線により再起動した場合、boot変化のFAILとして記録し、session保持の成否は確定しない。重複応答の検査は結果後30msの観測窓内、過大frameの無応答は宣言されたframe gap＋100msの観測窓内に限る。TCPは独立したlengthの受信・送信を使い、壊れた応答の後は立て直しで隠さず止める。framing=clientでは独立wire検査を実行しない。これらを埋める前に全コア準拠・全インターフェース準拠と名乗らない。
 
-既存 `oep-hardware preflight` は個体・旧仕様の宣言・open/end に限った別契約。portable C++、共有ベクタ、仮想テストの成功も、実機適合とは別に報告する。
+`oep-hardware preflight` は個体・宣言・open/end に限った別契約。portable C++、共有ベクタ、仮想テストの成功も、実機適合とは別に報告する。
 
-既存の registry/vector は `tests/vectors/SPEC_COMMIT` と `SPEC_SHA256` で固定し、通常試験はその snapshot を検査する。明示した `OEP_SPEC_DIR` があれば、同じ commit の upstream 内容も比較する。SPEC の HEAD が先行しても旧回帰は自動同期しない。更新は `OEP_SPEC_DIR=/explicit/path OEP_SPEC_REF=<commit> tools/sync_registry.sh` で行う。
+registry/vector は `tests/vectors/SPEC_COMMIT` と `SPEC_SHA256` で固定し、通常試験はその snapshot を検査する。明示した `OEP_SPEC_DIR` があれば、同じ commit の upstream 内容も比較する。SPEC の HEAD が先へ進んでも自動では写さない。更新は `OEP_SPEC_DIR=/explicit/path OEP_SPEC_REF=<commit> tools/sync_registry.sh` で行う。
 
-forceによる資源の解放は、実機の `python -m oep_client.conformance.force_hw` が、targetへのdebugの接続で確かめる（奪われたセッションの接続が消え、番号がno_resourceになり、奪った側の次の接続は新しい大きい番号）。資源寿命には[明示adapterによる補助検査](resource-conformance.ja.md)がある。最小サンプルは14資源契約＋2宣言検査を実行する。通常CLIへ自動追加せず、購読・route切断・依存順・電気的idleを未検査として残す。
+forceによる資源の解放は、実機の `python -m oep_client.conformance.force_hw` が、targetへのdebugの接続で確かめる（奪われたセッションの接続が消え、番号がno_resourceになり、奪った側の次の接続は新しい大きい番号）。資源寿命には[明示adapterによる補助検査](resource-conformance.ja.md)がある。通常CLIへ自動追加せず、購読・route切断・依存順・電気的idleを未検査として残す。
 
 購読と通知は、実機の `python -m oep_client.conformance.notify_hw` が、名指した1本の線のロジックのキャプチャのストリーミングで確かめる（ロック、seqとposition、応答優先、置き換え、max_delay_ms、経路、end / forceで止まる）。購読・出来事の寿命には[外部刺激adapterの補助検査](subscription-conformance.ja.md)がある。raw通知と観測窓を保存する。data、応答優先、route、queue上限は未検査で、通常CLIには自動追加しない。
 
-[data/eventとまとめ送りの補助検査](data-conformance.ja.md)。外部byte位置とloss-freeな刺激条件を明示し、閾値・first-byte delay・共通seq・分割・再送/同session openでの未送信データ保持を検査する。seq一周は単体で65,538個を実際に生成して検証し、実時計・実機の結果と分ける。
+[data/eventとまとめ送りの補助検査](data-conformance.ja.md)。外部byte位置とloss-freeな刺激条件を明示し、閾値・first-byte delay・共通seq・分割・再送/同session openでの未送信データ保持を検査する。seq一周は単体で実際に一周分を生成して検証し、実時計・実機の結果と分ける。
 
 [経路・writerの補助検査](route-conformance.ja.md)。応答/通知の経路、優先順位、未送信suffixのqueue上限、dropのseq、切断後のsession/資源/購読/履歴保持を確認する。実際のframing/OS buffer、経路別window/max_inflight、並行実行と実機切断は未検査。
 
@@ -173,7 +173,7 @@ drive/read、再送とidle復元を第三段階で確認する。物理pin/他fi
 
 [UART固有動作](uart-conformance.ja.md)。
 configure、受信/送信、TX idle、再送、plan再作成とend/expiry/forceを確認する。
-[UARTへの共通stream適用](uart-stream-conformance.ja.md)は、既存assertをplan所有の寿命に合わせて使う。
+[UARTへの共通stream適用](uart-stream-conformance.ja.md)は、streamの検査のassertをplan所有の寿命に合わせて使う。
 
 console §2に従うresync/TO/CRCのmarkと無効flagの誤通知も検出する。繰り返し観測のmark数は固定しない。
 
