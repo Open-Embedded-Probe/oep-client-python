@@ -31,3 +31,7 @@ failed flag/confirm省略、復帰前照会、復帰失敗後の継続、誤っ�
 TCP close/reopen、実clock/transport、own-link confirm時間、破損時の再送上限、他pipeline/cache容量、
 corrの循環と半周の制限（core §4.1/5.1）、production Hostによる処理上限の選択、
 production Hostとの統合は検査しない。full_conformance=false。
+
+```sh
+uv run pytest -q tests/test_conformance_host_resend.py
+```

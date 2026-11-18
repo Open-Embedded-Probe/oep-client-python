@@ -13,8 +13,7 @@ encoderは文脈の方針に従ってbit7を付け、長さu16 little-endian、�
 
 ## レビューした文脈
 
-方針は TLV の名前で持ち、番号は選んだ SPEC の registry から引く。registry の文脈に方針の無い TLV が増えたら、レビューまで止める
-（番号の振り直しだけなら止めない）。
+方針は TLV の名前で持ち、番号は選んだ SPEC の registry から引く。registry の文脈に方針の無い TLV が増えたら、レビューまで止める。
 
 | 文脈 | criticalを付けるTLV | criticalを付けないTLV | 根拠 |
 |---|---|---|---|
@@ -85,9 +84,9 @@ planの割り当ては、無視した取得を避けるためcriticalを付け�
 ## 公開APIの送信箇所を確認する
 
 `tests/test_conformance_host_critical_calls.py`は実HostとUART/rvswd/swio/swdの公開APIを使う（gpio setは要求TLVを持たない）。
-この公開API検査は（attachは固定部分method・swdio・swclk・max_speedの後にTLV）で送る。
+attachは固定部分（method、swdio、swclk、max_speed）の後にTLVを置く。
 UART format、wire attachの固定部分とreset、rvswd idle_clock、swd targetselを、
-独立したliteral payloadと比較する。6種類の拒否tagをscripted peerからunsupportedで返し、
+独立したliteral payloadと比較する。それぞれのtagをscripted peerからunsupportedで返し、
 Hostが受信したcritical tagを保持して例外にし、項目を外して再送しないことを確認する。
 各tagのcritical bitを落とす故障も検出する。
 

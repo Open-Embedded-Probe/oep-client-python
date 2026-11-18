@@ -14,9 +14,9 @@ fn 0のconfirmは処理上限min(max_op_ms, core_quick_op_max_ms)、max_op_ms取
 production Hostは要求ごとに処理上限を選ぶ（Host.op_bound_ms）。サンプルはproductionのconfirmをそのまま通す。
 reportはproduction_opcode_alignment_proven=true、production_quick_bound_proven=trueを持つ。
 
-SAVE72、失敗6、confirm履歴9（各confirmは処理上限1000 ms、max_op_ms5000）。
-max_op_ms1/5000/600000、max_frame64/256/65535、外側の待ち0/7000ms、
-length framingとUARTの現在baud1200/115200/3000000を組み合わせる。
+HOST-WAIT-SAVEはmax_op_ms1/5000/600000、max_frame64/256/65535、外側の待ち0/7000ms、
+length framingとUARTの現在baud1200/115200/3000000の全組合せ、HOST-WAIT-FAILUREはその一部でsaveを失敗させる。
+HOST-WAIT-LIMITSはlength、UART 115200/3000000でconfirmの履歴を通す（各confirmは処理上限1000 ms、max_op_ms5000）。
 短い設定timeout0.05秒、lease1秒の速度変更経路でも、saveのmax_op_ms＋1秒＋転送時間を下回らない。
 UART転送時間は、実際に書いたフレームの長さLと最新max_frameを使い、(L＋max_frame×3)×10/baud。
 COBS/CRCを含むsaveのLは15byte、length framingは12byteで転送時間0。
@@ -30,4 +30,8 @@ confirmの応答が来る前はmax_frame64、その後は直近の応答値を�
 単体試験は、引数時間/余裕/転送/通知の省略、message長とwire長の混同、leaseや短いtimeoutによる短縮、
 外側待ちの消失/失敗時の漏れ、save投影番号/結果/latest confirmの不正を検出する。
 実際の期限開始/timeout発生/再送、pipelineの先行応答待ち、link自身の交渉待ち、
-他opの処理上限、production Hostによるfn 0処理上限の選択、実transport/flash、production Hostとの統合は検査しない。full_conformance=false。
+他opの処理上限、実transport/flash、production Hostとの統合全体は検査しない。full_conformance=false。
+
+```sh
+uv run pytest -q tests/test_conformance_host_wait.py
+```
