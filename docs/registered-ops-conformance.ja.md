@@ -10,11 +10,11 @@ lock有無や番号の空きから推測しない。revision 1の標準インタ
 全fnの共通宣言は第二段階で別に実行する。
 wire/consoleの固有metadataは[標準wire／console固有の宣言](oep-declaration-conformance.ja.md)の検査が扱う。
 
-- plan/restart、ARM-ADI、GPIO、SPIの表のopは必須。
+- plan/restart、GPIO、SPIの表のopは必須。ARM-ADIはtransferが必須で、read_block/write_blockは任意の組。
 - console/UARTのmarks/clear/mark/writeは任意。markを持つならmarksも持つ。
 - wireのscan、I2Cのstretchは任意。linkのport_speedとport_stateは任意。port_speedを持つならport_stateも持つ。
 - RISC-Vのhalt/resume/reset/block/run/stepは任意。read_block/write_blockは組で持つ。
-- logic/analogのconfigure/start/stop/status/read/segmentsは必須。force/queryは任意（capture §3.2）。
+- logic/analogのconfigure/start/stop/status/read/segmentsは必須。force/query/triggersは任意（capture §3.2）。
   releaseはdescribeのmode（0x40）にmode 2を宣言したときだけ必須、ほかでは任意（capture §1/§3.2）。
   subscribeはmode 3を宣言したときだけ必須、ほかでは任意（capture §3.2/§3.4）。subscribe/unsubscribeは組で持つ。
   analogのcalibrationは任意、logicには宣言しない（analogのcalibrationの番号で確かめる）。

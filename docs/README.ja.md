@@ -8,11 +8,11 @@
 | [有限保持の通知出力](notification-output-sample.ja.md) | 限定raw fixtureで購読拒否・seq抜け・部分frame・応答優先を確認 |
 | [Host TLVの読出し検査](host-tlv-conformance.ja.md) | 明示readerアダプタで未知tag・critical・重複・破損と長さ境界を確認 |
 | [Host通知と期限](host-notification-conformance.ja.md) | 現SPECのrole振り分け、未知kindのseq、通知が続く時の応答待ち/pumpを確認 |
-| [Hostの未知値分類](host-value-conformance.ja.md) | 失敗となる未知値、値を保つcause/scan kind、予約confirm flagsを確認 |
+| [Hostの未知値分類](host-value-conformance.ja.md) | 失敗となる未知値、値を保つcause/scan kindを確認 |
 | [TLV要求の文脈と幅](tlv-request-conformance.ja.md) | 4つのfn/op文脈、known criticalの同等性、拒否前の非変更と順序を確認 |
 | [core clockの検査](clock-conformance.ja.md) | 正確な論理ns時計で採時・SID 0・再送例外・lease・u64境界を確認 |
-| [core発見処理の検査](discovery-conformance.ja.md) | list/fn 0 describeの任意cursor、labelと宣言の不変性を確認 |
-| [資源番号の上限](allocator-conformance.ja.md) | 明示seedでu16上限、解放後の非再利用、再送と再起動を確認 |
+| [core発見処理の検査](discovery-conformance.ja.md) | list/fn 0 describeの任意cursor、channel名と宣言の不変性を確認 |
+| [資源番号の上限](allocator-conformance.ja.md) | 明示seedでu32上限、解放後の非再利用、再送と再起動を確認 |
 | [通知seqと再購読](notification-sequence-conformance.ja.md) | 論理経路でseqの一周・drop・購読置換・再送を確認 |
 | [raw USB検査](usb-conformance.ja.md) | bulk/HIDの独立検査器と最小ソフトウェアモデル |
 | [全体テスト方針](testing-policy.ja.md) | OEP と利用プロジェクトの保証対象と責任 |
