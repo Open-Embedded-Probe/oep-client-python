@@ -73,7 +73,7 @@ def h_call(hst, fn, op, payload):
         hst.session = sid
 
 
-# ---- probe-config §1: label = "text（1〜32byte、coreのtext）"; core §2.1: text is UTF-8, the host replaces C0 / 0x7F ----
+# ---- core §13.8: label = text of 1-32 bytes; core §2.1: text is UTF-8, the host replaces C0 / 0x7F ----
 
 def _models():
     from oep_client.conformance.analog_model import AnalogModel

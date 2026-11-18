@@ -187,7 +187,7 @@ def test_read_from_4_unsupported_and_from_3_with_a_wide_arg_reads_from_now():
         assert r.succeeded and r.payload == struct.pack("<QBH", 3, 0, 0)          # from now: the write position
 
 
-def test_probe_config_a_mode_a_later_revision_may_define():
+def test_an_idle_mode_a_later_revision_may_define():
     ep, h = bench()
     r = h.raw(0, SET, cset(idle_item(20, 5)))
     assert (r.detail, r.payload) == (m.UNSUPPORTED, item_refused())
@@ -606,7 +606,7 @@ def test_an_idle_pull_the_channel_lacks_is_unsupported():
 
 
 def test_a_saved_idle_pull_the_channel_lacks_is_left_out_at_boot():
-    """probe.config §3: an item this firmware cannot take is left out at boot and the others applied (partial,
+    """core §13.7: an item this firmware cannot take is left out at boot and the others applied (partial,
     reason 2)."""
     ep, h = bench()
     h.ok(0, SET, cset(idle_item(20, IDLE["pull_down"]), label_item(21, b"x")))
@@ -628,7 +628,7 @@ def test_the_channel_of_an_item(ch):
 @pytest.mark.parametrize("text, ok", [(b"x" * 32, True), (b"x" * 33, False), (b"", False), (b"a\nb", True),
                                       (b"\x7f", True), (b"\xc3", True), ("nrst ✓".encode(), True)])
 def test_label_text(text, ok):
-    """probe.config §1: a label's text is checked for its length (1-32) only - request text
+    """core §13.8: a label's text is checked for its length (1-32) only - request text
     is not validated (core §2.1); the host replaces what it shows."""
     ep, h = bench()
     r = h.raw(0, SET, cset(label_item(20, text)))
