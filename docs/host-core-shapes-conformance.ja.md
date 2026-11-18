@@ -1,5 +1,7 @@
 # コア応答の固定形と既知TLVの読出し検査
 
+[English](host-core-shapes-conformance.md)
+
 `HostCoreShapeChecks(decoder, spec=...)`は第一段階のHost部品検査。
 明示したSPECのcore revision 1について、実際の8操作の成功応答、11拒否理由、
 33の既知TLV文脈を独立したバイト列と照合する。

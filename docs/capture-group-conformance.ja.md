@@ -1,5 +1,7 @@
 # capture-groupの論理操作検査
 
+[English](capture-group-conformance.md)
+
 `CaptureGroupChecks(checks, adapter).run()`は明示したSPECのcapture §4.1、plan §2、core §4.3/4.4/6/8/9を
 第三段階で確認する。`Checks(send, registry, unit)`と`SampleCaptureGroupAdapter(source)`を渡す。
 公開checker/adapterは私的ベンチ・兄弟checkout・設備設定を探索しない。
