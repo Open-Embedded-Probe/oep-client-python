@@ -1,5 +1,7 @@
 # Probe restartの部分適合検査
 
+[English](restart-conformance.md)
+
 RestartChecksはrestart §1/2とcore §9に基づき、現在のCoreとGPIO/planを使うRestartModelへ操作を送る。
 モデルの再起動はEndpoint.rebootを使い、boot/時計/Core/拡張資源を新しい起動へ切り替える。
 明示SPEC registryでChecksを作り、共通InterfaceChecks、RegisteredOpsChecks、固有検査の順で実行する。

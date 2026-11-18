@@ -1,5 +1,7 @@
 # optional block操作と状態復元の検査
 
+[English](block-conformance.md)
+
 `BlockChecks`は選択SPECの`oep-if-debug.ja.md` §4/4.5とcore §7.4を
 第三段階`oep-interface`で検査する。`Checks(send, registry, unit)`と
 `SampleBlockAdapter(source)`を明示して`BlockChecks(checks, adapter).run()`を呼ぶ。

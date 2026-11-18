@@ -1,5 +1,7 @@
 # 適合検査とSPECの版
 
+[English](conformance-spec-compatibility.md)
+
 検査が要求する契約と、選択したSPECの契約は揃っている必要がある。
 凍結前の仕様はprotocol revisionが同じ1でも変わるので、検査はレビューした本文に固定する。
 

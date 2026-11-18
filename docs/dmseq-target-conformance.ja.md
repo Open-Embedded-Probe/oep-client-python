@@ -1,5 +1,7 @@
 # target側dmseqの論理検査
 
+[English](dmseq-target-conformance.md)
+
 `TargetDmseqChecks`は選択SPECの`target-console-dmseq.ja.md`のtarget規則と
 timeoutを第三段階`oep-interface`で検査する。`Checks(send, registry, unit)`と
 `SampleTargetDmseqAdapter(source)`を明示して`TargetDmseqChecks(checks, adapter).run()`を呼ぶ。

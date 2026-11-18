@@ -1,5 +1,7 @@
 # Hostのsave待ち時間と転送時間の部分検査
 
+[English](host-wait-conformance.md)
+
 SPEC checkoutを明示し、`HostWaitChecks(SampleHostWaitAdapter(), spec=path).run()`を実行する。
 core §4.4/7.5/13.7、transports §6の本文のレビュー済みSHAと待ちの数値/現在のsave番号を照合する。
 registryのcore_quick_op_max_ms（1000）も照合する。

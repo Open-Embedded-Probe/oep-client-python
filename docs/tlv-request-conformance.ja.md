@@ -1,5 +1,7 @@
 # TLV要求の文脈・幅・critical検査
 
+[English](tlv-request-conformance.md)
+
 core §2.2/2.3を明示した仮想拡張で検査する。Coreの実際のsession・再送・拒否経路を使う。
 OEP固有操作やproduction Probeの検査とは別で、物理pinを持たない。
 

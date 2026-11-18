@@ -1,5 +1,7 @@
 # optional stepと再停止の検査
 
+[English](step-conformance.md)
+
 `StepChecks`は選択SPECの`oep-if-debug.ja.md` §4/4.2とconsole §3を
 第三段階`oep-interface`で検査する。`Checks(send, registry, unit)`と
 `SampleStepAdapter(source)`を明示して`StepChecks(checks, adapter).run()`を呼ぶ。

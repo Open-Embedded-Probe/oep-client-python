@@ -1,5 +1,7 @@
 # 応答待ちとforceの競合
 
+[English](response-race-conformance.md)
+
 SPEC checkoutを明示し、`ResponseRaceChecks(SampleResponseRaceAdapter(), spec=path).run()`を実行する。
 core/transports本文SHAとregistry待ち値を照合する。private設備・OS transportを使わない。
 現在のCore.handle(defer_send=True)とresponse_sentを、3本の論理writerと明示millisecond時計で通す。

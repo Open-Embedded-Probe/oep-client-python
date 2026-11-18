@@ -1,5 +1,7 @@
 # 線の再試行の論理検査
 
+[English](retry-conformance.md)
+
 OEP debug §2/4.1の検査を`RetryChecks`、明示的な論理fixtureを`RetryModel`と
 `SampleRetryAdapter`で提供する。任意のOEP利用プロジェクトから公開Pythonライブラリだけで利用できる。
 SPEC/registryは呼び出し元で明示的に選び、`Checks`へ渡す。私的な設備設定やベンチを探索しない。

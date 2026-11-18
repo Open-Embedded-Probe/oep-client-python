@@ -1,5 +1,7 @@
 # HostのTLV読出し部品検査
 
+[English](host-tlv-conformance.md)
+
 core §2.2/2.3のHost側を検査する。Probeの送出適合とは別の検査で、production Hostへ自動適用しない。
 自分のreaderを明示アダプタで接続する。private設備台帳や隣接SPECの自動探索は行わない。
 

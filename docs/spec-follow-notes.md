@@ -1,0 +1,12 @@
+# Implementation burdens found while following the spec
+
+[日本語](spec-follow-notes.ja.md)
+
+This records spec rules that turned out to be quite inconvenient to implement while keeping the implementation in line with oep-spec. It is material for reviewing the spec, not normative.
+Items that went into the spec or were withdrawn are removed; only open items stay. Items that are merely a lot of work, or that the implementation's design can solve, are not listed.
+
+| # | Clause | Inconvenience | Affected | Alternative |
+|---|---|---|---|---|
+| 1 | core §2.3 (a later copy of the same tag is also validated) | When a known non-repeating tag comes twice in a request, the second and later values, which are not used, must still be validated per op for value range and support. The common TLV reader only sees the length, so validation must be split from the processing with side effects, and the same validation applied to every copy | probe (each op), virtual bench | Make a duplicate of a known non-repeating tag in a request malformed (judged by the number without the critical bit; repeating tags and unknown tags are excluded). This is a change that newly refuses valid duplicates |
+| 2 | core §2.2 / §2.3 (reader rules for responses, events and data) | The sender has no duty "do not send a non-repeating tag twice in a response", so the host needs a defense in every place that reads response TLVs: use the first copy and treat a value of a different length as broken. Python collects it in `catalog.first_value` / `first_fixed` | host, checker | State that the probe does not send a non-repeating tag twice in responses, events and data, and check it with the checker. The reader rules do not change (written separately from #1 on the request side) |
+| 3 | console §2, core §9 (a stream belongs to the session and is released at session end) | A host that opens and closes a session for each run (each `oep` command, test processes) cannot pick up output the target produced between commands (such as lines right after boot). The console pass-through (core §13 item) sends output while there is no session to the serial port, but it cannot be read back in the next session | host (CLI, tests) | Define, as an optional feature, a "retained stream" that keeps receiving while there is no session and can be read in the next session. Make it a resource separate from the rule not to reuse closed stream numbers (core §9) |

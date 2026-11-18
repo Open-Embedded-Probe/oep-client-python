@@ -1,5 +1,7 @@
 # 通知seqの保持範囲
 
+[English](notification-retention-conformance.md)
+
 SPEC checkoutを明示し、`NotificationRetentionChecks(SampleNotificationRetentionAdapter(), spec=path).run()`を実行する。
 core/transports本文SHAとregistry待ち値を照合する。private設備や実transportを使わない。
 core §2.6の「同時に持つ周回値の差が2^(w−2)未満」を、u16通知seqの明示サンプルで検査する。
