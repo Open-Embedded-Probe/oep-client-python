@@ -1,5 +1,7 @@
 # OEP を使うプロジェクトのテストガイド
 
+[English](testing-consumers.md)
+
 OEP プローブを使って、自分のクライアント、tool、組込みソフトウェアを検証するプロジェクト向けのガイドです。言語、target family、Arduino の利用有無を限定しません。テスト本体と合否基準は利用プロジェクトで管理し、通常は設置済みのプローブを使います。
 
 責任と保証範囲の正本は [全体テスト方針](testing-policy.ja.md)。設備設定の形式は [実機設定形式](hardware-schema.ja.md)と[配線の確定手順](hardware-configuration.ja.md)を参照してください。`oep-hardware` は設定の検査・計画、仮想 smoke、probe 単体の preflight を行います。target の試験の実行は利用プロジェクトの runner が受け持ち、以下の責任と判定を適用します。
