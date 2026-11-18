@@ -1,5 +1,7 @@
 # wireのattachオプションの検査
 
+[English](wire-options-conformance.md)
+
 `WireOptionsChecks`は選択SPECの`oep-if-debug.ja.md` §1/2/3/5とcore §2.3/8.1を
 第三段階`oep-interface`で検査する。`Checks(send, registry, unit)`と
 `SampleWireOptionsAdapter(source)`を明示して`WireOptionsChecks(checks, adapter).run()`を呼ぶ。

@@ -1,5 +1,7 @@
 # lease・forceの大枠検査
 
+[English](session-smoke-conformance.md)
+
 `SessionSmokeChecks`は選択したsession寿命をraw要求で確認する。
 レビュー済みcoreのガードを持つ`CoreSmokeChecks`をcontextに使う。
 

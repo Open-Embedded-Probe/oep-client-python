@@ -1,5 +1,7 @@
 # I2C targetの論理検査
 
+[English](i2c-conformance.md)
+
 `I2cChecks(checks, adapter).run()` は選択SPECのfixture §3、plan §2とcore §6/8/9を第三段階で検査する。
 `Checks(send, registry, unit)` と `SampleI2cAdapter(source)` を明示して渡す。
 公開側は私的ベンチ・設備設定・隣接リポジトリを探索しない。

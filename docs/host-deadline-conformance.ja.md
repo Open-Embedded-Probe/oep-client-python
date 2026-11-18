@@ -1,5 +1,7 @@
 # Host待受けループの期限開始点
 
+[English](host-deadline-conformance.md)
+
 SPEC checkoutを明示し、`HostDeadlineChecks(SampleHostDeadlineAdapter(), spec=path).run()`を実行する。
 core §4.4/7.5、transports §3/6の本文のレビュー済みSHAと待ちの数値を照合し、OEP固有のconfig仕様には依存しない。
 private設備を探索しない。SerialLink._send/_exchange_once/_recv_forとLengthFrames.recvを、

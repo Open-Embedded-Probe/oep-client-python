@@ -1,5 +1,7 @@
 # 採用を明示したwrite受付とdebug完了結果の検査
 
+[English](outcome-conformance.md)
+
 common §1.4のwrite、§3のdebug status/doneを採用したインターフェイスだけに適用する。名称やop番号から推測しない。全fnの宣言検査、資源寿命、OEP固有opの動作は別途必要。
 
 | 契約 | 検査 |
