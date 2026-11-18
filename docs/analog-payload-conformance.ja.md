@@ -1,5 +1,7 @@
 # アナログ成功payloadと生データの検査
 
+[English](analog-payload-conformance.md)
+
 `AnalogPayloadChecks(checks)`は選択SPECのcapture §1.2/3.2/3.3/3.7を第三段階で確認する。
 callerはconfigure/queryの成功payload、calibrationの成功payload、取得データと既知の生サンプル、
 planのroles、describeのfrontend番号とmodeを明示する。
