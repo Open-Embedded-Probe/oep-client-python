@@ -124,7 +124,7 @@ corrは循環する（core §4.1、§5.1）。corrの循環・半周・記録の
 
 [target側dmseq](dmseq-target-conformance.ja.md)。再送、入力Hの重複抑止/空き不足、timeoutと遅いackを論理時計で確認する。独立probeとのmailbox往復も検査し、実時間下限・firmware統合とは分ける。
 
-[必須riscv-dmとconsole調停](debug-conformance.ja.md)。dmiの構文・進捗・poll、halt/resume、同じconnectionのmailbox停止/復帰を第三段階で確認する。追加fnを含む全5 fnの共通宣言は第二段階で別に検査する。
+[riscv-dmのdmiとconsole調停](debug-conformance.ja.md)。dmiの構文・進捗・poll、任意のhalt/resume、同じconnectionのmailbox停止/復帰を第三段階で確認する。追加fnを含む全5 fnの共通宣言は第二段階で別に検査する。
 
 [optional blockと状態復元](block-conformance.ja.md)。長さ・alignment・hart前提、bus値/進捗、GPR/DATA/abstractautoの復元とconsole保持を第三段階で確認する。物理abstract commandや復元失敗は未検査。
 

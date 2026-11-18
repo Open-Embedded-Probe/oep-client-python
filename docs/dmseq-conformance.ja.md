@@ -30,15 +30,19 @@ synced/last_s/last_syn/h/pendingをstreamごとに持つ。`reset_target(connect
 各caseはlogical restartし、mailboxの全アクセスをpollごとのsnapshotで保存する。
 
 単体試験は正常系・規範CRC例・前提不足と誤動作注入を含む。
+```sh
+uv run pytest -q tests/test_conformance_dmseq.py
+```
+
 `full_conformance`はfalse。target側の再送/timeoutアルゴリズム、
 実riscv-dm要求との調停、物理DMI/timing/配送、production Host統合、別容量と並行pollerは未検査。
 probe側のframing検査だけでtarget側や全consoleの適合とは扱わない。
 
 
 console §2のmark条件も確認する。
-同期後の新しいSYN（同じS/異なるS）はrestart/detail 2、有効TO（新規/重複）はlost/detail 4、
-CRC不一致はlost/detail 2を要求し、marks opで読み返す。
+同期後の新しいSYN（同じS/異なるS）はrestart/detail 2、有効TO（新規/重複）はlost/detail 0x40（target_timeout）、
+CRC不一致はlost/detail 2（framing）を要求し、marks opで読み返す。
 CRC不一致やN=7、host所有wordのSYN/TOからrestart/resync・lost/TOを出す誤動作を検出する。
 初回同期のrestartは要求せず、繰り返し観測のmark数も固定しない。
-単体ではmark欠落5種、無効flag誤通知2種、同じフレームのmarkを集約するモデルも確認する。
+単体ではmark欠落、無効flagの誤通知、同じフレームのmarkを集約するモデルも確認する。
 仮想モデルは各観測でmarkを追加する。集約用の履歴やwireの変更は必要ない。

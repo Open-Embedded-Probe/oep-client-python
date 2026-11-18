@@ -17,6 +17,10 @@ fixtureは接続closeと別経路を論理APIで表現する。physical reader�
 
 単体試験ではbarrier無視、旧IDの再使用、unknownの書換え、受信済み結果の消去、旧binding保持、force使用の欠陥を検出する。入力/制御能力不足、別の所有者のロック、boot変更、読取り中のboot変更、新open応答喪失も確認する。検査器はhostの要求ログとadapterの実際の送信bytesを照合する。
 
+```sh
+uv run pytest -q tests/test_conformance_exhausted.py
+```
+
 ```python
 import os
 from oep_client.conformance import Checks, spec_identity

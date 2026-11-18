@@ -37,6 +37,10 @@ sample contractは次の通り。すべての応答の末尾にはTLVを置け�
 
 単体試験でparent先行解放、孤立stream、stream closeによるparent解放、clearによるqueue消去、target restartによる出力消去、ID再利用、暗黙の最後のstream、read消費、end後の資源保持、marksの資源誤指定、detachの再実行、必須op宣言欠落、空応答の不正TLVを検出する。採用条件不足、選択SPEC mark値変更、所有中のlogical restart拒否、結果の段階/未検査範囲も確認する。
 
+```sh
+uv run pytest -q tests/test_conformance_dependencies.py
+```
+
 ```python
 import os
 from oep_client.conformance import Checks, spec_identity

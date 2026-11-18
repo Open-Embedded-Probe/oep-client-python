@@ -18,3 +18,7 @@ sample fn1/2、kind1/2、max_frame64/window80/max_inflight3、連続allocatorを
 
 逆実行後のordered reply、正しいreplyと偽の最終資源、reply順の破損、作成副作用の遅延を検出する。
 全op・同時arrival・long execution・物理backend timingは検査しない。`full_conformance=false`。
+
+```sh
+uv run pytest -q tests/test_conformance_execution_order.py
+```

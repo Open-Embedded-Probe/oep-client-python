@@ -35,3 +35,7 @@ DATA1順序、早すぎるtimeout、0のack化、外来wordへの停止、不正
 `full_conformance`はfalse。実時間・割込み禁止中のclock、target firmware統合、
 別容量/待ち方、OEP resync/TO/framing markの条件は未検査。外側のrunnerが実時計を使っても、
 このtarget fixtureの待ち時間は論理時計の結果として分けて報告する。
+
+```sh
+uv run pytest -q tests/test_conformance_dmseq_target.py
+```
