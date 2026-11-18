@@ -16,7 +16,7 @@ SPEC core §6/9/10から、購読と出来事の契約を共通検査にする�
 
 ## adapterと実行
 
-`SubscriptionChecks(checks, adapter, wait=time.sleep).run()`は、identity確認＋15動作契約と対象fnの宣言検査を返す。最初に個体、core/IF宣言、adapter能力を照合し、失敗したら購読操作と刺激を止める。transport/stimulus/観測のIO失敗後は後続をBLOCKEDにする。規約違反はFAIL、明示設定不備をskipにしない。`full_conformance`は常にfalse。
+`SubscriptionChecks(checks, adapter, wait=time.sleep).run()`は、identity確認（IF-SUB-IDENTITY）、動作契約（IF-SUB-*）と対象fnの宣言検査を返す。最初に個体、core/IF宣言、adapter能力を照合し、失敗したら購読操作と刺激を止める。transport/stimulus/観測のIO失敗後は後続をBLOCKEDにする。規約違反はFAIL、明示設定不備をskipにしない。`full_conformance`は常にfalse。
 
 adapterの能力は以下のとおり。
 

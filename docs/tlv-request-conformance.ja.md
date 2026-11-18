@@ -1,7 +1,7 @@
 # TLV要求の文脈・幅・critical検査
 
 core §2.2/2.3を明示した仮想拡張で検査する。Coreの実際のsession・再送・拒否経路を使う。
-OEP固有操作やproduction Probeへの実装追従とは別で、物理pinを持たない。
+OEP固有操作やproduction Probeの検査とは別で、物理pinを持たない。
 
 fn 1/2はio.github.open-embedded-probe.tlv-requestを宣言し、op16/17を持つ。
 要求は固定部分無しのTLV並びで、tag 1は任意。省略時は各文脈のdefaultを使う。

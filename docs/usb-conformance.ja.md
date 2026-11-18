@@ -14,12 +14,12 @@ uv run --group dev --env-file tests/equipment/.env \
   python -m oep_client.conformance.usb_model --kind hid --out /absolute/path/to/new-hid.json
 ```
 
-ID付きHIDの既定はreport ID 6、input 9 byte、output 11 byte。サイズはID/countを含む。`--report-id 0` ならIDを使わないので、別IDの入力だけnot_applicableとなり理由を残す。`--input-size` / `--output-size` で別のサイズも試せる。実機のdescriptorをこの値から推定しない。
+ID付きHIDの既定はreport ID 6、input 9 byte、output 11 byte。サイズはID、count(u16)、first(u16)を含む。`--report-id 0` ならIDを使わないので、別IDの入力だけnot_applicableとなり理由を残す。`--input-size` / `--output-size` で別のサイズも試せる。実機のdescriptorをこの値から推定しない。
 
 | 検査 | 刺激・観測 |
 |---|---|
-| bulk/HID共通 | byte単位の分割、結合、length 0、短い要求、未知role、length/body途中の放棄とgap後の回復、過大lengthとgapまでの破棄、宣言max_frame丁度の要求 |
-| HIDだけ | count 0、任意値の受信paddingを無視、別report IDの入力を破棄、report容量を超えるcountとgapまでの破棄、SET_REPORT（通常のOUTも全ケースで使用） |
+| bulk/HID共通（CORE-USB-*） | byte単位の分割、結合、length 0、短い要求、未知role、length/body途中の放棄と回復（bulkはgapの後、HIDは次のfirst付きreportから）、過大lengthとgapまでの破棄、宣言max_frame丁度の要求 |
+| HIDだけ（CORE-HID-*） | count 0のreport、任意値の受信paddingを無視、別report IDの入力を破棄、report容量を超えるcountのreportを捨てて次のfirst付きreportから読み直すこと、frameの途中のreport欠落（次のreportのfirstと食い違う）で始めたframeを捨ててfirstから読み直すこと、SET_REPORT（通常のOUTも全ケースで使用） |
 
 異常countと過大lengthの直後にも正常要求を送り、gap以前の入力をすべて捨てることを確認する。途切れの観測はSPECのframe gap＋100ms。無応答、回復後の単一応答、boot/corr、raw transfer/report、method、時間を保存する。max_frame 65535の過大lengthだけはu16で表現できずnot_applicable。frame/report破損・アクセスエラーをskipや再試行で隠さない。
 
@@ -49,7 +49,7 @@ uv run --group dev python -m oep_client.conformance.usb_hw --kind bulk \
 
 factoryは、利用者が明示した端点を開くraw backendを返す。backendの `write(data, method='out'|'set-report')` は送ったbyte数を返し、`read(timeout)` は1転送/reportのbytes、timeout時だけNoneを返す。bulkのbytes長0はZLPであり、timeoutとは区別する。切断・権限・その他のUSBエラーは例外で伝える。ID/count/paddingを先に除去・修復したり、要求の再送やframing回復を行ったりしない。
 
-HIDのshapeには両方向のreport長と共通ID（0はIDなし）、bulkにはOUTのwMaxPacketSizeを渡す。検査器自身がHIDのcount/IDを符号化・検査し、bulkのOUT書込みがpacketサイズの倍数ならZLPを続ける。受信側は任意のpaddingを無視する義務があり、probeは送信paddingを0にする義務がある。入力刺激では非zero paddingの受信を試し、probe出力では非zero paddingや未宣言ID/過大countを違反として報告する。hostが未知IDを読み飛ばす規則と、probeが未宣言のreportを送ってよいかは別の検査である。
+HIDのshapeには両方向のreport長と共通ID（0はIDなし）、bulkにはOUTのwMaxPacketSizeを渡す。検査器自身がHIDのcount/first/IDを符号化・検査し、bulkのOUT書込みがpacketサイズの倍数ならZLPを続ける。受信側は任意のpaddingを無視する義務があり、probeは送信paddingを0にする義務がある。入力刺激では非zero paddingの受信を試し、probe出力では非zero paddingや未宣言ID/過大count、frameが始まらない位置を指すfirstを違反として報告する。hostが未知IDを読み飛ばす規則と、probeが未宣言のreportを送ってよいかは別の検査である。
 
 抜き差し・再列挙・給電は検査しない。通常CLIの `--framing client` でUSBを使う結果はメッセージ検査のみで、この独立wire検査の証拠にはしない。
 
