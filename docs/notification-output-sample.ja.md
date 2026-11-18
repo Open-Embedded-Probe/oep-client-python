@@ -20,7 +20,7 @@ slotが使用中に生まれたイベントを捨て、そのseqを消費し、�
 
 データ保持48byte/max_delay_ms0の代表条件で、min_bytes65535の購読をunavailable cause2で断り、既存条件/seqを維持する。
 次の有効な購読はseq0から始め、旧購読の未送信通知を捨てる。unsubscribeも未送信の通知を捨て、解除後に新しいイベントを送らない。
-senderの細分化、購読拒否/置き換え、解除、seqの抜け、応答優先に6つのfaultを注入して、それぞれのcaseで検出する。
+senderの細分化、購読拒否/置き換え、解除、seqの抜け、応答優先にfaultを注入して、それぞれのcaseで検出する。
 reportには全raw入力、message交換、出力chunk、選択した観測と未終了SIDを含める。
 
 1frame slotはこのfixtureの方針で、すべての実装に同じslot数を要求しない。

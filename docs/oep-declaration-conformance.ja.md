@@ -8,17 +8,21 @@ fnと標準名の対応を明示する。名称による全fnへの自動適用�
 | --- | --- |
 | fn/name/revision | 選択したfnの標準名とrevision 1がlistに存在し、選択SPECもrevision 1を定める。 |
 | wire ops | attach／detach／connectionsが必須。scanは任意なので、ない場合を欠陥にしない。 |
-| console ops | open／read／marks／clear／mark／write／close／streamsの8 opが必須。 |
+| console ops | open／read／close／streamsが必須。marks／clear／mark／writeは任意で、markはmarksと一緒にだけ宣言する。 |
 | max_connections | 宣言時はu8。省略時は1として記録。実際の同時接続容量は別途動作検査する。 |
 | wire pins | channel_groupまたはrole_channelsから使える組を明示。RVSWD／SWDは役1・2の異なるchannel、SWIOは役1を持つ。範囲外channelは拒否。groupの電気的利用や全候補の探索は証明しない。 |
 | SWIO clock | 固定bit時間をmin_clock_hzの正のu32で宣言する。実際の線の周期は未検査。 |
-| console mechanisms | tag 0x40を必ず宣言。標準mechanismだけを載せ、presetのnone=0xFFを開ける方式と混同しない。空リストを禁じる規範はないため、非空という条件は追加しない。 |
+| console mechanisms | tag 0x40 mechanismを名前の並び（core §7.7）として1つ以上宣言し、名前は重ならない。標準の名前（sdi、dmdata、dmseq）か逆DNSの名前。writeを宣言するfnはdmdataかdmseqを並べる。 |
 
 各項目の検査はSID 0のconfirm/list/describeだけを使う。セッションを取得せず、target操作も行わない。標準名を名乗っただけでop動作の適合とはしない。選択しないfnの標準固有適合も報告しない。
 
 `OepDeclarationModel`は標準名の宣言だけを持つ独立fixture。3 wireはscanなし、RVSWDはmax_connections 2、他2 wireは省略、SWIOは固定clock、consoleはDMDATAだけを宣言する。role_channelsとchannel_groupの両形式を使う。attachやconsoleの配送は実装していない。仮想fixtureが宣言を返す検査であり、稼働probeの証拠ではない。
 
-単体試験で必須op欠落、mechanisms欠落/未知値/preset none、max_connectionsの幅、ピン宣言欠落/同一ピン/範囲外、SWIO clock欠落/幅/0、選択fn/標準名/revision不一致を検出する。scanなしと空mechanismsを許容し、選択SPECに追加された必須opを無視しない。不正な選択は失敗として報告し、第三段階の各結果とSID 0の要求を確認する。
+単体試験で必須op欠落、marksの無いmark、mechanismsの欠落/標準でも逆DNSでもない名前（`none`を含む）、max_connectionsの幅、ピン宣言欠落/同一ピン/範囲外、SWIO clock欠落/幅/0、選択fn/標準名/revision不一致を検出する。scanなし、consoleの最小op（open/read/close/streams）、writeを持たないSDIだけのconsoleを許容し、選択SPECに追加された必須opを無視しない。不正な選択は失敗として報告し、第三段階の各結果とSID 0の要求を確認する。
+
+```sh
+uv run pytest -q tests/test_conformance_oep_declarations.py
+```
 
 ```python
 import os

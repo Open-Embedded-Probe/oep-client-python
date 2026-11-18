@@ -24,3 +24,7 @@ RouteModelはbyte量に加えて未送信frameの期限で保持を制限し、a
 単体は正常、観測故障、実model故障、制御不足の各caseを持つ。
 capture/dmseq等の他の周回空間、Hostの保持値、同時producer、OS/実writer bufferは別途検査する。
 full_conformance=false。
+
+```sh
+uv run pytest -q tests/test_conformance_notification_retention.py
+```
