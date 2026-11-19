@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 0.0.59
 - (EN) `oep pins` maps more of a board: a channel something else holds high or low (a board's pull-down: an L103 EVT's
   Type-C CC1 / CC2 on PB6 / PB7) is found by driving each pad not found yet from the target, the probe only reading it;
   a channel some pad has alone stays that pad's, so an unwired pad that follows its neighbours (the L103's PB0 / PB1) is
