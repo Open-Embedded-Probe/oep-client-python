@@ -200,6 +200,9 @@ pins, GPIOs connected to one lead inside the package, whether there is an NRST t
    pins floating inputs, outputs high then low on each channel and reads the target's INDR (twice). Channels that were driven in classify are read
    again first (they may have been the target's outputs), and only those floating then are driven. The power channel, the reset candidates and the 2 debug wires are
    not driven. A pin that follows 2 channels is tried again with the others held low (a wire that nothing drives keeps the charge it picked up from a change on the neighboring wire).
+   A channel that some pin follows alone belongs to that pin, and a pin that follows only channels other pins have alone is shown as not wired.
+   A channel something else holds high or low (a board's pull-down, for example) is never driven by the probe: each pin not found yet is made an
+   output on the target side, one at a time, and that channel is read.
    GPIOs connected to one lead inside the package are shown together (`PC16/PC11`). The target's registers are restored, and it runs again.
    Except for targets whose option bytes show no NRST, the reset of 6 is done first (driving an unknown NRST low resets the target and
    cuts the debug connection). Families with pins that must not be driven (the VIO18 pins of CH32H417 are 1.2 V at boot) are not mapped.
@@ -214,7 +217,7 @@ pins, GPIOs connected to one lead inside the package, whether there is an NRST t
    `--save` writes the labels (set + save). Without `--save`, nothing is written.
 
 Safety: driven-high / active channels are never driven, scanned or held (driven-low only as SWDIO in scan). map drives channels only while the target's pins are
-floating inputs. The power channel is touched only with `--power`. Holding low is
+floating inputs (a channel something else holds is only read). The power channel is touched only with `--power`. Holding low is
 open drain only. When the gpio plan is renewed, the probe releases the pins of the previous plan (the power channel too) for a moment, so with `--power`
 it cleanly powers up again with each new plan (`power_cycles` in the report).
 

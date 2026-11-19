@@ -200,6 +200,9 @@ TCP で OEP を運ぶ probe は DNS-SD で見つける（ネットワークの�
    ピン以外を浮いた入力にし、各 channel を high、low の順に出して target の INDR を読む（2 回）。classify で driven だった channel は先に
    読み直し（target の出力だったかもしれない）、そのとき floating のものだけを駆動する。電源の channel、リセットの候補、debug の 2 本は
    駆動しない。2 つの channel に追従するピンは、ほかを low に保って試し直す（何も駆動しない線は、隣の線の変化から拾った電荷を保つ）。
+   ある端子にだけ追従する channel はその端子のものとし、ほかの端子のものと決まった channel にしか追従しない端子は、配線されていない
+   として出さない。ほかの何かが high か low に保つ channel（ボードのプルダウンなど）はプローブから駆動せず、まだ見つかっていない端子を
+   target の側から 1 本ずつ出力にして、その channel を読んで探す。
    パッケージの中で 1 本のリードにつながる GPIO はまとめて出す（`PC16/PC11`）。target のレジスタは元に戻し、走らせ直す。
    NRST が無いと option bytes で分かる target 以外は、6 の reset を先に済ませる（知らない NRST を low にすると target がリセットされ、
    debug の接続が切れる）。駆動してはいけないピンを持つ系統（CH32H417 の VIO18 のピンは起動時 1.2 V）は map しない。
@@ -214,7 +217,7 @@ TCP で OEP を運ぶ probe は DNS-SD で見つける（ネットワークの�
    `--save` で label を書く（set + save）。`--save` が無ければ何も書かない。
 
 安全: driven-high / active の channel は駆動も scan も保持もしない（driven-low は scan の SWDIO としてだけ）。map は target のピンが
-浮いた入力の間だけ channel を駆動する。電源の channel は `--power` のときだけ触る。low に保つのは
+浮いた入力の間だけ channel を駆動する（ほかの何かが保つ channel は読むだけ）。電源の channel は `--power` のときだけ触る。low に保つのは
 オープンドレインだけ。gpio の plan を新しくすると、probe は前の plan のピンを（電源の channel も）いったん離すので、`--power`
 では新しい plan のたびにきれいに電源を入れ直す（報告の `power_cycles`）。
 
