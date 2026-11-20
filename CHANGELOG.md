@@ -1,6 +1,9 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) The CH32V407 is identified by its id (`0x4671…` at DMI 0x7F): `oep pins` finds it on one wire and maps its GPIO
+  ports A-E.
+- (JA) CH32V407 を id（DMI 0x7F の `0x4671…`）で見分ける。`oep pins` は 1 線で見つけ、GPIO の A〜E のポートを対応づける。
 - (EN) `oep pins` maps a board whose debug line drops now and then (a UIAPduino whose USB reaches the PC): a target
   access that failed attaches again and is tried once more, the GPIO clocks and floating pads are set up again when the
   target was reset meanwhile, and each floating channel the probe's own driving did not place is looked for from the

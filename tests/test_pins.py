@@ -248,6 +248,8 @@ def test_target_table():
     assert targets.identify((1, (0x20510510).to_bytes(4, "little"))).name == "ch32v20x"   # a CH32V205RCT6
     h417 = targets.identify((1, (0x4170053D).to_bytes(4, "little")))
     assert h417.name == "ch32h41x" and h417.no_map and not h417.gpio_ports      # its VIO18 pads must not be driven
+    v407 = targets.identify((1, (0x46710011).to_bytes(4, "little")))   # a CH32V407WEU6
+    assert v407.name == "ch32v40x" and v407.wire == "swio" and v407.gpio_ports == "ABCDE" and v407.gpio_pads == 16
     x315 = targets.identify((1, (0x31500000).to_bytes(4, "little")))   # a CH32X315MCU6
     assert x315.name == "ch32x315" and x315.wire == "swio" and x315.gpio_pads == 16 and x315.nrst_pad == "PD2"
 
