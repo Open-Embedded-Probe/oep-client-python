@@ -1,6 +1,10 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) `oep pins` maps a CH32X035's pads 16-23 from the target's side: they are set through BSXR and cleared through
+  BCR (BSHR has no room for them; the map stopped with a struct error at PA16).
+- (JA) `oep pins` が CH32X035 の 16〜23 番の端子も target の側から対応づける。これらは BSXR で上げ、BCR で下げる（BSHR には
+  入らず、map が PA16 で struct のエラーで止まっていた）。
 - (EN) The CH32V407 is identified by its id (`0x4671…` at DMI 0x7F): `oep pins` finds it on one wire and maps its GPIO
   ports A-E.
 - (JA) CH32V407 を id（DMI 0x7F の `0x4671…`）で見分ける。`oep pins` は 1 線で見つけ、GPIO の A〜E のポートを対応づける。

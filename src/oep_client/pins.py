@@ -908,11 +908,12 @@ class PinFinder:
                     sh = 4 * (bit % 8)
                     dm.write32(base + off, (floating & ~(0xF << sh)) | (targets.GPIO_PUSH_PULL << sh))
                     follow = set(still)
+                    (set_off, set_val), (clr_off, clr_val) = targets.gpio_drive(bit, True), targets.gpio_drive(bit, False)
                     for _ in range(MAP_TRIES):                 # every try: a line that only happened to change is out
-                        dm.write32(base + targets.GPIO_BSHR, 1 << bit)
+                        dm.write32(base + set_off, set_val)
                         self.sleep(MAP_SETTLE_S)
                         hi = dict(zip(still, g.read(still)))
-                        dm.write32(base + targets.GPIO_BSHR, 1 << (bit + 16))
+                        dm.write32(base + clr_off, clr_val)
                         self.sleep(MAP_SETTLE_S)
                         lo = dict(zip(still, g.read(still)))
                         follow &= {c for c in still if hi[c] and not lo[c]}

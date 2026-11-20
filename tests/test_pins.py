@@ -402,6 +402,16 @@ class DrivenPads(Pads):
                     if value >> (b + 16) & 1:
                         self.out[f"P{port}{b}"] = 0
                 return
+            if address == base + targets.GPIO_BSXR:
+                for b in range(8):
+                    if value >> b & 1:
+                        self.out[f"P{port}{b + 16}"] = 1
+                return
+            if address == base + targets.GPIO_BCR:
+                for b in range(24):
+                    if value >> b & 1:
+                        self.out[f"P{port}{b}"] = 0
+                return
         super().__setitem__(address, value)
 
     def driving(self, pad: str) -> int:

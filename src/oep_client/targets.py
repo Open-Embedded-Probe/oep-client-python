@@ -106,6 +106,8 @@ GPIO_BASE, GPIO_STEP = 0x40010800, 0x400
 GPIO_CFG = (0x00, 0x04, 0x1C)
 GPIO_INDR = 0x08
 GPIO_BSHR = 0x10                       # write 1 << b to set pad b, 1 << (b + 16) to clear it
+GPIO_BCR = 0x14                        # write 1 << b to clear pad b (the CH32X035: all 24)
+GPIO_BSXR = 0x20                       # the CH32X035's pads 16-23: write 1 << (b - 16) to set pad b
 GPIO_PUSH_PULL = 0x2                   # a pad's configuration: push-pull output, 2 MHz
 GPIO_FLOATING = 0x4
 RCC_APB2PCENR = 0x40021018
@@ -113,6 +115,14 @@ RCC_APB2PCENR = 0x40021018
 
 def gpio_base(port: str) -> int:
     return GPIO_BASE + GPIO_STEP * (ord(port) - ord("A"))
+
+
+def gpio_drive(bit: int, high: bool) -> tuple[int, int]:
+    """The register (offset from the port's base) and value that set (high) or clear pad `bit`: BSHR for pads 0-15;
+    pads 16-23 (the CH32X035) are set through BSXR and cleared through BCR, BSHR's halves having no room for them."""
+    if bit < 16:
+        return GPIO_BSHR, 1 << (bit if high else bit + 16)
+    return (GPIO_BSXR, 1 << (bit - 16)) if high else (GPIO_BCR, 1 << bit)
 
 
 def gpio_clock_bit(port: str) -> int:
