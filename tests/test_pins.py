@@ -248,6 +248,15 @@ def test_target_table():
     assert targets.identify((1, (0x20510510).to_bytes(4, "little"))).name == "ch32v20x"   # a CH32V205RCT6
     h417 = targets.identify((1, (0x4170053D).to_bytes(4, "little")))
     assert h417.name == "ch32h41x" and h417.no_map and not h417.gpio_ports      # its VIO18 pads must not be driven
+    x315 = targets.identify((1, (0x31500000).to_bytes(4, "little")))   # a CH32X315MCU6
+    assert x315.name == "ch32x315" and x315.wire == "swio" and x315.gpio_pads == 16 and x315.nrst_pad == "PD2"
+
+    class Word:                                                          # read32 of the option word only
+        def __init__(self, w): self.w = w
+        def read32(self, addr): assert addr == targets.V00X_OPTION; return self.w
+    assert targets.x315_nrst(Word(0x08F75AA5)).enabled                  # USER 0xF7: CFGRSTEN 0, NRST on PD2
+    assert not targets.x315_nrst(Word(0x00FF5AA5)).enabled              # USER 0xFF as shipped: off
+    assert not targets.x315_nrst(Word(0x00F75AA5)).enabled              # USER / nUSER not complements
     assert targets.identify((1, b"\x00\x00\x00\x11")) is None and targets.identify(None) is None
     st = targets.v00x_nrst_from_word(OPTION_ON)
     assert st.enabled and "12 ms" in st.detail

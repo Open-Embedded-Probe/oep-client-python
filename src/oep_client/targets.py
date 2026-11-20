@@ -87,6 +87,18 @@ def x035_nrst(dm) -> NrstState:
     return v00x_nrst_from_word(dm.read32(V00X_OPTION), "PA21")
 
 
+def x315_nrst(dm) -> NrstState:
+    """The CH32X315's option word (CH32X315RM, user option bytes): USER bit 3 = CFGRSTEN, 0 = NRST on PD2, 1 = off
+    (as shipped). USER and nUSER must be complements."""
+    word = dm.read32(V00X_OPTION)
+    user, nuser = (word >> 16) & 0xFF, (word >> 24) & 0xFF
+    if user ^ nuser != 0xFF:
+        return NrstState(False, f"option bytes unreadable as such (USER {user:#04x}, nUSER {nuser:#04x})", word)
+    if user & 0x08:
+        return NrstState(False, f"CFGRSTEN 1 (USER {user:#04x}): PD2 is a GPIO, no NRST", word)
+    return NrstState(True, f"CFGRSTEN 0 (USER {user:#04x}): NRST on PD2", word)
+
+
 # The CH32 GPIO block every family here shares: port k at GPIO_BASE + GPIO_STEP * k, its pads' 4-bit configuration in
 # CFGLR (0-7), CFGHR (8-15) and CFGXR (16-23, the CH32X035), its input levels in INDR; the port's clock enable is bit
 # 2 + k of RCC APB2PCENR. A pad's configuration 0x4 is a floating input.
@@ -125,6 +137,11 @@ FAMILIES: tuple[Family, ...] = (
            bonded=(("PC16", "PC11"), ("PC17", "PC10")),   # datasheet note 4: one lead each except on F8U6 / D8U6
            notes="SWCLK resting low does not connect; NRST on PA21 only while the option bytes' RST_MODE turns it on "
                  "(11, no NRST, as shipped)"),
+    Family("ch32x315", "swio", ids=((0xFFF00000, 0x31500000),), nrst=x315_nrst, gpio_ports="ABCD", gpio_pads=16,
+           debug_pads=("PA13", "PA14"), nrst_pad="PD2",
+           notes="the CH32X315 (target_id 0x31500000, CH32X315MCU6): answers on one wire (SWIO on PA13) after a "
+                 "power-on; NRST on PD2 only while the option bytes' CFGRSTEN turns it on (USER bit 3 = 0); its "
+                 "GPIO+0x1C is a speed register, not CFGXR"),
     Family("ch32l103", "rvswd", ids=((0xFFF00000, 0x10300000),), max_speed=1_000_000, idle_clock="low",
            gpio_ports="ABCD", gpio_pads=16, debug_pads=("PA13", "PA14"),
            notes="the CH32L103 (target_id 0x10310710): SWCLK resting high resets the debug link; over 1 MHz fails right "

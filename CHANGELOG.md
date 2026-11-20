@@ -1,6 +1,10 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) The CH32X315 is identified by its id (`0x315…`): `oep pins` finds it on one wire, maps its GPIO ports A-D and
+  names PD2 as NRST while the option bytes turn the reset pin on (USER bit 3, CFGRSTEN, 0).
+- (JA) CH32X315 を id（`0x315…`）で見分ける。`oep pins` は 1 線で見つけ、GPIO の A〜D のポートを対応づけ、option bytes
+  がリセットのピンを有効にしている間（USER の bit 3、CFGRSTEN が 0）は PD2 を NRST と名付ける。
 
 ## 0.0.59
 - (EN) `oep pins` maps more of a board: a channel something else holds high or low (a board's pull-down: an L103 EVT's
