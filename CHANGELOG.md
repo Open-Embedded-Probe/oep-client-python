@@ -1,6 +1,13 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) `oep pins` maps a board whose debug line drops now and then (a UIAPduino whose USB reaches the PC): a target
+  access that failed attaches again and is tried once more, the GPIO clocks and floating pads are set up again when the
+  target was reset meanwhile, and each floating channel the probe's own driving did not place is looked for from the
+  target's side as well.
+- (JA) デバッグの線がときどき落ちるボード（USB が PC につながった UIAPduino）でも、`oep pins` がピンを対応づける。失敗した
+  target へのアクセスは接続し直してもう一度試し、その間に target がリセットされていたら GPIO のクロックと浮かせた端子を
+  設定し直す。プローブ自身の駆動で決まらなかった浮いたチャネルも、target の側から探す。
 - (EN) The CH32X315 is identified by its id (`0x315…`): `oep pins` finds it on one wire, maps its GPIO ports A-D and
   names PD2 as NRST while the option bytes turn the reset pin on (USER bit 3, CFGRSTEN, 0).
 - (JA) CH32X315 を id（`0x315…`）で見分ける。`oep pins` は 1 線で見つけ、GPIO の A〜D のポートを対応づけ、option bytes

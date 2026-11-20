@@ -67,6 +67,61 @@ MAP_QUIET_READS = 16                  # map: INDR read this often with nothing d
                                       # someone else's (4-3's USB host on an X035's PC16/PC17): never mapped
 
 
+MAP_REATTACH = 3                      # map: a target access that failed is tried again on a new connection this often
+MAP_REATTACH_WAIT_S = 0.1             # map: the wait before attaching again after an attach that failed
+
+
+class _SteadyDm:
+    """The map's riscv-dm on a debug line that may drop now and then: an access that fails attaches again (halted)
+    and is tried once more, up to MAP_REATTACH times each. A UIAPduino whose USB reaches the PC dropped the SWIO line
+    every few dozen reads once the map floated PD4 (its USB line): the PC kept trying to enumerate it (8-1,
+    2026-11-20)."""
+
+    def __init__(self, finder: "PinFinder", conn: int):
+        self.f, self.conn = finder, conn
+        self.dm = riscv.RiscvDm(finder.hst, conn)
+        self.dropped = 0
+        self.again = None                  # again(dm): put back what the map set up, if the target lost it
+
+    def _again(self) -> None:
+        f = self.f
+        f._detach(self.conn)
+        self.dropped += 1
+        for k in range(MAP_REATTACH + 1):              # the line may still be busy right after it dropped
+            try:
+                self.conn, _ = f.wire.attach(halt=True, pins=f.pins)
+                break
+            except h.OepError:
+                if k == MAP_REATTACH:
+                    raise
+                f.sleep(MAP_REATTACH_WAIT_S)
+        f.mine.append(self.conn)
+        self.dm = riscv.RiscvDm(f.hst, self.conn)
+        if self.again is not None:
+            self.again(self.dm)
+
+    def _do(self, op: str, *args):
+        for k in range(MAP_REATTACH + 1):
+            try:
+                return getattr(self.dm, op)(*args)
+            except h.OepError:
+                if k == MAP_REATTACH:
+                    raise
+                self._again()
+
+    def read32(self, address: int) -> int:
+        return self._do("read32", address)
+
+    def write32(self, address: int, value: int) -> None:
+        self._do("write32", address, value)
+
+    def halt(self) -> None:
+        self._do("halt")
+
+    def resume(self) -> None:
+        self._do("resume")
+
+
 @dataclass
 class Channel:
     channel: int
@@ -721,8 +776,10 @@ class PinFinder:
             self.note(f"map: attach on {self._pins_text(self.pins)} did not get through: {e}")
             return {}
         self.mine.append(conn)
-        dm = riscv.RiscvDm(self.hst, conn)
+        dm = _SteadyDm(self, conn)
         saved: dict[tuple[str, int], int] = {}
+        setup: dict[int, int] = {}                         # address -> the word the map set (pads floating)
+        resets: list[int] = []
         clocks = None
         words = (fam.gpio_pads + 7) // 8
         wiring: dict[str, list[int]] = {}
@@ -741,6 +798,20 @@ class PinFinder:
                         keep = f"P{port}{w * 8 + k}" in fam.debug_pads
                         word |= ((old >> (4 * k)) & 0xF if keep else targets.GPIO_FLOATING) << (4 * k)
                     dm.write32(base + off, word)
+                    setup[base + off] = word
+            gpio_clocks = sum(targets.gpio_clock_bit(p) for p in fam.gpio_ports)
+            resets = []
+
+            def again(raw: riscv.RiscvDm) -> None:
+                # a target that dropped the line may have been reset meanwhile (8-1's UIAPduino, 2026-11-20: the map
+                # then found nothing more): its GPIO clocks and the floating pads are set up again
+                now = raw.read32(targets.RCC_APB2PCENR)
+                if now & gpio_clocks != gpio_clocks:
+                    resets.append(now)
+                    raw.write32(targets.RCC_APB2PCENR, now | gpio_clocks)
+                    for address, value in setup.items():
+                        raw.write32(address, value)
+            dm.again = again
             # a channel classify found driven may have been the target's output: read it again, the pads floating
             g = self.gpio
             chans = [c for c, k in self.kinds.items() if c not in never and k.kind in SAFE]
@@ -815,8 +886,11 @@ class PinFinder:
                     wiring[pad] = keep
             # a channel something else holds high or low (a board's pull-down: an L103 EVT's Type-C CC1 / CC2 on PB6 /
             # PB7, 2026-11-18) is never driven by the probe; each pad not found yet drives it from the target instead,
-            # the probe only reading
+            # the probe only reading. So does a floating channel the probe's own driving did not place: a debug line
+            # that dropped mid-try spoils that channel's tries (a UIAPduino with its USB at the PC, 8-1, 2026-11-20)
+            placed = {c for cs in wiring.values() for c in cs}
             still = [c for c in again if c not in freed and self.kinds[c].kind in (DRIVEN_LOW, DRIVEN_HIGH)]
+            still += [c for c in chans if c not in placed and c not in still]
             if still and self.left() >= 2:
                 self._plan(still, cycle=False)
                 g.set([(c, g.INPUT) for c in still])
@@ -846,8 +920,10 @@ class PinFinder:
                     follow = sorted(follow)
                     if follow:
                         wiring.setdefault(pad, []).extend(follow)
-                        self.say(f"map: {pad} driven from the target moves {ranges(follow)} (held "
-                                 f"{'low' if self.kinds[follow[0]].kind == DRIVEN_LOW else 'high'} by something else)")
+                        kind = self.kinds[follow[0]].kind
+                        why = (f"held {'low' if kind == DRIVEN_LOW else 'high'} by something else"
+                               if kind in (DRIVEN_LOW, DRIVEN_HIGH) else "the probe's own driving did not place it")
+                        self.say(f"map: {pad} driven from the target moves {ranges(follow)} ({why})")
         except h.OepError as e:
             self.note(f"map: {e}")
         finally:
@@ -859,7 +935,11 @@ class PinFinder:
                 dm.resume()
             except h.OepError as e:
                 self.note(f"map: the target's registers not all put back ({e}); reset it")
-            self._detach(conn)
+            self._detach(dm.conn)
+            if dm.dropped:
+                self.note(f"map: the debug line dropped {dm.dropped} time(s); attached again and read again"
+                          + (f" ({len(resets)} time(s) the target had been reset: its GPIO set up again)"
+                             if resets else ""))
             self._plan([], cycle=False)
         for pads in fam.bonded:                            # one lead inside the package: named once, "PC16/PC11"
             hit = [p for p in pads if p in wiring]

@@ -496,3 +496,50 @@ def test_a_family_that_must_not_be_driven_is_not_mapped():
     f._plan = lambda *a, **k: pytest.fail("the map planned a channel to drive")
     assert f.map_pads() == {}
     assert any("ch32h41x is not mapped" in line and "VIO18" in line for line in lines)
+
+
+def test_steady_dm_attaches_again_and_sets_up_again():
+    """The map's riscv-dm: an access that fails attaches again (halted) and is tried once more; again(dm) runs on the
+    new connection so the map can set up what a reset target lost (8-1's UIAPduino, 2026-11-20)."""
+    from oep_client import host as h
+
+    class Dm:
+        fail = [True]
+
+        def __init__(self, conn):
+            self.conn = conn
+
+        def read32(self, address):
+            if Dm.fail and Dm.fail.pop():
+                raise h.Failed(None)
+            return self.conn
+
+    class Wire:
+        attaches = 0
+
+        def attach(self, halt, pins):
+            assert halt
+            Wire.attaches += 1
+            return 100 + Wire.attaches, 0
+
+        def detach(self, conn):
+            pass
+
+    class Finder:
+        hst, wire, pins, mine = None, Wire(), (16, 0xFFFF), []
+
+        def _detach(self, conn):
+            pass
+
+        def sleep(self, s):
+            pass
+
+    real = pins.riscv.RiscvDm
+    pins.riscv.RiscvDm = lambda hst, conn: Dm(conn)
+    try:
+        dm = pins._SteadyDm(Finder(), 100)
+        seen = []
+        dm.again = lambda raw: seen.append(raw.conn)
+        assert dm.read32(0x40021018) == 101 and dm.dropped == 1 and seen == [101] and dm.conn == 101
+    finally:
+        pins.riscv.RiscvDm = real
