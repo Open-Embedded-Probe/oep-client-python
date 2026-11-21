@@ -1,6 +1,10 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) The Release workflow takes version_level (patch / minor / major, from a pull-down; patch by default) and bumps the
+  version in pyproject.toml; the version field is optional (X.Y.Z or X.Y.ZbN for that version).
+- (JA) Release のワークフローは version_level（patch / minor / major をプルダウンで。既定は patch）を取り、pyproject.toml の版を
+  上げる。version の欄は任意（X.Y.Z か X.Y.ZbN を書けばその版）。
 - (EN) `uiapduino.enter_bootloader()` runs PREPARE_BOOT right after the NRST pulse: with the 0.3 s wait the sketch had
   cleared PINRSTF by then (its resetReason() in setup()), and the bootloader went straight on to the application.
 - (JA) `uiapduino.enter_bootloader()` は NRST のパルスの直後に PREPARE_BOOT を走らせる。0.3 秒待つと、その間にスケッチ（setup() の

@@ -86,12 +86,37 @@ def update_changelog(version: str) -> None:
     CHANGELOG.write_text("\n".join(new_lines).rstrip() + "\n", encoding="utf-8")
 
 
+def current_version() -> str:
+    match = re.search(r'(?m)^version = "([^"]+)"$', PYPROJECT.read_text(encoding="utf-8"))
+    if not match:
+        raise RuntimeError("No version in pyproject.toml")
+    return match.group(1)
+
+
+def bumped(version: str, level: str) -> str:
+    """The next release after `version` at `level` (patch / minor / major); a pre-release (0.1.0b1) goes to its own
+    X.Y.Z at patch, and to the next minor / major otherwise."""
+    match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)((a|b|rc)\d+)?", version)
+    if not match:
+        raise SystemExit(f"The current version {version!r} is not X.Y.Z or X.Y.Z{{a|b|rc}}N")
+    major, minor, patch = (int(x) for x in match.group(1, 2, 3))
+    pre = match.group(4) is not None
+    if level == "major":
+        return f"{major + 1}.0.0"
+    if level == "minor":
+        return f"{major}.{minor + 1}.0"
+    return f"{major}.{minor}.{patch if pre else patch + 1}"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Prepare release version and changelog.")
-    parser.add_argument("--version", required=True, help="Release version (e.g. 0.1.0, 0.1.0b1)")
+    parser.add_argument("--version", default="", help="Release version (e.g. 0.1.0, 0.1.0b1); empty: --level decides")
+    parser.add_argument("--level", choices=("patch", "minor", "major"), default="patch",
+                        help="The part of the current version to bump when --version is empty")
+    parser.add_argument("--github-output", default="", help="Append version=<the release version> to this file")
     args = parser.parse_args()
 
-    version = args.version.strip()
+    version = args.version.strip() or bumped(current_version(), args.level)
     # X.Y.Z, optionally a PEP 440 pre-release (0.1.0b1, 1.0.0rc1)
     if not re.fullmatch(r"\d+\.\d+\.\d+((a|b|rc)\d+)?", version):
         raise SystemExit("Version must be X.Y.Z or X.Y.Z{a|b|rc}N")
@@ -100,6 +125,9 @@ def main() -> None:
     update_init(version)
     update_lock(version)
     update_changelog(version)
+    if args.github_output:
+        with open(args.github_output, "a", encoding="utf-8") as out:
+            out.write(f"version={version}\n")
     print(f"Prepared release: {version}")
 
 

@@ -28,7 +28,8 @@ OEP_HW_BOARDS=<board id> OEP_HW_NOFLASH=1 uv run pytest tests/hw -m hw   # hardw
 the virtual bench against them) are copied from a named oep-spec checkout with `OEP_SPEC_DIR=<checkout> tools/sync_registry.sh` (`OEP_SPEC_REF` chooses
 a commit other than HEAD; the commit and the file hashes stay in `tests/vectors/SPEC_COMMIT` / `SPEC_SHA256`). `oep-client` on PyPI is a different project, so the distribution name is `oep-client-python`.
 
-Releases are the GitHub Actions Release (workflow_dispatch, version = X.Y.Z or X.Y.ZbN): `tools/prepare_release.py` rewrites
+Releases are the GitHub Actions Release (workflow_dispatch): pick version_level (patch / minor / major, patch by default) and
+`tools/prepare_release.py` bumps that part of the version in pyproject.toml (or give version = X.Y.Z or X.Y.ZbN for that one). It rewrites
 pyproject.toml, uv.lock and `oep_client.__version__`, turns CHANGELOG.md's Unreleased into that version, and after the tests and build it commits and tags,
 and publishes the GitHub Release and to PyPI (Trusted Publishing). Add changes to CHANGELOG.md's Unreleased in (EN) / (JA) beforehand.
 

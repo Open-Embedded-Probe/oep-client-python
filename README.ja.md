@@ -28,7 +28,8 @@ OEP_HW_BOARDS=<board id> OEP_HW_NOFLASH=1 uv run pytest tests/hw -m hw   # 実�
 仮想ベンチを突き合わせる）は、名指した oep-spec の checkout から `OEP_SPEC_DIR=<checkout> tools/sync_registry.sh` で写す（`OEP_SPEC_REF` で
 HEAD 以外の commit を選べる。commit とファイルの hash は `tests/vectors/SPEC_COMMIT` / `SPEC_SHA256` に残る）。PyPI の `oep-client` は別のプロジェクトなので、配布名は `oep-client-python`。
 
-リリースは GitHub Actions の Release（workflow_dispatch、version = X.Y.Z か X.Y.ZbN）: `tools/prepare_release.py` が
+リリースは GitHub Actions の Release（workflow_dispatch）: version_level（patch / minor / major、既定 patch）を選ぶと、
+`tools/prepare_release.py` が pyproject.toml の今の版からその桁を上げた版にする（version に X.Y.Z か X.Y.ZbN を書けば、その版）。
 pyproject.toml、uv.lock、`oep_client.__version__` を書き換え、CHANGELOG.md の Unreleased をその版にし、試験と build の後に commit と tag、
 GitHub Release、PyPI（Trusted Publishing）へ出す。変更は CHANGELOG.md の Unreleased に (EN) / (JA) で書き足しておく。
 

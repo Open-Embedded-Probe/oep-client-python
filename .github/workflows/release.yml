@@ -3,9 +3,19 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: "Release version (X.Y.Z, or X.Y.ZbN for a beta)"
+      version_level:
+        description: "Version component to bump (the version in pyproject.toml is the current one)"
         required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: "patch"
+      version:
+        description: "Release version instead (X.Y.Z, or X.Y.ZbN for a beta); empty: bump by version_level"
+        required: false
+        default: ""
       publish_pypi:
         description: "Publish package to PyPI"
         required: true
@@ -17,6 +27,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      version: ${{ steps.prepare.outputs.version }}
 
     steps:
       - name: Checkout
@@ -33,7 +45,11 @@ jobs:
         uses: astral-sh/setup-uv@v6
 
       - name: Run release preparation
-        run: uv run python tools/prepare_release.py --version "${{ github.event.inputs.version }}"
+        id: prepare
+        env:
+          VERSION: ${{ github.event.inputs.version }}
+          LEVEL: ${{ github.event.inputs.version_level }}
+        run: uv run python tools/prepare_release.py --version "$VERSION" --level "$LEVEL" --github-output "$GITHUB_OUTPUT"
 
       - name: Run tests
         run: uv run --locked pytest tests -n auto --dist loadfile   # files run side by side; most tests wait on real timeouts
@@ -61,15 +77,15 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add pyproject.toml uv.lock src/oep_client/__init__.py CHANGELOG.md
-          git commit -m "chore(release): v${{ github.event.inputs.version }}"
+          git commit -m "chore(release): v${{ steps.prepare.outputs.version }}"
 
       - name: Create tag
-        run: git tag "v${{ github.event.inputs.version }}"
+        run: git tag "v${{ steps.prepare.outputs.version }}"
 
       - name: Push commit and tag
         run: |
           git push origin HEAD
-          git push origin "v${{ github.event.inputs.version }}"
+          git push origin "v${{ steps.prepare.outputs.version }}"
 
   create_github_release:
     runs-on: ubuntu-latest
@@ -81,12 +97,12 @@ jobs:
       - name: Checkout tag
         uses: actions/checkout@v4
         with:
-          ref: "v${{ github.event.inputs.version }}"
+          ref: "v${{ needs.prepare.outputs.version }}"
           fetch-depth: 0
 
       - name: Build release body from CHANGELOG
         run: |
-          VERSION="${{ github.event.inputs.version }}" python - <<'PY'
+          VERSION="${{ needs.prepare.outputs.version }}" python - <<'PY'
           import os
           import subprocess
           from pathlib import Path
@@ -139,10 +155,10 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: "v${{ github.event.inputs.version }}"
+          tag_name: "v${{ needs.prepare.outputs.version }}"
           body_path: release_body.md
           generate_release_notes: false
-          prerelease: ${{ contains(github.event.inputs.version, 'a') || contains(github.event.inputs.version, 'b') || contains(github.event.inputs.version, 'rc') }}
+          prerelease: ${{ contains(needs.prepare.outputs.version, 'a') || contains(needs.prepare.outputs.version, 'b') || contains(needs.prepare.outputs.version, 'rc') }}
 
   publish_pypi:
     runs-on: ubuntu-latest
@@ -156,7 +172,7 @@ jobs:
       - name: Checkout tag
         uses: actions/checkout@v4
         with:
-          ref: "v${{ github.event.inputs.version }}"
+          ref: "v${{ needs.prepare.outputs.version }}"
 
       - name: Setup Python
         uses: actions/setup-python@v5
