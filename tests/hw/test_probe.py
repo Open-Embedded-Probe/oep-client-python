@@ -100,6 +100,8 @@ def test_flash(run: record.Run):
         try:
             if board.kind == "esp32":
                 rec.update(flash.flash_esp32(board.flash_port or run.port, fw.image_for("esp32")))
+            elif board.kind == "esp32-usb":                         # esptool through the bridge, the chip by its profile
+                rec.update(flash.flash_esp32(board.flash_port, fw.image_for("esp32"), chip=board.profile))
             elif board.kind == "esp32p4-usj":                       # the P4's own USB-Serial/JTAG: esptool, as a bridge
                 rec.update(flash.flash_esp32_app(board.flash_port or run.port, fw.image_for("esp32p4")))
             elif board.kind == "esp32p4":

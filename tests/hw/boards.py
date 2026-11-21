@@ -35,7 +35,9 @@ class Board:
     id: str                              # board-identify id, or the unit id
     kind: str                            # esp32 (esptool merged.bin) | esp32p4 (USB DFU app.bin) | esp32p4-usj (esptool
                                          # merged.bin over the P4's USB-Serial/JTAG) | rp2 (BOOTSEL uf2) | virtual |
-                                         # tcp (on the network: never flashed here)
+                                         # esp32-usb (esptool merged.bin through its USB-UART bridge, the OEP port
+                                         # on the chip's own USB: an ESP32-S3 ...) | tcp (on the network: never
+                                         # flashed here)
     profile: str                         # sketch.yaml profile in examples/Firmware/OepProbe
     model: str                           # describe's model ("": not checked)
     port: str                            # the OEP port after flashing (forms above)
@@ -60,7 +62,7 @@ class Board:
     @property
     def usb(self) -> bool:
         """The probe is itself a USB device (its own restart takes it off the bus and back): the P4s and the RP2s."""
-        return self.kind in ("esp32p4", "esp32p4-usj", "rp2")
+        return self.kind in ("esp32p4", "esp32p4-usj", "esp32-usb", "rp2")
 
     @property
     def tcp(self) -> bool:
@@ -84,7 +86,10 @@ _ESP32_V003_JIG = dict(label=35, disable=34, rates=(921600, 500000))
 # ESP32-P4: GPIO 24 / 25 are the USB-Serial/JTAG. The X035 jig (tests/benches/x035-p4.toml) wires 2 / 54 (RVSWD), 4-6,
 # 9-15, 46-50, 52, 53; the third P4 4, 5, 19, 21-23: none of these. 34-38 are the P4 straps, read only at a chip
 # reset, when the probe drives no pin: disable 34 is never driven, TX 37 only while planned.
-_P4 = dict(gpio=(32, 33), disable=34, uart=(36, 39), analog=17)   # not 37 / 38: the P4 firmware's UART bridge (never offered)
+_P4 = dict(gpio=(32, 33), disable=34, uart=(36, 39), analog=17)
+# ESP32-S3 (the generic ESP32 firmware, firmware/EspSoc.h): channels 0-18, 21, 38-42, 45-48 (19 / 20 its USB, 43 / 44
+# UART0, 26-37 the flash and the octal PSRAM). 0, 3, 45, 46 are straps (read only at a chip reset). ADC1: 1-10.
+_S3 = dict(gpio=(4, 5), disable=6, uart=(7, 8), analog=9)   # not 37 / 38: the P4 firmware's UART bridge (never offered)
 
 TABLE: dict[str, Board] = {b.id: b for b in (
     Board("esp32-pico-d4-50029191fe34", "esp32", "esp32", "esp32", f"{BY_ID}/esp32-pico-d4-50029191fe34",
@@ -110,6 +115,10 @@ TABLE: dict[str, Board] = {b.id: b for b in (
     Board("e8f60ae84e28", "esp32p4", "esp32p4x", "esp32p4x", "oep://e8f60ae84e28?via=usb", unit_id="e8f60ae84e28",
           notes="P4X (ESP32-P4 silicon v3, HS USB), ours: an M030 (ArduinoCore-CH32RV's bench) on GPIO30 (its rx, label "
                 "m030.rx) and GPIO31 (its swio, m030.swio); keyed by unit id", **_P4),
+    Board("esp32-s3-e4b063b49f2c", "esp32-usb", "esp32s3", "esp32s3", "oep://e4b063b49f2c?via=usb", unit_id="e4b063b49f2c",
+          flash_port=f"{BY_ID}/esp32-s3-e4b063b49f2c",
+          notes="ESP32-S3 board (ESP32-S3R8: octal PSRAM), its CH343 bridge on UART0 and its USB-OTG port both on the host; "
+                "nothing wired: free for OEP tests", **_S3),
     Board("152a3f44e811780e", "rp2", "rp2040", "rp2040", "oep://152a3f44e811780e?via=cdc", unit_id="152a3f44e811780e",
           gpio=(2, 3), disable=4, uart=(13, 12),
           notes="Raspberry Pi Pico (RP2040), ours: a CH32V003's SWIO on GP1 (v003.swio@pd1), a Pico's SWD on GP10 / GP8 "

@@ -2,6 +2,8 @@
 bridge board for the config test:
 
   esp32    esptool --chip esp32 -p PORT -b 115200 write-flash 0x0 <merged.bin>   (esptool on PATH; 115200: an ATOM's FTDI)
+  esp32-usb  as esp32 through the board's bridge, --chip the board's profile (esp32s3 ...); its OEP port is the chip's
+           own USB
   esp32p4-usj  esptool --chip esp32p4 through the P4's USB-Serial/JTAG port (a P4 whose only USB is that port; esptool
            resets it into the ROM download mode and back through the port's RTS / DTR): otadata erased, the app image
            at 0x10000 - the app alone, as DFU writes it, so the saved settings stay
