@@ -1,0 +1,623 @@
+{
+  "schema": 1,
+  "board": {
+    "id": "esp32-s3-e4b063b49f2c",
+    "kind": "esp32-usb",
+    "profile": "esp32s3",
+    "model": "esp32s3",
+    "port": "oep://e4b063b49f2c?via=usb",
+    "unit_id": "e4b063b49f2c",
+    "flash_port": "/run/board-identify/by-id/esp32-s3-e4b063b49f2c",
+    "gpio": [
+      4,
+      5
+    ],
+    "disable": 6,
+    "uart": [
+      7,
+      8
+    ],
+    "analog": 9,
+    "notes": "ESP32-S3 board (ESP32-S3R8: octal PSRAM), its CH343 bridge on UART0 and its USB-OTG port both on the host; nothing wired: free for OEP tests"
+  },
+  "client": {
+    "version": "0.0.61",
+    "python": "3.13.16",
+    "commit": "fd14aa7",
+    "dirty": true
+  },
+  "firmware": {
+    "before": {
+      "boot_id": 3898136000,
+      "revision": 1,
+      "max_frame": 4096,
+      "max_inflight": 8,
+      "window": 16384,
+      "firmware": "0.0.61",
+      "model": "esp32s3",
+      "unit_id": "e4b063b49f2c",
+      "chip": "esp32s3 v0.2",
+      "transports": [
+        {
+          "index": 0,
+          "kind": 4
+        },
+        {
+          "index": 1,
+          "kind": 5
+        },
+        {
+          "index": 2,
+          "kind": 2
+        },
+        {
+          "index": 3,
+          "kind": 1
+        }
+      ],
+      "max_op_ms": 10000,
+      "link_fn": 10,
+      "plan_fn": 19,
+      "restart_fn": 20,
+      "restart_max_ms": 3000
+    },
+    "source": {
+      "kind": "on-board",
+      "why": "OEP_HW_NOFLASH"
+    },
+    "expected": null,
+    "flashed": false,
+    "after": {
+      "boot_id": 3898136000,
+      "revision": 1,
+      "max_frame": 4096,
+      "max_inflight": 8,
+      "window": 16384,
+      "firmware": "0.0.61",
+      "model": "esp32s3",
+      "unit_id": "e4b063b49f2c",
+      "chip": "esp32s3 v0.2",
+      "transports": [
+        {
+          "index": 0,
+          "kind": 4
+        },
+        {
+          "index": 1,
+          "kind": 5
+        },
+        {
+          "index": 2,
+          "kind": 2
+        },
+        {
+          "index": 3,
+          "kind": 1
+        }
+      ],
+      "max_op_ms": 10000,
+      "link_fn": 10,
+      "plan_fn": 19,
+      "restart_fn": 20,
+      "restart_max_ms": 3000
+    }
+  },
+  "started": "2026-11-21T19:40:11+09:00",
+  "seconds": 8.7,
+  "host": {
+    "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+    "python": "3.13.16"
+  },
+  "environment": {
+    "OEP_HW_BOARDS": "esp32-s3-e4b063b49f2c",
+    "OEP_HW_NOFLASH": "1"
+  },
+  "tests": {
+    "flash": {
+      "port": "oep://e4b063b49f2c?via=usb",
+      "skipped": "nothing flashed: OEP_HW_NOFLASH",
+      "boot_seconds": 1.2,
+      "firmware_after": "0.0.61",
+      "verdict": "passed"
+    },
+    "identity": {
+      "boot_id": 3898136000,
+      "firmware": "0.0.61",
+      "model": "esp32s3",
+      "unit_id": "e4b063b49f2c",
+      "chip": "esp32s3 v0.2",
+      "revision": 1,
+      "max_frame": 4096,
+      "max_inflight": 8,
+      "interfaces": [
+        "1:oep.wire.rvswd@1",
+        "2:oep.target.riscv-dm@1",
+        "3:oep.target.console@1",
+        "4:oep.fixture.gpio@1",
+        "5:oep.fixture.uart@1",
+        "6:oep.fixture.uart@1",
+        "7:oep.fixture.i2c-target@1",
+        "8:oep.fixture.spi-target@1",
+        "9:oep.fixture.analog@1",
+        "10:oep.probe.link@1",
+        "11:oep.wire.swd@1",
+        "12:oep.target.arm-adi@1",
+        "13:oep.fixture.i2c-controller@1",
+        "14:oep.fixture.spi-controller@1",
+        "15:oep.fixture.pwm@1",
+        "16:oep.fixture.counter@1",
+        "17:oep.wire.swio@1",
+        "18:oep.probe.memo@1",
+        "19:oep.probe.plan@1",
+        "20:oep.probe.restart@1"
+      ],
+      "clock_uptime_ns": 263543883000,
+      "clock_round_trip_us": 674.7,
+      "firmware_expected": null,
+      "verdict": "passed"
+    },
+    "required": {
+      "missing": [],
+      "verdict": "passed"
+    },
+    "config": {
+      "items": 19,
+      "values_before": 0,
+      "generation_before": 4,
+      "generation_set": 5,
+      "disabled_refused_as": "PinsTaken",
+      "generation_saved": 5,
+      "storage": "applied",
+      "saved_generation": 5,
+      "reboot": "skipped: oep.probe.restart on a USB probe needs OEP_HW_RESTART=1 (a restart left the device failing enumeration until a replug); the saved settings were not checked across a reboot",
+      "generation_after_unset": 8,
+      "saved_generation_final": 8,
+      "verdict": "passed"
+    },
+    "_settings": {
+      "restored": [
+        {
+          "where": "config",
+          "removed": [],
+          "set_back": 0
+        }
+      ]
+    },
+    "wire": {
+      "verdict": "skipped",
+      "why": "Skipped: no target wired (OEP_HW_TARGET=<name>[@swdio[,swclk]] says one is)"
+    },
+    "rp2_swd": {
+      "verdict": "skipped",
+      "why": "Skipped: no RP2 target wired (OEP_HW_RP2=<port> names the labels <port>.swdio / <port>.swclk)"
+    },
+    "gpio": {
+      "channels": [
+        4,
+        5
+      ],
+      "levels": {
+        "4:output_high": 1,
+        "4:output_low": 0,
+        "4:input_pullup": 1,
+        "4:input_pulldown": 0,
+        "5:output_high": 1,
+        "5:output_low": 0,
+        "5:input_pullup": 1,
+        "5:input_pulldown": 0,
+        "both:input": [
+          0,
+          0
+        ]
+      },
+      "verdict": "passed"
+    },
+    "uart": {
+      "rx": 7,
+      "tx": 8,
+      "loopback": false,
+      "actual_115200": 115211,
+      "status_baud": 115211,
+      "status_format": 0,
+      "actual_9600": 9600,
+      "verdict": "passed"
+    },
+    "capture": {
+      "verdict": "skipped",
+      "why": "Skipped: the probe does not list oep.fixture.logic"
+    },
+    "capture_analog_trigger": {
+      "stimulus": null,
+      "forced": {
+        "channel": 4,
+        "trigger_index": 100,
+        "samples": 400
+      },
+      "verdict": "passed"
+    },
+    "capture_repeat_rearm": {
+      "verdict": "skipped",
+      "why": "Skipped: the probe does not list oep.fixture.logic"
+    },
+    "pwm_counter": {
+      "channel": 4,
+      "declared": {
+        "pwm_max_hz": 10000000,
+        "counter_max_hz": 10000000,
+        "duty_bits": 2,
+        "max_gate_us": 5000000
+      },
+      "runs": [
+        {
+          "hz": 1000.0,
+          "duty": 32767,
+          "window_ns": 200026000,
+          "count": 200,
+          "expected": 200.0
+        },
+        {
+          "hz": 20000.0,
+          "duty": 32767,
+          "window_ns": 200025000,
+          "count": 4000,
+          "expected": 4000.5
+        },
+        {
+          "stopped": 0
+        }
+      ],
+      "verdict": "passed"
+    },
+    "capture_external_clock": {
+      "verdict": "skipped",
+      "why": "Skipped: the probe does not list oep.fixture.logic and oep.fixture.pwm"
+    },
+    "capture_glitch_filter": {
+      "verdict": "skipped",
+      "why": "Skipped: the probe does not list oep.fixture.logic and oep.fixture.pwm"
+    },
+    "capture_analog_format_2": {
+      "channel": 4,
+      "rate": 1000,
+      "block": 64,
+      "bytes": 80,
+      "samples": 256,
+      "intervals": 16,
+      "bad": [],
+      "verdict": "passed"
+    },
+    "capture_analog": {
+      "channel": 4,
+      "rate": 1000,
+      "samples_asked": 16,
+      "frontend": 3,
+      "declared": {
+        "features": null,
+        "modes": {
+          "1": {
+            "max_samples": 16384,
+            "max_segments": 1
+          },
+          "3": {
+            "max_samples": 4096,
+            "max_segments": 8
+          }
+        },
+        "rate_range": {
+          "min_hz": 611,
+          "max_hz": 46000,
+          "exact": false
+        },
+        "channels": {
+          "max": 4
+        },
+        "frontends": {
+          "0": {
+            "min_mv": 0,
+            "max_mv": 950
+          },
+          "1": {
+            "min_mv": 0,
+            "max_mv": 1250
+          },
+          "2": {
+            "min_mv": 0,
+            "max_mv": 1750
+          },
+          "3": {
+            "min_mv": 0,
+            "max_mv": 3100
+          }
+        },
+        "optional": {
+          "69": "02",
+          "70": "070200000000010000"
+        }
+      },
+      "shared_with_gpio": "refused: Unavailable: rejected: unavailable",
+      "pull": null,
+      "configured": {
+        "actual_rate": 1000.0,
+        "samples": 16,
+        "segments": 1,
+        "bytes": 32,
+        "layout": {
+          "s": 16,
+          "o": 0,
+          "b": 12,
+          "order": [
+            0
+          ]
+        },
+        "zero": {
+          "0": 0
+        },
+        "scale_nv": {
+          "0": 757021
+        },
+        "frontend_used": {
+          "0": 3
+        },
+        "skew_ns": {
+          "0": 0
+        },
+        "reference": [
+          "internal",
+          1100,
+          false
+        ]
+      },
+      "calibration": {
+        "factory": [
+          [
+            0,
+            "com.espressif.esp32s3.rtc-calib",
+            13
+          ],
+          [
+            1,
+            "com.espressif.esp32s3.rtc-calib",
+            13
+          ],
+          [
+            2,
+            "com.espressif.esp32s3.rtc-calib",
+            13
+          ],
+          [
+            3,
+            "com.espressif.esp32s3.rtc-calib",
+            13
+          ]
+        ],
+        "vrefint": null,
+        "vrefint_nominal_mv": null
+      },
+      "values": {
+        "idle": {
+          "min": 187,
+          "max": 662,
+          "mean": 301.4,
+          "mean_mv": 228.1,
+          "full_scale": 4095,
+          "clipped": [
+            0,
+            0
+          ]
+        }
+      },
+      "captures": [
+        {
+          "done_s": 0.0694,
+          "read_s": 0.001,
+          "window_s": 0.016,
+          "start_ns": 264913454000,
+          "start_uncertainty_ns": 200000,
+          "flags": 0,
+          "generation": 3
+        }
+      ],
+      "actual_rate": 1000.0,
+      "layout": {
+        "s": 16,
+        "o": 0,
+        "b": 12,
+        "order": [
+          0
+        ]
+      },
+      "samples": 16,
+      "seconds": 0.016,
+      "bands": "not checked: the probe shares an analog channel with nothing (oep-if-capture \u00a71.2), so no pull reaches it",
+      "verdict": "passed"
+    },
+    "capture_group": {
+      "verdict": "skipped",
+      "why": "Skipped: the probe does not list oep.fixture.capture-group"
+    },
+    "i2c_target": {
+      "sda": 4,
+      "scl": 5,
+      "address": 66,
+      "declared": {
+        "queue_depth": 4,
+        "max_clock_hz": 1000000,
+        "max_length": 128,
+        "features": 1,
+        "max_stretch_us": null,
+        "internal_pullups": true
+      },
+      "status_unconfigured": {
+        "state": 0,
+        "queued": 0,
+        "rx_frames": 0,
+        "tx_slots": 0,
+        "errors": 0
+      },
+      "status_configured": {
+        "state": 1,
+        "queued": 0,
+        "rx_frames": 0,
+        "tx_slots": 0,
+        "errors": 0
+      },
+      "status_preloaded": {
+        "state": 1,
+        "queued": 0,
+        "rx_frames": 0,
+        "tx_slots": 3,
+        "errors": 0
+      },
+      "read_rx": [
+        0,
+        ""
+      ],
+      "status_configured_again": {
+        "state": 1,
+        "queued": 0,
+        "rx_frames": 0,
+        "tx_slots": 0,
+        "errors": 0
+      },
+      "verdict": "passed"
+    },
+    "spi_target": {
+      "sck": 4,
+      "mosi": 5,
+      "miso": 6,
+      "cs": 7,
+      "declared": {
+        "queue_depth": 4,
+        "max_clock_hz": 3000000,
+        "max_length": 64,
+        "features": 3
+      },
+      "status_unconfigured": {
+        "state": 0,
+        "mode": 0,
+        "bit_order": 0,
+        "armed": false,
+        "queued": 0,
+        "transactions": 0,
+        "errors": 0
+      },
+      "status_configured": {
+        "state": 1,
+        "mode": 0,
+        "bit_order": 0,
+        "armed": false,
+        "queued": 0,
+        "transactions": 0,
+        "errors": 0
+      },
+      "status_armed": {
+        "state": 1,
+        "mode": 0,
+        "bit_order": 0,
+        "armed": true,
+        "queued": 0,
+        "transactions": 0,
+        "errors": 0
+      },
+      "second_arm": "refused: rejected: unavailable",
+      "read_rx": [
+        0,
+        0,
+        ""
+      ],
+      "status_configured_again": {
+        "state": 1,
+        "mode": 0,
+        "bit_order": 0,
+        "armed": false,
+        "queued": 0,
+        "transactions": 0,
+        "errors": 0
+      },
+      "verdict": "passed"
+    },
+    "i2c_controller": {
+      "sda": 4,
+      "scl": 5,
+      "declared": {
+        "max_clock_hz": 400000,
+        "min_clock_hz": 1000,
+        "max_length": 256,
+        "max_stretch_timeout_us": 100000,
+        "internal_pullups": true
+      },
+      "clock_used": 100000,
+      "write_read": {
+        "result": 1,
+        "at": 0,
+        "index": 0,
+        "data": "b''"
+      },
+      "status": {
+        "state": 1,
+        "held": false,
+        "transfers": 2,
+        "errors": 2
+      },
+      "verdict": "passed"
+    },
+    "spi_controller": {
+      "sck": 4,
+      "mosi": 5,
+      "miso": 6,
+      "cs": 7,
+      "declared": {
+        "max_clock_hz": 2000000,
+        "min_clock_hz": 1000,
+        "max_length": 256,
+        "time_step_ns": 5,
+        "modes": 15,
+        "max_delay_ns": 100000000
+      },
+      "clock_used": 1000000,
+      "transfer": [
+        {
+          "gap_ns": 0,
+          "setup_ns": 1000,
+          "hold_ns": 500,
+          "rx": "0000"
+        },
+        {
+          "gap_ns": 5000,
+          "setup_ns": 2004,
+          "hold_ns": 0,
+          "rx": "00"
+        }
+      ],
+      "status": {
+        "state": 1,
+        "mode": 0,
+        "bit_order": 0,
+        "transfers": 2
+      },
+      "verdict": "passed"
+    },
+    "console": {
+      "verdict": "skipped",
+      "why": "Skipped: no target wired (OEP_HW_TARGET=<name>[@swdio[,swclk]] says one is): the console needs a wire connection"
+    },
+    "network": {
+      "verdict": "skipped",
+      "why": "Skipped: the probe offers no network (transports \u00a77.3)"
+    },
+    "port_speed": {
+      "verdict": "skipped",
+      "why": "Skipped: port_speed is for a UART bridge probe only"
+    },
+    "session": {
+      "lease_ms": 1000,
+      "boot_id": 3898136000,
+      "after_lapse": "rejected: no session",
+      "forced_new_id": true,
+      "forced_lease_ms": 3000,
+      "old_id_after_force": "locked by oep tests/hw force (2998 ms of its lease left)",
+      "old_id_after_end": "rejected: no session",
+      "verdict": "passed"
+    }
+  }
+}
