@@ -555,3 +555,25 @@ def test_steady_dm_attaches_again_and_sets_up_again():
         assert dm.read32(0x40021018) == 101 and dm.dropped == 1 and seen == [101] and dm.conn == 101
     finally:
         pins.riscv.RiscvDm = real
+
+
+
+def test_classify_reads_in_groups_that_fit_one_plan(monkeypatch):
+    """A plan larger than one frame (a 64-channel CH32X035 probe's: 522 bytes over max_frame 512) is read in groups,
+    each its own plan: the same kinds as one plan of every channel, no plan over the group size."""
+    def classified(capacity):
+        ep, hst, t = bench(powered_by=None)
+        sizes = []
+        real = pins.core.plan_apply
+        monkeypatch.setattr(pins.core, "plan_apply", lambda h, a: (sizes.append(len(a)), real(h, a))[1])
+        if capacity:
+            monkeypatch.setattr(pins.PinFinder, "_plan_capacity", lambda self: capacity)
+        f = finder(hst, t, [])
+        f.classify()
+        monkeypatch.undo()
+        return kinds(f.report), sizes
+
+    whole, whole_sizes = classified(None)
+    grouped, sizes = classified(8)
+    assert grouped == whole
+    assert max(whole_sizes) > 8 and max(sizes) <= 8

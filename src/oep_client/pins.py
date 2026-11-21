@@ -254,6 +254,13 @@ class PinFinder:
         self.sleep(self.BOOT_S)
         self.report.power_cycles += 1
 
+    def _plan_capacity(self) -> int:
+        """How many gpio assignments one plan_apply carries within the link's max_frame: each is an 8-byte TLV
+        (tag, u16 length, fn u16, role u8, channel u16), after the request's own head."""
+        limits = getattr(self.hst, "limits", None) or {}
+        max_frame = limits.get("max_frame", 512) if isinstance(limits, dict) else 512
+        return max(1, (max_frame - 32) // 8)
+
     def _plan(self, channels: list[int], cycle: bool = True) -> list[int]:
         """oep.fixture.gpio's whole plan = `channels` (+ the power channel). Channels something else holds (the
         a disabled channel) are dropped and named. A new plan lets every old pin go first,
@@ -331,23 +338,31 @@ class PinFinder:
             self.note("labelled for something else, left alone: "
                       + "; ".join(f"{ch} ({text})" for ch, text in sorted(others.items())))
             self.labelled_noted = True
-        chans = [c for c in allowed if c != self.power and c not in self.exclude and c not in held and c not in others]
-        chans = self._plan(chans, cycle=False)
+        wanted = [c for c in allowed if c != self.power and c not in self.exclude and c not in held and c not in others]
         g = self.gpio
+        chans: list[int] = []
+        pu: dict[int, list[int]] = {}
+        pd: dict[int, list[int]] = {}
         off_pu = off_pd = None
-        if self.power is not None:
-            g.set([(self.power, g.OUTPUT_LOW)] + [(c, g.INPUT_PULLDOWN) for c in chans])
-            self.sleep(self.OFF_S)
-            off_pd = dict(zip(chans, g.read(chans)))
-            off_pu = self._read(chans, g.INPUT_PULLUP)
-            g.set([(c, g.INPUT) for c in chans] + [(self.power, g.OUTPUT_HIGH)])
-            self.sleep(self.BOOT_S)
-            self.report.power_cycles += 1
-            self.say(f"power: channel {self.power} low {self.OFF_S * 1000:.0f} ms (target off: read), then high "
-                     f"{self.BOOT_S * 1000:.0f} ms before the reads")
-        pu = self._series(chans, g.INPUT_PULLUP)
-        pd = self._series(chans, g.INPUT_PULLDOWN)        # last: a pull-down on the reset line resets the target
-        g.set([(c, g.INPUT) for c in chans])
+        # read in groups whose gpio plan fits one request (oep-if-plan §2.1: a fn's plan is replaced whole, so a plan
+        # is one frame: a 64-channel CH32X035 probe's was 522 bytes over its max_frame 512)
+        size = self._plan_capacity() - (1 if self.power is not None else 0)
+        for k in range(0, len(wanted), size):
+            group = self._plan(wanted[k:k + size], cycle=False)
+            if self.power is not None:
+                g.set([(self.power, g.OUTPUT_LOW)] + [(c, g.INPUT_PULLDOWN) for c in group])
+                self.sleep(self.OFF_S)
+                off_pd = {**(off_pd or {}), **dict(zip(group, g.read(group)))}
+                off_pu = {**(off_pu or {}), **self._read(group, g.INPUT_PULLUP)}
+                g.set([(c, g.INPUT) for c in group] + [(self.power, g.OUTPUT_HIGH)])
+                self.sleep(self.BOOT_S)
+                self.report.power_cycles += 1
+                self.say(f"power: channel {self.power} low {self.OFF_S * 1000:.0f} ms (target off: read), then high "
+                         f"{self.BOOT_S * 1000:.0f} ms before the reads")
+            pu.update(self._series(group, g.INPUT_PULLUP))
+            pd.update(self._series(group, g.INPUT_PULLDOWN))   # last: a pull-down on the reset line resets the target
+            g.set([(c, g.INPUT) for c in group])
+            chans += group
         for c in chans:
             kind, mode = classify(pu[c], pd[c])
             ch = Channel(c, kind, "".join(map(str, pu[c])), "".join(map(str, pd[c])), active_mode=mode)
