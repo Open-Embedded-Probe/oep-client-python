@@ -1,6 +1,10 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) `uiapduino.enter_bootloader()` runs PREPARE_BOOT right after the NRST pulse: with the 0.3 s wait the sketch had
+  cleared PINRSTF by then (its resetReason() in setup()), and the bootloader went straight on to the application.
+- (JA) `uiapduino.enter_bootloader()` は NRST のパルスの直後に PREPARE_BOOT を走らせる。0.3 秒待つと、その間にスケッチ（setup() の
+  resetReason()）が PINRSTF を消していて、ブートローダーがすぐアプリへ移っていた。
 - (EN) `oep pins` maps a CH32X035's pads 16-23 from the target's side: they are set through BSXR and cleared through
   BCR (BSHR has no room for them; the map stopped with a struct error at PA16).
 - (JA) `oep pins` が CH32X035 の 16〜23 番の端子も target の側から対応づける。これらは BSXR で上げ、BCR で下げる（BSHR には

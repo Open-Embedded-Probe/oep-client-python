@@ -114,8 +114,9 @@ def enter_bootloader(hst: h.Host, wire: riscv.Wire, gpio_fn: int | None = None,
         if gpio_fn is None or nrst_channel is None:
             raise NeedsPinReset("PINRSTF is clear and no NRST line was given: press the board's reset or "
                                 "power-cycle it (without the sketch clearing the flags), then try again")
+        # PREPARE_BOOT at once: the sketch's resetReason() clears PINRSTF (RMVF) in setup(), within 0.48 s of the
+        # pulse - after it the bootloader goes straight on to the application (v003f4u6-uia, 2026-11-21)
         pulse_nrst(hst, gpio_fn, nrst_channel)
-        time.sleep(0.3)
         how = "nrst"
     run_payload(hst, wire, PREPARE_BOOT)
     return how
