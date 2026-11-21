@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 0.0.60
 - (EN) The Release workflow takes version_level (patch / minor / major, from a pull-down; patch by default) and bumps the
   version in pyproject.toml; the version field is optional (X.Y.Z or X.Y.ZbN for that version).
 - (JA) Release のワークフローは version_level（patch / minor / major をプルダウンで。既定は patch）を取り、pyproject.toml の版を
