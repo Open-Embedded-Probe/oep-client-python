@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 0.0.61
 - (EN) `oep pins` classifies a probe whose gpio plan would not fit one frame (a 64-channel CH32X035 probe's: 522 bytes
   over max_frame 512) in groups, each its own plan; it stopped with a ValueError before.
 - (JA) `oep pins` は、gpio の plan が 1 フレームに入らないプローブ（64 チャネルの CH32X035 のプローブ: max_frame 512 に対して
