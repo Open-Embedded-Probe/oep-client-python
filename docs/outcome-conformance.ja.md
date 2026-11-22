@@ -2,7 +2,7 @@
 
 [English](outcome-conformance.md)
 
-common §1.4のwrite、§3のdebug status/doneを採用したインターフェイスだけに適用する。名称やop番号から推測しない。全fnの宣言検査、資源寿命、OEP固有opの動作は別途必要。
+common §1.4のwrite、§3のdebug status/doneを採用したインターフェースだけに適用する。名称やop番号から推測しない。全fnの宣言検査、資源寿命、OEP固有opの動作は別途必要。
 
 | 契約 | 検査 |
 | --- | --- |

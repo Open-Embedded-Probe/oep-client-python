@@ -1,10 +1,10 @@
-# 登録済みOEPインターフェイスのop宣言検査
+# 登録済みOEPインターフェースのop宣言検査
 
 [English](registered-ops-conformance.md)
 
 `RegisteredOpsChecks(checks, selection).run()`は第三段階で、明示したfn/nameの必須opを検査する。
 `selection`は呼び出し元が渡す辞書。標準名を自動探索して機能を実行せず、要求はすべてSID 0の発見・宣言読出し。
-registryのop codeを使い、必須/任意の区別は各インターフェイスの規範文から定める。
+registryのop codeを使い、必須/任意の区別は各インターフェースの規範文から定める。
 lock有無や番号の空きから推測しない。revision 1の標準インターフェース（plan、restart、link、wire、riscv-dm、arm-adi、console、fixture、capture）に対応する。
 
 `RegisteredOpsModel`は独立した宣言だけのfixtureであり、広告したopの実装を持たない。

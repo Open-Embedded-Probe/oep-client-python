@@ -50,4 +50,4 @@ assert report['status'] == 'passed', report
 
 `.env.example`のSPEC/共有lockを明示し、私的ベンチへの依存・探索はしない。通常CLIへ自動追加しない。
 
-`full_conformance=false`。物理bringup/scratch/速度/pin idle、scan、reset/idle_clock/targetsel動作、targetインターフェイスの操作、console mailbox/framing/配送、SDIのcount=0 write、通知、別容量/並行要求、production Host統合は未検査。
+`full_conformance=false`。物理bringup/scratch/速度/pin idle、scan、reset/idle_clock/targetsel動作、targetインターフェースの操作、console mailbox/framing/配送、SDIのcount=0 write、通知、別容量/並行要求、production Host統合は未検査。

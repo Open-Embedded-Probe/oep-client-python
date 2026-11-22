@@ -73,7 +73,7 @@
 | [Hostの未知値分類](host-value-conformance.ja.md) |
 | [Hostのsave待ち時間と転送時間の部分検査](host-wait-conformance.ja.md) |
 | [I2C targetの論理検査](i2c-conformance.ja.md) |
-| [全インターフェイスに使う宣言の準拠検査](interface-conformance.ja.md) |
+| [全インターフェースに使う宣言の準拠検査](interface-conformance.ja.md) |
 | [全拡張に使うインターフェース大枠検査](interface-smoke-conformance.ja.md) |
 | [応答送信とleaseの補助検査](lease-conformance.ja.md) |
 | [同じProbeの複数経路でlinkを検査する](link-routes-conformance.ja.md) |
@@ -92,7 +92,7 @@
 | [result_lost後の状態読み直しの補助検査](recovery-conformance.ja.md) |
 | [回復中のforceと経路単位の結果不明化](recovery-races-conformance.ja.md) |
 | [同時に不正な条件がある要求の拒否順序](refusal-order-conformance.ja.md) |
-| [登録済みOEPインターフェイスのop宣言検査](registered-ops-conformance.ja.md) |
+| [登録済みOEPインターフェースのop宣言検査](registered-ops-conformance.ja.md) |
 | [混雑時のsession再送・拒否cacheの補助検査](replay-pressure-conformance.ja.md) |
 | [optional resetとDM復帰の検査](reset-conformance.ja.md) |
 | [資源寿命の適合検査](resource-conformance.ja.md) |
