@@ -52,7 +52,7 @@ jobs:
         run: uv run python tools/prepare_release.py --version "$VERSION" --level "$LEVEL" --github-output "$GITHUB_OUTPUT"
 
       - name: Run tests
-        run: uv run --locked pytest tests -n auto --dist loadfile   # files run side by side; most tests wait on real timeouts
+        run: uv run --locked --extra acquire pytest tests -n auto --dist loadfile   # files run side by side; most tests wait on real timeouts
 
       - name: Verify explicit virtual equipment contract
         id: equipment
