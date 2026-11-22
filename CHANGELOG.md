@@ -1,6 +1,11 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) **Breaking**: `acquire.Request` names its fields with their units, as the rest of the client does (`clock_hz`,
+  `glitch_filter_ns`): `rate` -> `rate_hz`, `analog_rate` -> `analog_rate_hz`, `timeout` -> `timeout_s`, `seconds` ->
+  `duration_s`. The old names are gone.
+- (JA) **互換なし**: `acquire.Request` の欄を、client のほかの所（`clock_hz`、`glitch_filter_ns`）と同じく単位つきの名前にした:
+  `rate` → `rate_hz`、`analog_rate` → `analog_rate_hz`、`timeout` → `timeout_s`、`seconds` → `duration_s`。古い名前は無い。
 
 ## 0.0.62
 - (EN) No user-facing changes recorded.

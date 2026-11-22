@@ -16,11 +16,11 @@ S.N by its role, S@P by the target pin) - and looked up on the session (a channe
 0..C-1 in the order given. The plans are released afterwards.
 
 Modes: "oneshot" (the probe's memory), "repeat" (`segments` acquisitions read and released as they come: with a
-trigger one part each, layout "segments"; without, a timeline), "stream" (for `seconds`, sent as taken,
+trigger one part each, layout "segments"; without, a timeline), "stream" (for `duration_s`, sent as taken,
 put together on disk while it runs: a timeline, cut where data was lost).
 
 A stream can run while the script does its steps on the same session (marking sections, sending console commands):
-`during=steps` in place of `seconds` streams until steps(wait) returns, `wait(seconds)` collecting while it waits.
+`during=steps` in place of `duration_s` streams until steps(wait) returns, `wait(seconds)` collecting while it waits.
 Steps should call wait often (the probe holds only its stream buffer meanwhile); a loss with on_loss "stop" raises
 StreamStopped out of wait, and the stream ends there. Something long that does not use the session - another process
 such as a ch32rv flash - goes through `wait.beside(fn)`: fn runs in another thread while the stream is collected, and
@@ -69,20 +69,20 @@ class Request:
     channels: list[tuple[str, str]]          # logic: (name to record, the line): the probe's channel name (fn 0's
                                              # channel_name, GPIO47) or a port's line label (S.N, x035.swdio; S@P,
                                              # x035@pb9), in order
-    rate: int                                # logic samples per second asked for (the probe may answer another)
+    rate_hz: int                             # logic samples per second asked for (the probe may answer another)
     samples: int
     trigger: tuple | None = None             # (logic channel, one of TRIGGERS) or (analog channel, rise / fall / high /
                                              # low, volts); None: start at once
     pretrigger: int | None = None            # samples kept before the trigger
     arm: str = "pretrigger"                  # when the trigger is looked for: "pretrigger" (once it is there) or "now"
-    timeout: float = 10.0                    # seconds to wait for the capture to finish
+    timeout_s: float = 10.0                  # seconds to wait for the capture to finish
     analog: list[tuple[str, str, int | None]] = field(default_factory=list)   # (name, the line as above, frontend)
-    analog_rate: int | None = None           # analog samples per second (default: `rate`)
+    analog_rate_hz: int | None = None        # analog samples per second (default: `rate_hz`)
     analog_samples: int | None = None        # default: as long as the logic capture
     resolution: dict[str, tuple[str, int]] = field(default_factory=dict)   # logic lines reduced (capture format 1):
                                              # name -> (one of REDUCTIONS, D: 2 or more samples an interval)
-    mode: str = "oneshot"                    # "oneshot", "stream" (for `seconds`) or "repeat"
-    seconds: float | None = None             # stream: how long (as LogicCapture.stream(seconds=...))
+    mode: str = "oneshot"                    # "oneshot", "stream" (for `duration_s`) or "repeat"
+    duration_s: float | None = None          # stream: how long (as LogicCapture.stream(seconds=...))
     segments: int | None = None              # repeat: how many acquisitions
     on_loss: str = "stop"                    # stream: "stop" at the first loss, or "continue" to the end
     spool_dir: str | None = None             # stream: where its channels are put together on disk while it runs
@@ -90,7 +90,7 @@ class Request:
                                              # glitch filter, capture §3.8; a probe without one refuses the capture)
     input_hysteresis: bool | None = None     # logic: the probe's input hysteresis on every logic line (capture §3.8)
                                              # on / off; None leaves the probe's default (off where off is a state)
-    during: Callable[[Callable[[float], None]], None] | None = None   # stream: instead of `seconds`, runs until this
+    during: Callable[[Callable[[float], None]], None] | None = None   # stream: instead of `duration_s`, runs until this
                                              # returns - called with wait(seconds), which collects while it waits;
                                              # wait.beside(fn) collects while fn runs in another thread
 
@@ -116,10 +116,10 @@ class Request:
                 raise ValueError("repeat: logic channels only")
         elif self.segments is not None:
             raise ValueError("segments is for repeat only")
-        if self.during is not None and (self.mode != "stream" or self.seconds is not None):
-            raise ValueError("during is for a stream, in place of seconds")
-        if self.mode == "stream" and self.during is None and not (self.seconds and self.seconds > 0):
-            raise ValueError("a stream needs seconds (how long) or during")
+        if self.during is not None and (self.mode != "stream" or self.duration_s is not None):
+            raise ValueError("during is for a stream, in place of duration_s")
+        if self.mode == "stream" and self.during is None and not (self.duration_s and self.duration_s > 0):
+            raise ValueError("a stream needs duration_s (how long) or during")
         if self.glitch_filter_ns is not None and self.glitch_filter_ns < 1:
             raise ValueError(f"glitch_filter_ns {self.glitch_filter_ns}: 1 or more (None: no filter)")
         if self.arm not in ("pretrigger", "now"):
@@ -498,7 +498,7 @@ def _waiting(wait, cap, req):
             except Exception:           # the timeout is the news; a failed status read must not hide it
                 waiting = False
             if waiting:
-                raise TimeoutError(f"no trigger ({req.trigger[0]}:{req.trigger[1]}) within {req.timeout:g} s "
+                raise TimeoutError(f"no trigger ({req.trigger[0]}:{req.trigger[1]}) within {req.timeout_s:g} s "
                                    f"(--timeout)") from None
         raise
 
@@ -785,10 +785,10 @@ def _capture(link, core, oc, oh, message, target: str, req: Request, ids: list[i
                         raise ValueError("--arm now needs an oep-client-python with trigger_opts")
                     blocks["trigger_opts"] = oc.TriggerOpts(arm=0)
                 if req.mode == "stream":
-                    cfg = _configure(cap, oc, oh, target, "logic", oc.STREAMING, rate=req.rate, **blocks, **_glitch(req))
+                    cfg = _configure(cap, oc, oh, target, "logic", oc.STREAMING, rate=req.rate_hz, **blocks, **_glitch(req))
                     _note_glitch(probe, cfg)
                     if an:                     # logic and analog: both streamed in one group (capture §4.1)
-                        arate = req.analog_rate or req.rate
+                        arate = req.analog_rate_hz or req.rate_hz
                         fes = {k: fe for k, (_, _, fe) in enumerate(req.analog) if fe is not None}
                         acfg = _configure(an, oc, oh, target, "analog", oc.STREAMING, rate=arate,
                                           **({"frontends": fes} if fes else {}))
@@ -799,28 +799,28 @@ def _capture(link, core, oc, oh, message, target: str, req: Request, ids: list[i
                 if req.mode == "repeat":       # with a trigger, one per segment (rearm 1, capture §2.1 / §3.3)
                     if trigger:
                         blocks["trigger_opts"] = oc.TriggerOpts(arm=0 if req.arm == "now" else 1, rearm=1)
-                    cfg = _configure(cap, oc, oh, target, "logic in repeat", oc.REPEAT, **_glitch(req), rate=req.rate, samples=req.samples,
+                    cfg = _configure(cap, oc, oh, target, "logic in repeat", oc.REPEAT, **_glitch(req), rate=req.rate_hz, samples=req.samples,
                                      segments=req.segments, trigger=trigger, pretrigger=req.pretrigger, **blocks)
                     _note_glitch(probe, cfg)
                     return _repeat_result(cap, hst, cfg, req, names, ids, probe, fast, open_s, clock_before, oc, oh)
-                lkw = dict(rate=req.rate, samples=req.samples, trigger=trigger, pretrigger=req.pretrigger, **blocks)
+                lkw = dict(rate=req.rate_hz, samples=req.samples, trigger=trigger, pretrigger=req.pretrigger, **blocks)
                 if grouped:          # both tracks asked first (query), set only when neither refuses (below)
                     lq = _query(cap, oc, oh, message, lkw)
-                    lrate = Fraction(lq.rate) if getattr(lq, "rate", None) else Fraction(req.rate)
+                    lrate = Fraction(lq.rate) if getattr(lq, "rate", None) else Fraction(req.rate_hz)
                     lsamples = getattr(lq, "samples", None) or req.samples
                 else:
                     cfg = _configure(cap, oc, oh, target, "logic", **lkw, **_glitch(req))
                     _note_glitch(probe, cfg)
                     lrate, lsamples = Fraction(cfg.rate), getattr(cfg, "samples", None) or req.samples
             if an and req.mode == "stream":           # analog alone (Request refuses it beside logic, for now)
-                arate = req.analog_rate or req.rate
+                arate = req.analog_rate_hz or req.rate_hz
                 fes = {k: fe for k, (_, _, fe) in enumerate(req.analog) if fe is not None}
                 acfg = _configure(an, oc, oh, target, "analog", oc.STREAMING, rate=arate,
                                   **({"frontends": fes} if fes else {}))
                 return _analog_stream_result(an, hst, acfg, req, aids, probe, fast, open_s, clock_before, oc,
                                              an.calibration(), _frontends(core, hst, an.fn))
             if an:
-                arate = req.analog_rate or req.rate
+                arate = req.analog_rate_hz or req.rate_hz
                 asamples = req.analog_samples
                 fes = {k: fe for k, (_, _, fe) in enumerate(req.analog) if fe is not None}
                 if asamples is None and cap:
@@ -892,7 +892,7 @@ def _capture(link, core, oc, oh, message, target: str, req: Request, ids: list[i
                                        f"trigger source, capture §4.4: {e}){why}") from e
                 try:
                     group_start = group.start(tracks)
-                    st = _waiting(lambda: group.wait(req.timeout), group, req)
+                    st = _waiting(lambda: group.wait(req.timeout_s), group, req)
                     seg = _segment(cap) if cap else None
                     aseg = _segment(an)
                 finally:
@@ -903,7 +903,7 @@ def _capture(link, core, oc, oh, message, target: str, req: Request, ids: list[i
             else:
                 track = cap or an
                 track.start()
-                segments = _waiting(lambda: track.wait(req.timeout), cap, req)
+                segments = _waiting(lambda: track.wait(req.timeout_s), cap, req)
                 if not segments:
                     raise RuntimeError("the probe finished without a segment")
                 seg = segments[0] if cap else None
@@ -1052,7 +1052,7 @@ def _repeat_result(cap, hst, cfg, req: Request, names, ids, probe, fast, open_s,
     is finished (the probe takes the next only into a free segment: none is lost, a pause is a gap in time). With a
     trigger each starts on its own (rearm 1): parts of layout "segments", each its trigger_tick and start_ns, tick0
     from the first one's time. Without, they run on: a timeline, the next part right after unless the probe paused
-    (flags gap). A wait past req.timeout for the next one ends it: a trigger that does not come is named."""
+    (flags gap). A wait past req.timeout_s for the next one ends it: a trigger that does not come is named."""
     import time
     gap, slipped = oc._CAP.enum["segment_flag"]["gap"], oc._CAP.enum["segment_flag"]["slipped"]
     rate = Fraction(cfg.rate)
@@ -1073,9 +1073,9 @@ def _repeat_result(cap, hst, cfg, req: Request, names, ids, probe, fast, open_s,
                 raise oh.Failed(None, f"the capture stopped with an error ({st.error_name or 'unknown'})")
             ready = [x for x in cap.segments(nxt) if x.serial < st.serial_done] if st.serial_done > nxt else []
             if not ready:
-                if now - last > req.timeout:
+                if now - last > req.timeout_s:
                     what = f"no trigger ({req.trigger[0]}:{req.trigger[1]})" if req.trigger else "no segment"
-                    raise TimeoutError(f"{what} within {req.timeout:g} s (--timeout) after {len(parts)} of "
+                    raise TimeoutError(f"{what} within {req.timeout_s:g} s (--timeout) after {len(parts)} of "
                                        f"{req.segments} segments")
                 time.sleep(REPEAT_POLL_S)
                 continue
@@ -1181,13 +1181,13 @@ class _Wait:
 
 
 def _drive(req: Request, poll, lost) -> None:
-    """Collect a started stream: for req.seconds, or while req.during(wait) runs - its `wait(seconds)` collecting
+    """Collect a started stream: for req.duration_s, or while req.during(wait) runs - its `wait(seconds)` collecting
     meanwhile (and `wait.beside(fn)` while fn runs in another thread). poll(seconds) takes what comes, lost() says
     whether anything was lost; with on_loss "stop" a loss ends it (a StreamStopped out of wait, caught here)."""
     wait = _Wait(req, poll, lost)
     try:
         if req.during is None:
-            wait(req.seconds)
+            wait(req.duration_s)
         else:
             req.during(wait)
     except StreamStopped:
@@ -1245,7 +1245,7 @@ def _analog_runs(an, acfg, got) -> tuple[list, list]:
 
 
 def _collect(track, link, req: Request, oc, spool=None):
-    """Subscribe, start, collect for req.seconds (or while req.during runs), stop and collect the rest -> (Received,
+    """Subscribe, start, collect for req.duration_s (or while req.during runs), stop and collect the rest -> (Received,
     seconds). A loss stops it at once with on_loss "stop"."""
     import time
     track.subscribe(STREAM_MIN_BYTES, STREAM_MAX_DELAY_MS)   # batched: a capture wants bandwidth, not a frame per block
@@ -1308,7 +1308,7 @@ def _group_stream_result(cap, an, hst, cfg, acfg, req: Request, names, ids, aids
                                 for fe, scheme, raw in calib.factory]
     meta = {"probe_channels": {**dict(zip(names, ids)), **dict(zip([n for n, *_ in req.analog], aids))},
             "probe": probe,
-            "stream": {"duration_s": req.seconds, "on_loss": req.on_loss, "frames": lg.frames + ag.frames,
+            "stream": {"duration_s": req.duration_s, "on_loss": req.on_loss, "frames": lg.frames + ag.frames,
                        "bytes": received, "read_s": round(read_s, 3)}}
     logic = _Streamed(cap, cfg, lg, st, names, ids, req, meta, oc, spool, tail)
     aend = (ag.start or 0) + len(ag.data) + sum(n for _, n in ag.gaps)
@@ -1395,7 +1395,7 @@ def _analog_stream_result(an, hst, acfg, req: Request, aids, probe, fast, open_s
                                 for fe, scheme, raw in calib.factory]
     names = [n for n, *_ in req.analog]
     meta = {"probe_channels": dict(zip(names, aids)), "probe": probe,
-            "stream": {"duration_s": req.seconds, "on_loss": req.on_loss, "frames": got.frames,
+            "stream": {"duration_s": req.duration_s, "on_loss": req.on_loss, "frames": got.frames,
                        "bytes": len(got.data), "read_s": round(read_s, 3)}}
 
     def build():
@@ -1437,7 +1437,7 @@ def _analog_stream_result(an, hst, acfg, req: Request, aids, probe, fast, open_s
 
 
 def _stream_result(cap, hst, cfg, req: Request, names, ids, probe, fast, open_s, clock_before, oc) -> Result:
-    """A stream (capture §2.1 mode 3): subscribe, start, collect for req.seconds, stop and collect the rest. A loss
+    """A stream (capture §2.1 mode 3): subscribe, start, collect for req.duration_s, stop and collect the rest. A loss
     (a skipped position: the probe dropped a segment it had no room to send) stops it at once with on_loss "stop"
     (the default), else it goes on; either way the capture is incomplete, a failure (parts and losses)."""
     import time
@@ -1469,7 +1469,7 @@ def _stream_result(cap, hst, cfg, req: Request, names, ids, probe, fast, open_s,
     if cap.generation is not None:
         probe["generation"] = {"logic": cap.generation}
     meta = {"probe_channels": dict(zip(names, ids)), "probe": probe,
-            "stream": {"duration_s": req.seconds, "on_loss": req.on_loss, "frames": got.frames,
+            "stream": {"duration_s": req.duration_s, "on_loss": req.on_loss, "frames": got.frames,
                        "bytes": received, "read_s": round(read_s, 3)}}
     return _Streamed(cap, cfg, got, st, names, ids, req, meta, oc, spool, tail)
 
@@ -1531,7 +1531,7 @@ class _Spool:
         self.dir = tempfile.mkdtemp(prefix=".oep-acquire-stream-", dir=req.spool_dir)
         self.blocks = bool(getattr(cfg, "reduced", None) or getattr(cfg, "raw_roles", None))
         self.ds = [d for _, d in getattr(cfg, "reduced", {}).values()]
-        self.rate = Fraction(cfg.rate)
+        self.rate_hz = Fraction(cfg.rate)
         self.parts, self.lost = [], []
         self.pending = bytearray()      # bytes from position `at` not put together yet (a gapless stretch)
         self.at = None                  # stream position of pending[0]
@@ -1712,7 +1712,7 @@ class _Spool:
         if self.parts and self.parts[-1] is not None and getattr(self, "_follows", False):
             tick0 = self.parts[-1].tick0 + self._last_samples
         elif seg is not None and self.first_ns is not None:
-            tick0 = round(Fraction(seg.start_ns - self.first_ns, 10**9) * self.rate)
+            tick0 = round(Fraction(seg.start_ns - self.first_ns, 10**9) * self.rate_hz)
         else:                                    # format 0 without the segment's record: from the bytes
             tick0 = (self.parts[-1].tick0 + self._last_samples if self.parts else 0) + \
                 (position - (self._last_end or 0)) * 8 // self.cfg.width

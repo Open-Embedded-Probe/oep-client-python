@@ -54,21 +54,21 @@ def test_a_trigger_that_never_comes_is_named():
     def never():
         raise TimeoutError("capture did not finish")
 
-    req = Request([("A", "GPIO10")], 1_000_000, 100, trigger=("A", "rise"), timeout=2)
+    req = Request([("A", "GPIO10")], 1_000_000, 100, trigger=("A", "rise"), timeout_s=2)
     with pytest.raises(TimeoutError, match=r"no trigger \(A:rise\) within 2 s"):
         _waiting(never, Waiting(), req)
     with pytest.raises(TimeoutError, match="did not finish"):          # no trigger asked: the plain timeout
-        _waiting(never, Waiting(), Request([("A", "GPIO10")], 1_000_000, 100, timeout=2))
+        _waiting(never, Waiting(), Request([("A", "GPIO10")], 1_000_000, 100, timeout_s=2))
 
 
 def test_stream_parts_split_at_a_loss_and_stop_there_by_default():
     # segments of 100 samples at 1 MHz (100 us each); the one at position 200 was dropped (a gap of 100 bytes)
     got = fake_stream([(0, 100, 0), (100, 100, 100_000), (300, 100, 300_000)], [(200, 100)])
-    req = Request([("A", "GPIO1")], 1_000_000, 0, mode="stream", seconds=1)
+    req = Request([("A", "GPIO1")], 1_000_000, 0, mode="stream", duration_s=1)
     parts, lost = _stream_parts(FakeCap(), stream_cfg(), got, ["A"], [1], req)
     assert len(parts) == 1 and parts[0].channels[0].n == 200
     assert lost == [{"after_part": 0, "reason": LOST, "stopped": True}]
-    req = Request([("A", "GPIO1")], 1_000_000, 0, mode="stream", seconds=1, on_loss="continue")
+    req = Request([("A", "GPIO1")], 1_000_000, 0, mode="stream", duration_s=1, on_loss="continue")
     parts, lost = _stream_parts(FakeCap(), stream_cfg(), got, ["A"], [1], req)
     assert [p.tick0 for p in parts] == [0, 300] and [p.channels[0].n for p in parts] == [200, 100]
     assert lost == [{"after_part": 0, "reason": LOST, "ticks": 100}]
@@ -77,10 +77,10 @@ def test_stream_parts_split_at_a_loss_and_stop_there_by_default():
 
 def test_a_stream_that_lost_its_start_keeps_nothing_by_default():
     got = fake_stream([(100, 100, 100_000)], [])
-    req = Request([("A", "GPIO1")], 1_000_000, 0, mode="stream", seconds=1)
+    req = Request([("A", "GPIO1")], 1_000_000, 0, mode="stream", duration_s=1)
     with pytest.raises(RuntimeError, match="dropped the stream's first 100 bytes"):
         _stream_parts(FakeCap(), stream_cfg(), got, ["A"], [1], req)
-    req = Request([("A", "GPIO1")], 1_000_000, 0, mode="stream", seconds=1, on_loss="continue")
+    req = Request([("A", "GPIO1")], 1_000_000, 0, mode="stream", duration_s=1, on_loss="continue")
     parts, lost = _stream_parts(FakeCap(), stream_cfg(), got, ["A"], [1], req)
     assert parts[0].tick0 == 0 and lost[0]["after_part"] == -1
 
@@ -89,7 +89,7 @@ def test_a_spooled_stream_is_the_same_as_one_put_together_at_the_end(tmp_path):
     """_Spool, fed poll by poll (the bytes taken out of Received each time), gives the parts and losses that
     _stream_parts gives from everything at once - and keeps the bits on disk."""
     segs = [(0, 100, 0), (100, 100, 100_000), (300, 100, 300_000), (400, 60, 400_000)]
-    req = Request([("A", "GPIO1")], 1_000_000, 0, mode="stream", seconds=1, on_loss="continue",
+    req = Request([("A", "GPIO1")], 1_000_000, 0, mode="stream", duration_s=1, on_loss="continue",
                   spool_dir=str(tmp_path))
     want_parts, want_lost = _stream_parts(FakeCap(), stream_cfg(), fake_stream(segs, [(200, 100)]), ["A"], [1], req)
     full = fake_stream(segs, [(200, 100)])

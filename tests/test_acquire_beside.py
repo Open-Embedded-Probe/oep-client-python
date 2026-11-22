@@ -56,6 +56,6 @@ def test_drive_hands_during_the_wait_with_beside():
     def during(wait):
         seen.append(wait.beside(lambda: "ok"))
         wait(0.01)
-    req = types.SimpleNamespace(on_loss="continue", during=during, seconds=None)
+    req = types.SimpleNamespace(on_loss="continue", during=during, duration_s=None)
     acquire._drive(req, lambda s: time.sleep(min(s, 0.005)), lambda: False)
     assert seen == ["ok"]

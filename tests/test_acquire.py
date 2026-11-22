@@ -84,7 +84,7 @@ def test_on_a_session_the_caller_holds(probe):
 
 def test_trigger_logic_and_analog_in_a_group(probe):
     req = acquire.Request([("A", "GPIO10"), ("B", "GPIO11")], 20_000_000, 2000, trigger=("B", "rise"), pretrigger=100,
-                          analog=[("SQ", "GPIO16", None)], analog_rate=48_000, analog_samples=64)
+                          analog=[("SQ", "GPIO16", None)], analog_rate_hz=48_000, analog_samples=64)
     res = acquire.capture_at(probe(), req)
     a, b, sq = res.channels
     t = res.meta["trigger_tick"]
@@ -101,7 +101,7 @@ def test_repeat_gives_one_part_per_segment(probe):
 
 
 def test_a_stream_is_put_together_on_a_timeline(probe, tmp_path):
-    req = acquire.Request([("A", "GPIO10"), ("B", "GPIO11")], 1_000_000, 0, mode="stream", seconds=0.2,
+    req = acquire.Request([("A", "GPIO10"), ("B", "GPIO11")], 1_000_000, 0, mode="stream", duration_s=0.2,
                           spool_dir=str(tmp_path))
     res = acquire.capture_at(probe(), req)
     assert res.complete and res.layout == "timeline" and res.parts
@@ -126,14 +126,14 @@ def test_a_stream_runs_while_the_caller_works_on_the_same_session(probe, tmp_pat
         with pytest.raises(RuntimeError):                  # the caller's own failure stops the stream and comes out
             acquire.capture(hst, acquire.Request([("A", "GPIO10")], 1_000_000, 0, mode="stream",
                                                  during=lambda wait: (wait(0.05), (_ for _ in ()).throw(RuntimeError()))))
-        assert acquire.capture(hst, acquire.Request([("A", "GPIO10")], 1_000_000, 0, mode="stream", seconds=0.1)).complete
+        assert acquire.capture(hst, acquire.Request([("A", "GPIO10")], 1_000_000, 0, mode="stream", duration_s=0.1)).complete
     finally:
         hst.end()
         hst.link.close()
 
 
-def test_during_is_for_a_stream_in_place_of_seconds():
-    for kw in ({"mode": "oneshot"}, {"mode": "stream", "seconds": 1.0}):
+def test_during_is_for_a_stream_in_place_of_duration_s():
+    for kw in ({"mode": "oneshot"}, {"mode": "stream", "duration_s": 1.0}):
         with pytest.raises(ValueError):
             acquire.Request([("A", "GPIO10")], 1_000_000, 100, during=lambda wait: None, **kw)
 
@@ -141,7 +141,7 @@ def test_during_is_for_a_stream_in_place_of_seconds():
 def test_a_format_1_stream_on_disk(probe, tmp_path):
     """Streamed in format 1, raw and reduced lines, put together on disk as it comes: every segment joined in order."""
     for resolution in ({"B": ("change_latch", 4)}, {"A": ("sample", 4), "B": ("any_high", 8)}):
-        req = acquire.Request([("A", "GPIO10"), ("B", "GPIO11")], 1_000_000, 0, mode="stream", seconds=0.3,
+        req = acquire.Request([("A", "GPIO10"), ("B", "GPIO11")], 1_000_000, 0, mode="stream", duration_s=0.3,
                               resolution=resolution, spool_dir=str(tmp_path))
         res = acquire.capture_at(probe(), req)
         assert res.complete and len(res.parts) == 1, resolution
@@ -228,7 +228,7 @@ def test_stream_segments_join_bit_by_bit(tmp_path):
     segs = {k * 3: SegmentInfo(k * 3, per, 1_000_000 + k * per * 200, 50) for k in range(n_seg)}
     got = types.SimpleNamespace(data=data, segments=segs, gaps=[], start=0)
     cfg = types.SimpleNamespace(rate=5_000_000, width=2, positions=None, event_d={})
-    req = acquire.Request([("A", "x"), ("B", "y")], 5_000_000, 0, mode="stream", seconds=1)
+    req = acquire.Request([("A", "x"), ("B", "y")], 5_000_000, 0, mode="stream", duration_s=1)
     parts, lost = acquire._stream_parts(None, cfg, got, ["A", "B"], [10, 11], req)
     assert not lost and len(parts) == 1
     got_a, got_b = (list(levels(c)) for c in parts[0].channels)
@@ -255,7 +255,7 @@ def test_parts_say_their_samples(probe, tmp_path):
     req = acquire.Request([("A", "GPIO10")], 20_000_000, 1000, resolution={"A": ("any_low", 64)})
     res = acquire.capture_at(probe(), req)
     assert res.samples == 1000 and res.all_parts[0].samples == 1000 and res.channels[0].n == 16
-    req = acquire.Request([("A", "GPIO10"), ("B", "GPIO11")], 1_000_000, 0, mode="stream", seconds=0.2,
+    req = acquire.Request([("A", "GPIO10"), ("B", "GPIO11")], 1_000_000, 0, mode="stream", duration_s=0.2,
                           resolution={"A": ("change_latch", 8), "B": ("sample", 8)}, spool_dir=str(tmp_path))
     res = acquire.capture_at(probe(), req)
     for p in res.all_parts:
