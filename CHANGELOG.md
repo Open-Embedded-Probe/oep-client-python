@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 0.0.63
 - (EN) `core.channels_of(hst, lines)`: the probe's channel numbers of lines named by channel name (`GPIO10`) or line label
   (`x035.swdio`, `x035@pb9`), the public way in that acquire already used inside.
 - (JA) `core.channels_of(hst, lines)`: channel の名前（`GPIO10`）か線のラベル（`x035.swdio`、`x035@pb9`）で名指した線の、プローブの
