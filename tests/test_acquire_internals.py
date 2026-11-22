@@ -62,6 +62,7 @@ def test_a_trigger_that_never_comes_is_named():
 
 
 def test_stream_parts_split_at_a_loss_and_stop_there_by_default():
+    pytest.importorskip("numpy")                   # the acquire extra: streams are put together with numpy
     # segments of 100 samples at 1 MHz (100 us each); the one at position 200 was dropped (a gap of 100 bytes)
     got = fake_stream([(0, 100, 0), (100, 100, 100_000), (300, 100, 300_000)], [(200, 100)])
     req = Request([("A", "GPIO1")], 1_000_000, 0, mode="stream", duration_s=1)
@@ -76,6 +77,7 @@ def test_stream_parts_split_at_a_loss_and_stop_there_by_default():
 
 
 def test_a_stream_that_lost_its_start_keeps_nothing_by_default():
+    pytest.importorskip("numpy")                   # the acquire extra: streams are put together with numpy
     got = fake_stream([(100, 100, 100_000)], [])
     req = Request([("A", "GPIO1")], 1_000_000, 0, mode="stream", duration_s=1)
     with pytest.raises(RuntimeError, match="dropped the stream's first 100 bytes"):
@@ -88,6 +90,7 @@ def test_a_stream_that_lost_its_start_keeps_nothing_by_default():
 def test_a_spooled_stream_is_the_same_as_one_put_together_at_the_end(tmp_path):
     """_Spool, fed poll by poll (the bytes taken out of Received each time), gives the parts and losses that
     _stream_parts gives from everything at once - and keeps the bits on disk."""
+    pytest.importorskip("numpy")                   # the acquire extra: streams are put together with numpy
     segs = [(0, 100, 0), (100, 100, 100_000), (300, 100, 300_000), (400, 60, 400_000)]
     req = Request([("A", "GPIO1")], 1_000_000, 0, mode="stream", duration_s=1, on_loss="continue",
                   spool_dir=str(tmp_path))
