@@ -47,24 +47,29 @@ OEP_HW_BOARDS=virtual-esp32-v003 uv run pytest tests/hw -m hw
 | 試験 | 確かめること | 記録 |
 |---|---|---|
 | `flash` | image が入る（esptool / DFU / picotool）。45 秒以内に起動して confirm に答える | 焼く前と後の firmware（describe）、焼いたコマンド、秒数、最後の数行 |
-| `identity` | confirm の revision ≥ 1。list に fn 0 の項目が無い（本体は名前を持たない、core §7.2）。clock（core §7.7）の boot_id が confirm と同じ。describe の model が表のとおり。焼いたことで boot_id が変わった。firmware の文字列が焼いた版（ローカルのビルドは `library.properties`、リリースはその版）に等しい | boot_id、firmware、model、unit_id、chip、limits、interface の一覧、clock の uptime_ns と 4 回のうち最短の往復 |
+| `identity` | confirm の revision ≥ 1。list に fn 0 の項目が無い（本体は名前を持たない、core §7.2）。clock（core §7.6）の boot_id が confirm と同じ。describe の model が表のとおり。焼いたことで boot_id が変わった。firmware の文字列が焼いた版（ローカルのビルドは `library.properties`、リリースはその版）に等しい | boot_id、firmware、model、unit_id、chip、limits、interface の一覧、clock の uptime_ns と 4 回のうち最短の往復 |
 | `required` | どのプローブも出すべきもののうち、ロックなしで確かめられるもの（core §1.2、§7.1、§7.5。oep-spec `docs/conformance.ja.md` 1 節）。`oep dump` が MISSING として出す一覧と同じ：confirm の transport TLV（fn 0 の describe の transport のどれか、または 0xFF を指す）、fn 0 の describe の unit_id、transport、max_op_ms。欠けたものを名指しして失敗する | 一覧（欠けがなければ空） |
 | `config` | core の設定（core §13）: `channel.<ピン>.label`（表の `label` のチャネル、無ければ gpio の 1 本目）と `channel.<ピン>.disable`（`OEP_HW_DISABLE`）を set → get に利用者の値として出て、get の generation が set の generation に等しく、前の generation とは違う。書き出し（設定のファイル）に両方が入る。disable したチャネルへの plan は拒否（unavailable / PinsTaken）。save の前は `needs_save`、save → state が `applied` でその generation、その後は `needs_save` でない。**再起動**（probe が `oep.probe.restart` を出していればそれで。USB の probe では `OEP_HW_RESTART=1` のときだけ。無ければ bridge の classic ESP32 を RTS から EN。どちらも無ければ飛ばす）→ 保存した値が名前で読み戻され、起動時に適用されている（書き出しが同じ）。両方 unset → 書き出したファイルを入れ直す（両方戻る）→ もう一度両方 unset。save。probe にあったほかの設定はそのまま残す。何が失敗しても、値と保存は元に戻す | 各段階の generation、再起動のやり方、前後の boot_id と秒数 |
-| `network` | fn 0 の network（probe が持つとき。transports §7）: 様子を記録する。`OEP_WIFI_SSID_<n>` / `OEP_WIFI_PASS_<n>`（n は entry）があれば: `wifi.<n>.ssid` / `wifi.<n>.passphrase` を set して save する - ベンチの設定なので probe に**残す** -。probe の entry と ssid が同じで passphrase が無ければ送らない（secret で比べられない）。`OEP_HW_WIFI_WAIT_S`（30 秒）のうちに wifi の netif が up でアドレス付きになる | netif の一覧、tcp_port、前の様子、送った / 同じだった entry、state、reason、entry、rssi、アドレスが来たか、秒数。ssid、passphrase、アドレスは記録しない |
 | `wire` | `OEP_HW_TARGET=<name>[@swdio[,swclk]]` のときだけ: scan（名指しの組か全部）、`OEP_HW_RESET=<channel>` なら reset TLV 付きで attach、そのあと 50 回（`OEP_HW_LOOPS`）halt → dmi で s0 / s1 / a0 / a1 → read_block（`OEP_HW_TARGET_ADDR`、既定 0x20000000 から 8 語）→ 同じ 4 本をもう一度、変わっていない → resume | scan の結果、connection、DMSTATUS、速さ、target_id、dpc、回数と秒数、変わったレジスタ: 前、後、読み直し、block の直後の 2 語、dpc（失敗のメッセージにすべての変化を省かずに出す）。op が例外を出したとき: その回、例外、2 回読んだ DMSTATUS と DMCONTROL（生の dmi）、止まっていれば dpc |
 | `rp2_swd` | `OEP_HW_RP2=<port>` のときだけ（プローブのラベル `<port>.swdio` / `<port>.swclk` の組の先の RP2040 / RP2350）: attach（DPIDR で石を見分ける）、halt、コアのレジスタ 16 本と SRAM の 64 語を 2 回読んで同じ、release。`OEP_HW_RP2_IMAGE`（ELF か .bin）があれば相手の flash を書き換える: リセットした コアから ROM で消去・書き込み・照合、再起動、コアがまた走る（PC が動く） | 石、DPIDR、止めたときの PC、image の名前と大きさ、書き込みの記録と秒数、再起動後に見た PC |
 | `gpio` | 表の空き 2 チャネル（`OEP_HW_GPIO=a,b`）で `oep.fixture.gpio`: output_high を読むと 1、output_low は 0、input_pullup は 1、input_pulldown は 0。表がその board に空きを与えていなければ skip | 読んだ値すべて |
 | `uart` | 表の RX / TX（`OEP_HW_UART=rx,tx`）で、または probe の設定にその plan があるときや表がその board に組を与えていないときはその plan のピンで（どちらも無ければ skip）`oep.fixture.uart`: configure 115200 8N1 が 5 % 以内、status がいま効いている baud と形式（configure の実際の速さ、8N1）を出す、configure 9600。`OEP_HW_UART_LOOP=rx,tx`（2 本を結線）なら write したものが read で戻る | 実際の速さ、status、ループバックのバイト数 |
 | `capture` | 表の空き 2 チャネルで `oep.fixture.logic` を、同じピンの `oep.fixture.gpio` と一緒に plan する（ロジックのキャプチャは聞くだけ、oep-if-capture §1.2。共有を断る probe では、代わりに設定の idle 項目で解放したチャネルを引く）: 宣言の最低のレート（1 kHz 以上）で 10 ms の窓（16 サンプル以上。16 KB を超える区画は縮める）のワンショットを、pull-up で 1 回、pull-down で 1 回 → 全チャネルの全サンプルが 1、次に 0。区画のサンプル数が configure の値に等しい、窓（1 % を引いた分）より早く終わらず、窓の後 1 秒以内に終わる、status が done で dropped / slipped の flag 無し、start ごとに世代が 1 進む | 宣言（rate_range、max_samples 付きの mode、channels の max）、実際のレート、layout（w、pos）、サンプル数、バイト数、blocking_ms、キャプチャごとに start → done の秒数、読み出しの秒数、start_ns とその不確かさ、世代、チャネルごとの 1 の数 |
-| `capture_analog` | `oep.fixture.analog`（list にあれば）を、役割 0 が許す空きチャネル（`OEP_HW_ANALOG=<channel>`）で: 最低のレート、10 ms、いちばん広い frontend のワンショット。layout（s / o / b、order）、frontend_used、scale / zero / reference が返り、値が b ビットに収まる。pull-up / pull-down の帯（平均がフルスケールの 80 % 以上 / 20 % 以下）は probe が gpio とピンを共有させるときだけ判定する。参照の ESP32 firmware は共有させない（アナログのチャネルは何とも共有しない）ので、浮いたピンの値を記録する | 宣言（frontend も）、configure の応答、値の最小 / 最大 / 平均（生の値と mV）、calibration（scheme、vrefint） |
-| `capture_group` | `oep.fixture.capture-group`（両方のトラックを宣言していれば）: 上と同じ設定のロジックとアナログを bind して一緒に start → start の応答に両方の世代、各トラックに configure どおりのサンプル数の区画が 1 つ、各 start_ns が組の start_ns 以降（1 秒以内）、両方読み出す、解く | 組の宣言（tracks だけ）、start_ns、各トラックのそこからのずれ、世代、done までの秒数 |
+| `capture_analog_trigger` | `oep.fixture.analog` の横切りのトリガ。プローブのラベルが許す組（`oep_client.stimulus`: 駆動の `<口>.stimulus` と ADC の入力 `<口>.stimulus_in`。その日の配線で確かめ、ほかのベンチの target のものは動かさない）があれば: 線を上げて up、下げて down が、どちらも pretrigger の位置で立ち、その前の値がレベルの反対側にある。組が無ければ force で確かめる: 届かないレベルで待ち続け、force したサンプルで区画が切れ、その前に pretrigger がある | 組、up / down の trigger_index、その前の値の最小 / 最大、その位置の値。force のときはチャネル、trigger_index、サンプル数 |
+| `capture_repeat_rearm` | logic が repeat の rearm 1 を受けるときだけ（ほかの理由で断られたら失敗）: 表の空きチャネルを fixture gpio で駆動し、同じチャネルを logic で聞く。区画ごとに立ち上がり 1 つ → 各区画が自分のトリガで始まる（index = pretrigger、その前が low でそこから high。flags の rearm、2 つ目から gap）、区画ごとに記録（oep-if-capture §3.9）、枠が埋まると state 5、release で次の区画をまた arm する | チャネル、レート、区画の数、埋まったときの status、記録の数 |
+| `pwm_counter` | `oep.fixture.pwm` と `oep.fixture.counter`（両方が list にあれば）を表の空きチャネル 1 本で（counter は聞くだけ）: 1 kHz と 20 kHz（counter の上限まで）の PWM を窓の中で数えると、作った周波数と 1 エッジと窓の時計の分の差で合う。止めた後は 1 つも数えない | 宣言（PWM と counter の上限、duty のビット、max_gate_us）、各回の周波数、duty、窓、数、期待値、止めた後の数 |
 | `capture_external_clock` | logic が external_clock を宣言するときだけ: 表の空き 2 チャネルの 1 本目に PWM（10 kHz）を出してクロックにし（ロジックは聞くだけ）、2 本目を fixture gpio で high / low に駆動してデータにする → 200 サンプルのワンショットが全部 1 / 全部 0、actual_rate 0 / 1、layout にクロックの役割が無い、200 周期より早く終わらない。qualifier を宣言していれば、データの線を qualifier にして low の間は 1 つも取らず、high で取る。形式 3 を宣言していれば、2 つ目からの delta がクロックの 1 周期（timebase で） | クロックの周波数、各回のサンプル数と 1 の数、done までの秒数、start の不確かさ、形式 3 の delta の最小 / 最大 |
 | `capture_glitch_filter` | logic が glitch_filter を宣言するときだけ: 空きチャネルに 100 kHz・幅 200 ns ほどの PWM を出し、同じチャネルを 20 MHz で取る → フィルタ無しでパルスが見え、パルスより長いフィルタでは 1 サンプルも high にならない | フィルタの値、パルスの幅、1 の数 |
 | `capture_analog_format_2` | analog が形式 2 を宣言するときだけ: 空きの ADC チャネルで minmax と sum（D 16、block_max 64）のワンショット → どの区間も min ≤ max、和が点の数 × min と × max の間、値が b ビットに収まる | block、バイト数、区間の数、合わなかった区間 |
+| `capture_analog` | `oep.fixture.analog`（list にあれば）を、役割 0 が許す空きチャネル（`OEP_HW_ANALOG=<channel>`）で: 最低のレート、10 ms、いちばん広い frontend のワンショット。layout（s / o / b、order）、frontend_used、scale / zero / reference が返り、値が b ビットに収まる。pull-up / pull-down の帯（平均がフルスケールの 80 % 以上 / 20 % 以下）は probe が gpio とピンを共有させるときだけ判定する。参照の ESP32 firmware は共有させない（アナログのチャネルは何とも共有しない）ので、浮いたピンの値を記録する | 宣言（frontend も）、configure の応答、値の最小 / 最大 / 平均（生の値と mV）、calibration（scheme、vrefint） |
+| `capture_group` | `oep.fixture.capture-group`（両方のトラックを宣言していれば）: 上と同じ設定のロジックとアナログを bind して一緒に start → start の応答に両方の世代、各トラックに configure どおりのサンプル数の区画が 1 つ、各 start_ns が組の start_ns 以降（1 秒以内）、両方読み出す、解く | 組の宣言（tracks だけ）、start_ns、各トラックのそこからのずれ、世代、done までの秒数 |
 | `i2c_target` | `oep.fixture.i2c-target`（list にあれば）を、役割が許す空きチャネルの SDA / SCL（`OEP_HW_I2C=sda,scl`）で: configure 前は state 0。address 0x42 で configure → state 1、置き場は無い。3 つまで（queue_depth まで）preload → tx_slots がその数。read_rx（記録する）。ops にあれば stretch(0)。もう一度 configure → state 1、列、置き場、累計が 0。バスに controller は無く線は浮いているので、グリッチによる誤りやフレームは記録して判定しない | 宣言（queue_depth、max_clock_hz、max_length、features、max_stretch_us、internal_pullups）、各 status、read_rx、stretch |
 | `spi_target` | `oep.fixture.spi-target`（list にあれば）を、空き 4 チャネルの SCK / MOSI / MISO / CS（`OEP_HW_SPI=sck,mosi,miso,cs`。固定のピンの組で来る interface は最初の channel_group）で: configure 前は state 0。mode 0 MSB 先で configure → state 1。4 byte を MISO 2 byte 付きで arm → armed、または消費済み（SCK / CS が浮いていて、ATOM の target は arm の直後に 1〜2 の幻の転送を数える。2 つ目の arm の「1 回に 1 つ」の拒否はそのため当てにしない）。read_rx。もう一度 configure（mode 0 MSB 先。reset は無い）→ state 1、armed が消え、列と累計が 0 | 宣言、各 status（transactions = 幻の転送）、read_rx |
+| `i2c_controller` | `oep.fixture.i2c-controller`（list にあれば）を、役割が許す空きチャネルの SDA / SCL（`OEP_HW_I2C_CONTROLLER=sda,scl`）で、何もつながない（パッドのプルアップがバスを high に保つ）: configure 前は state 0。100 kHz を頼むと、使う速さはその値以下で宣言の最低以上。プルアップを持つ probe では、誰もいないアドレスが NACK（result 1、STOP を出す）、STOP 無しの書き込みも NACK ならバスを持たない、STOP だけの要求は何も送らない、status の転送と誤りの数が 2 / 2 | 宣言（速さの上限と下限、max_length、max_stretch_timeout_us、internal_pullups）、使った速さ、write_read、status |
+| `spi_controller` | `oep.fixture.spi-controller`（list にあれば）を空き 4 チャネルの SCK / MOSI / MISO / CS（`OEP_HW_SPI_CONTROLLER=sck,mosi,miso,cs`）で、何もつながない: configure 前は state 0。1 MHz（宣言の上限まで）を頼むと、使う速さはその値以下で宣言の最低以上。続けて 2 つの転送 → 受けた byte 数が 2 / 1、2 つ目の gap と各 setup / hold が頼んだ時間以上（MISO は浮いているので値は記録だけ）、status の転送が 2 | 宣言（速さの上限と下限、max_length、time_step_ns、modes、max_delay_ns）、使った速さ、各転送（受けた byte、時間）、status |
 | `console` | `OEP_HW_TARGET` のときだけ: scan、走らせたまま attach（halt も reset も無し）、その connection に `oep.target.console` を mechanism dmseq（無ければ probe が宣言する最初のもの）で open、open 時の位置から 1 秒間届くものを読む、streams の一覧にそのストリームが出る、close、detach | mechanism の一覧、stream、existing、溜まっていたバイト数、見えたバイト数（0 もある）、lost、mark の数、streams の一覧、先頭 64 byte |
-| `port_speed` | UART bridge で、`oep.probe.link` の ops に port_speed がある probe だけ: `oep_client.linktest.matrix` を今の速さと表の候補（`OEP_HW_RATES`）で、in / out / duplex、同時 1 と probe の最大、1 つのフレームの大きさ（`max_frame - 7`、source の 1 つの応答が運ぶ最大。sink の要求は多くても `max_frame - 12`）、1 条件 `OEP_HW_FRAMES`（100）フレーム。**判定**（README の「UART bridge を速くする」の手順）: 上げた速さの 1 つずつの条件で、broken + lost が 3 以上かつ割合が max(起動時の速さの同じ条件の割合 × 2, 5 %（`OEP_HW_ERROR_MAX`）) を超えたら落とす。通る候補が 1 つも無いときだけ落とす（落ちた候補、probe が断った候補、confirm が返らない候補は記録する） | 条件ごとの ok / broken / lost、KB/s、秒数、速さの実際の値、link のカウンタ |
+| `network` | fn 0 の network（probe が持つとき。transports §7）: 様子を記録する。`OEP_WIFI_SSID_<n>` / `OEP_WIFI_PASS_<n>`（n は entry）があれば: `wifi.<n>.ssid` / `wifi.<n>.passphrase` を set して save する - ベンチの設定なので probe に**残す** -。probe の entry と ssid が同じで passphrase が無ければ送らない（secret で比べられない）。`OEP_HW_WIFI_WAIT_S`（30 秒）のうちに wifi の netif が up でアドレス付きになる | netif の一覧、tcp_port、前の様子、送った / 同じだった entry、state、reason、entry、rssi、アドレスが来たか、秒数。ssid、passphrase、アドレスは記録しない |
+| `port_speed` | UART bridge で、`oep.probe.link` の ops に port_speed がある probe だけ: `oep_client.linktest.matrix` を今の速さと表の候補（`OEP_HW_RATES`）で、in / out / duplex、同時 1 と probe の最大、1 つのフレームの大きさ（`max_frame - 7`、source の 1 つの応答が運ぶ最大。sink の要求は多くても `max_frame - 12`）、1 条件 `OEP_HW_FRAMES`（100）フレーム。**判定**（[UART bridge を速くする](../../docs/cli.ja.md#uart-bridge-を速くするport_speed使うときだけ)の手順）: 上げた速さの 1 つずつの条件で、broken + lost が 3 以上かつ割合が max(起動時の速さの同じ条件の割合 × 2, 5 %（`OEP_HW_ERROR_MAX`）) を超えたら落とす。通る候補が 1 つも無いときだけ落とす（落ちた候補、probe が断った候補、confirm が返らない候補は記録する） | 条件ごとの ok / broken / lost、KB/s、秒数、速さの実際の値、link のカウンタ |
 | `session` | 1000 ms の lease が切れる → `NoSession`（解放され、再開は無い）。新しい id の force → 古い id は `Locked`。その end の後はどの id も `NoSession` | lease、boot_id、拒否の文 |
 
 結果のファイルにはほかに、クライアントの版と commit、firmware の出所（checkout + commit + dirty か、リリースの版 + json の
@@ -84,11 +89,11 @@ restart_max_ms より長く掛かりうる。`OEP_HW_REOPEN_S=<秒>` は、そ�
 記録の `reopened`）。無ければ config の試験はそれを書いて失敗し、後の試験は「the probe is gone」で skip になる - どれも最初に
 1 度開き直してみるので、走っている間に手で attach すれば残りは戻る。
 
-**設定。** 試験が probe の設定を変えるのは 2 か所で、何があっても（assert の失敗、例外、probe が無くなる）元に戻す:
+**設定。** 試験が probe の設定を変えるのは `network`、`config`、`capture` の 3 か所で、`network` のほかは何があっても（assert の失敗、例外、probe が無くなる）元に戻す。表にはセッションの資源も並べる:
 
 | 場所 | 変えるもの | 戻し方 |
 |---|---|---|
-| `wifi` | `OEP_WIFI_*` からの `wifi.<n>.*` の値（set と save） | 戻さない: ベンチの設定（消すなら `oep settings unset <probe> core wifi.<n>.ssid wifi.<n>.passphrase --save`） |
+| `network` | `OEP_WIFI_*` からの `wifi.<n>.*` の値（set と save） | 戻さない: ベンチの設定（消すなら `oep settings unset <probe> core wifi.<n>.ssid wifi.<n>.passphrase --save`） |
 | `config` | `channel.<ピン>.label` と `.disable`（set）、保存（2 回 save） | 試験が両方 unset して save する。そのうえで `finally` が `Run.restore_settings` を呼ぶ: 値は unset するか、走る前の値に set し直し、保存はもう一度 save する（走る前に何も保存されていなければ全部 unset して save） |
 | `capture`（logic。probe が capture の pin に gpio を重ねるのを断るとき） | 2 本のチャネルの `channel.<ピン>.idle`（set、保存しない） | `_Pull.release` が unset し、その `finally` で `restore_settings` |
 | `gpio`、`uart`、`capture*`、`i2c_target`、`spi_target` | plan（oep.probe.plan）、セッションの状態 | それぞれの `finally` で `plan_release`。plan はセッションのものなので、失敗で残ったものも走り終わりのセッションの終わりで解放される |
@@ -97,7 +102,7 @@ restart_max_ms より長く掛かりうる。`OEP_HW_REOPEN_S=<秒>` は、そ�
 | `port_speed` | link の速さ | `linktest.matrix` が `finally` で起動時の速さに戻す。probe も何もしなければ自分で戻る |
 | `session` | lease、force での取り上げ | 自分のセッションで、終える |
 
-ハーネスは `link.open_host` で probe を開くので、probe ごとにセッションの id を残す（README の「走り直す host」）: 途中で止めた実行は
+ハーネスは `link.open_host` で probe を開くので、probe ごとにセッションの id を残す（[走り直す host](../../docs/cli.ja.md#走り直す-host-残したセッションの-id)）: 途中で止めた実行は
 probe にセッションを残す（経路が閉じてもセッションは終わらない、transports §3）が、次の実行の最初の open がそれを終え、30 s の lease
 が切れるのを待たない。
 
@@ -130,8 +135,8 @@ TCP は `OEP_HW_BOARDS=oep://<unit_id>?via=net` または `tcp://<host>:<port>` 
 | 変数 | 意味 |
 |---|---|
 | `OEP_HW_BOARDS` | ボード id のコンマ区切り（必須。無ければ何も回らない）。`oep://<unit_id>?via=net` / `tcp://<host>[:<port>]` は表に無い TCP の probe |
-| `OEP_WIFI_SSID_<n>`、`OEP_WIFI_PASS_<n>` | `wifi` の試験が使うベンチの Wi-Fi（n は entry の index。PASS が無ければ開いたネットワーク）。環境変数から読み、表示せず、`(set)` とだけ記録する。手で入れるなら `oep settings set <probe> core wifi.<n>.ssid=... wifi.<n>.passphrase=...`（passphrase は表示されない） |
-| `OEP_HW_WIFI_WAIT_S` | `wifi` の試験がつながりを待つ秒数（既定 30） |
+| `OEP_WIFI_SSID_<n>`、`OEP_WIFI_PASS_<n>` | `network` の試験が使うベンチの Wi-Fi（n は entry の index。PASS が無ければ開いたネットワーク）。環境変数から読み、表示せず、`(set)` とだけ記録する。手で入れるなら `oep settings set <probe> core wifi.<n>.ssid=... wifi.<n>.passphrase=...`（passphrase は表示されない） |
+| `OEP_HW_WIFI_WAIT_S` | `network` の試験がつながりを待つ秒数（既定 30） |
 | `OEP_HW_ATOM_TCP` | `esp32-pico-d4-50029191fe34-tcp` の TCP の行き先（既定 `oep://50029191fe34?via=net`、DNS-SD） |
 | `OEP_PROBE_DIR` / `OEP_PROBE_VERSION` / `OEP_HW_NOFLASH` | firmware の出所（どれか 1 つ） |
 | `OEP_HW_TARGET`、`OEP_HW_RESET`、`OEP_HW_TARGET_ADDR`、`OEP_HW_LOOPS` | wire の試験: target が繋がっている（どこに）、reset の線、block の番地、回数 |
@@ -139,9 +144,9 @@ TCP は `OEP_HW_BOARDS=oep://<unit_id>?via=net` または `tcp://<host>:<port>` 
 | `OEP_HW_RESTART=1` | config の試験で USB の probe（P4、RP2）を `oep.probe.restart` で再起動する（既定はしない: 再起動の後に列挙に失敗して抜き差しが要る組み合わせがあるため） |
 | `OEP_HW_WIRE` | wire / console の試験の wire の名前（既定: `OEP_HW_TARGET` が 1 本のピンを名指し、probe が `oep.wire.swio` を持てばそれ、無ければ最初の wire）。console の試験は、その connection の open を受ける `oep.target.console` の instance を使う |
 | `OEP_HW_GPIO`、`OEP_HW_DISABLE`、`OEP_HW_UART`、`OEP_HW_UART_LOOP` | fixture の試験のチャネルの上書き |
-| `OEP_HW_ANALOG`、`OEP_HW_I2C`、`OEP_HW_SPI` | アナログのキャプチャのチャネル、i2c-target の `sda,scl`、spi-target の `sck,mosi,miso,cs`（既定: 表の空きチャネル（gpio の 2 本、disable、UART の 2 本）のうち describe が許すもの） |
+| `OEP_HW_ANALOG`、`OEP_HW_I2C`、`OEP_HW_SPI`、`OEP_HW_I2C_CONTROLLER`、`OEP_HW_SPI_CONTROLLER` | アナログのキャプチャのチャネル、i2c-target と i2c-controller の `sda,scl`、spi-target と spi-controller の `sck,mosi,miso,cs`（既定: 表の空きチャネル（gpio の 2 本、disable、UART の 2 本）のうち describe が許すもの） |
 | `OEP_HW_RATES`、`OEP_HW_FRAMES`、`OEP_HW_LT_TIMEOUT`、`OEP_HW_ERROR_MAX` | port_speed の候補、1 条件のフレーム数、答えの待ち、判定の床（既定 5 %） |
 | `OEP_HW_PICOTOOL`、`OEP_HW_UF2_DRIVE`、`OEP_HW_USBIP_BUSID`、`OEP_HW_CACHE` | ツールと環境の細部 |
 
-ツール: `arduino-cli`（ローカルのビルド）、`esptool`（classic ESP32）、`picotool`（RP2）。DFU と boot ROM の探索は pyusb
+ツール: `arduino-cli`（ローカルのビルド）、`esptool`（classic ESP32、ESP32-S3）、`picotool`（RP2）。DFU と boot ROM の探索は pyusb
 （クライアントの依存に既にある）。`gh`、`dfu-util`、マウントしたドライブは要らない。

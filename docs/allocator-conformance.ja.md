@@ -4,7 +4,7 @@
 
 `AllocatorChecks`はcore §2.3/5.1/6/9に基づく第一段階の補助検査である。
 公開`AllocatorModel`と`SampleAllocatorAdapter`を使い、SPEC checkoutと出力先を明示する。
-privateベンチや隣接checkoutは探索しない。資源opの符号化はresource-conformance.ja.mdの独自sampleを採用し、
+privateベンチや隣接checkoutは探索しない。資源opの符号化は[資源寿命の適合検査](resource-conformance.ja.md)の独自sampleを採用し、
 資源番号だけはcore §9のとおりu32で運ぶ（create応答・close/use要求・snapshotの番号がu32、上限0xFFFFFFFF）。
 
 

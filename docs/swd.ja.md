@@ -18,7 +18,7 @@ OEP のプローブの SWD につないだ Arm のボードを、書いて、動
   oep settings set oep://<unit id> core channel.GPIO28.label=pico.swdio channel.GPIO27.label=pico.swclk --save
   ```
 
-  どの channel につながったか分からなければ、`oep pins` で探せます（README の「ピンを探す」）。
+  どの channel につながったか分からなければ、`oep pins` で探せます（[ピンを探す](cli.ja.md#ピンを探すoep-pins)）。
 - コンソールに UART を使うなら、ボードの TX をプローブの空いている channel につなぎます（2.4）。
 
 ## 2. Arduino IDE から
