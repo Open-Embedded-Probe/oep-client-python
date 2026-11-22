@@ -1,6 +1,19 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) `core.channels_of(hst, lines)`: the probe's channel numbers of lines named by channel name (`GPIO10`) or line label
+  (`x035.swdio`, `x035@pb9`), the public way in that acquire already used inside.
+- (JA) `core.channels_of(hst, lines)`: channel の名前（`GPIO10`）か線のラベル（`x035.swdio`、`x035@pb9`）で名指した線の、プローブの
+  channel の番号。acquire が中で使っていたものの公開の入口。
+- (EN) Documents: a user guide (`docs/guide.md`: installing, connecting, assigning pins, fixtures, capture, debugging and
+  writing, settings, memo, calling a sketch's interface, the probe's log); the README is the way in and a map of the
+  documents; the `oep` commands (`docs/cli.md`), the module reference (`docs/reference.md`, now with every public module)
+  and the virtual bench (`docs/virtual-bench.md`) have their own documents; tests, the number tables and releases are in
+  CONTRIBUTING.md; `docs/README.md` lists every document, each conformance checker's among them.
+- (JA) 文書: 使い方ガイド（`docs/guide.ja.md`: インストール、つなぎ方、ピンの割り当て、フィクスチャ、キャプチャ、デバッグと書き込み、
+  設定、メモ、スケッチの interface の呼び出し、プローブのログ）。README は入口と文書の地図にした。`oep` の命令（`docs/cli.ja.md`）、
+  モジュール（`docs/reference.ja.md`、公開のモジュールを全部）、仮想ベンチ（`docs/virtual-bench.ja.md`）はそれぞれの文書にした。
+  試験・番号の表・リリースは CONTRIBUTING.ja.md。`docs/README.ja.md` は、検査器ごとの文書を含めて全部の文書を並べる。
 - (EN) **Breaking**: `acquire.Request` names its fields with their units, as the rest of the client does (`clock_hz`,
   `glitch_filter_ns`): `rate` -> `rate_hz`, `analog_rate` -> `analog_rate_hz`, `timeout` -> `timeout_s`, `seconds` ->
   `duration_s`. The old names are gone.

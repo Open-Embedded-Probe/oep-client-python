@@ -245,6 +245,15 @@ def plan_roles(hst: h.Host) -> int | None:
     return struct.unpack("<I", value)[0] if value is not None else None
 
 
+def channels_of(hst: h.Host, lines: list[str]) -> list[int]:
+    """The probe's channel numbers (valid for this boot) of lines named as kept in scripts: a channel name (fn 0's
+    channel_name, core §7.5; GPIO47) or a port's line label (host guide §5.3: S.N by its role, x035.swdio; S@P by the
+    target pin, x035@pb9). ASCII case aside. ValueError names a line the probe does not know."""
+    import sys
+    from . import acquire
+    return acquire._channels(sys.modules[__name__], hst, list(lines))
+
+
 def plan_apply(hst: h.Host, assignments: list[tuple[int, int, int]]) -> None:
     """assignments: (fn, role, channel), through oep.probe.plan (oep-if-plan §2.1; LookupError when the probe offers
     none). The fns named get these plans, every other fn keeps its own; all interfaces accept their roles or nothing
