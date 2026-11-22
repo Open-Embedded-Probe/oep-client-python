@@ -466,7 +466,9 @@ class I2cController(_TargetDeclarations, Interface):
         return bool(self.features & self.FEATURE_INTERNAL_PULLUPS)
 
     def configure(self, clock_hz: int, stretch_timeout_us: int) -> int:
-        """-> the SCL the probe uses: the nearest it makes at or below clock_hz (fixture §5)."""
+        """-> the SCL the probe uses: the nearest it makes at or below clock_hz (fixture §5). clock_hz must lie in
+        min_clock_hz..max_clock_hz (describe); outside it the probe refuses (rejected unsupported: Unsupported)
+        without clamping."""
         rd = m.Reader(self._call(self.CONFIGURE, struct.pack("<II", clock_hz, stretch_timeout_us)).payload)
         used = rd.take("I")
         rd.tail()
@@ -576,7 +578,9 @@ class SpiController(_TargetDeclarations, Interface):
         return self._declared(self.TAG_MAX_DELAY_NS, "I")
 
     def configure(self, mode: int = 0, bit_order: int = 0, clock_hz: int = 1000000) -> int:
-        """-> the SCK the probe uses: the nearest it makes at or below clock_hz (fixture §6)."""
+        """-> the SCK the probe uses: the nearest it makes at or below clock_hz (fixture §6). clock_hz must lie in
+        min_clock_hz..max_clock_hz (describe); outside it the probe refuses (rejected unsupported: Unsupported)
+        without clamping."""
         rd = m.Reader(self._call(self.CONFIGURE, struct.pack("<BBI", mode, bit_order, clock_hz)).payload)
         used = rd.take("I")
         rd.tail()
