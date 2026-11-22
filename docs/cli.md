@@ -33,7 +33,7 @@ close the session. Changes take effect at once, and after `save` they survive a 
 
 A probe keeps the session even when the transport closes (transports §3), so a command that was killed, crashed or lost its wire leaves the lock and
 what it held (connections, plans, subscriptions) until the lease expires. So `link.open_host` keeps the id of the session the host opened in a per-probe file
-(`kept_session.KeptSession` in `Host.kept`; host guide §5), and before the host's first open, ends the session the previous run left:
+(`kept_session.KeptSession` in `Host.kept`; host guide §5). Before the host's first open, it ends the session the previous run left:
 it opens with that id (an open of the session that holds the lock keeps that session; core §6.2: nothing is released) and ends it at once. Then it opens its own session.
 These 2 requests are sent with a corr ahead of any corr the previous run sent (core §5.1): the file keeps, together with the id, the corr that run reserved ahead
 (reserved again 1024 at a time), and the next run continues from beyond it. With a file without it, nothing is ended.
@@ -162,8 +162,8 @@ hst = link.open_host("/dev/ttyUSB0", port_speed=[921600, 500000])
 chooses explicitly, faster speeds are not tried. Put speeds faster than `link.DEFAULT_CEILING` among the candidates only when the user chooses them
 (`oep speed <probe> 921600,500000`, settings). Such a speed, in either the minimal or the full form, is decided only after passing the **1-second check**:
 in the trial state, full frames of oep.probe.link's source (in, max_frame − 7) and sink (out, max_frame − 12),
-and also duplex if the full form checks duplex, are each streamed for 1 second or more (`link.FAST_VERIFY_S`) at that concurrency,
-and judged by the same criteria as the flows (no re-run at n = 1). That trial asks for verify_ms 4000 (6000 if duplex is included), so the lease needs
+and also duplex if the full form checks duplex, are each streamed for 1 second or more (`link.FAST_VERIFY_S`) at that concurrency. They
+are judged by the same criteria as the flows (no re-run at n = 1). That trial asks for verify_ms 4000 (6000 if duplex is included), so the lease needs
 5000 (7000) ms or more (`link.lease_for(candidates, flows, verify)`. `open_host` and `oep speed` take at least that, and with a short
 lease that candidate is skipped). After deciding, it goes through the same probation period and in-use judgment as other speeds. With some converters, a speed faster than 500000 passes the short check
 and still breaks responses on long writes.
@@ -198,8 +198,8 @@ and newly tries the next candidate of that call below those that failed in this 
 remain, the boot speed). The broken speed and those above it are not used for the rest of the session (`speed.stepped_down`, `speed.down_why`,
 `speed.step_downs` with `to` and `probation`). `max_tries=` is the limit on the number of candidates tried in one call (2 for the capture host).
 `record=True` (a bool, a path or a `speed_record.SpeedRecord`; on by default in the `oep speed` CLI, off in the library) keeps the passed / failed
-speeds per (port, unit_id) in `~/.cache/oep-client/link-speed.json` (passed for 30 days, failed for 1 day; a failure measured within
-2 seconds (`settle_s`) of a breakdown at another speed is "unknown"), puts passed speeds first and drops failed ones. When all candidates are recorded as failed,
+speeds per (port, unit_id) in `~/.cache/oep-client/link-speed.json`, puts passed speeds first and drops failed ones. A passed speed is kept for 30
+days and a failed one for 1 day; a failure measured within 2 seconds (`settle_s`) of a breakdown at another speed is "unknown". When all candidates are recorded as failed,
 the slowest candidate is tried once (`speed.retried`). For a unit_id starting with `x-` (a probe with no unique number or storage, core §7.5),
 nothing is kept or read. What is raised is the port this host came by (the transport TLV of the confirm response, core §7.1) when it is a UART bridge.
 A port_speed request that comes on a port that is not a UART bridge, and a trial while a port is raised, are refused with unavailable (cause 6). On a probe without `oep.probe.link`, or whose `oep.probe.link` does not have port_speed,

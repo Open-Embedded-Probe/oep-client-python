@@ -6,8 +6,8 @@ The virtual bench builds the probe, the target behind it and the fixture's wirin
 software without hardware (in this repo, "bench" alone means a real HIL fixture, and the software one is always written "virtual bench").
 
 Its probe, `endpoint.Endpoint`, answers as the norms of the spec it implements say (response data and lists carry lengths, every response can be followed
-by TLVs, describe is declarations only and state is in lock-free state ops, capture generations), and is used as the "spec that runs" to match ch32rv, this client and the probe firmware
-against each other (when the spec changes, this is brought in line before the probe firmware). `virtual_bench` has example declarations (profiles:
+by TLVs, describe is declarations only and state is in lock-free state ops, capture generations). It is used as the "spec that runs" to match ch32rv, this client and the probe firmware
+against each other. When the spec changes, this is brought in line before the probe firmware. `virtual_bench` has example declarations (profiles:
 `p4-x035`; `esp32-v003` = the same frame limits as the classic ESP32 firmware - max_frame 512, riscv-dm max_length 488 -;
 `esp32-v003-64` = the same probe at the smallest max_frame it can declare, 64 (max_length 40, list / describe read in parts);
 `p4-bench` = a fictional fixture with 2 simultaneous connections at 3 RVSWD places; `rp2350-pins` = a wire where the host chooses pins; `core-v1` = core only with
@@ -31,7 +31,7 @@ nothing is received until a test calls an endpoint hook (`i2c_write` / `i2c_read
 The main points of the rules it follows. Core: fn 0 has no name and is not on list, and ops are only the core's required ones. list uses first only. Refusals come in the order header (corr 0 is
 malformed, unknown_function, unknown_operation, session_required), resend (core §5.1: the last corr of the last session opened, and records with limits on the whole request and
 response - a request with a remembered corr and different content is malformed; an unremembered corr 1 to 32767 ahead is a new request, otherwise result_lost),
-session (no_session, locked with the remaining ms and owner); after that, everything is checked before anything is changed, and it answers with any one of the reasons that apply.
+session (no_session, locked with the remaining ms and owner). After that, everything is checked before anything is changed, and it answers with any one of the reasons that apply.
 Unknown non-critical request TLVs are ignored, unknown critical ones are unsupported with the tag as received, implemented TLVs are checked the same
 regardless of bit 7, and TLV number 0 is malformed. unavailable carries cause, channel and fn. connections and streams share one u32 number
 space starting at 1, not reused while the boot_id is the same. Notifications (core §10) go to the connection the fn's subscribe came on; events at once, data
