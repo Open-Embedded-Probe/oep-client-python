@@ -119,6 +119,7 @@ oep settings save <probe>      # if nothing was saved before the run: `oep setti
 |---|---|
 | classic ESP32 | esptool and a merged image |
 | ESP32-P4 | USB DFU app image, or an explicit USB-Serial/JTAG path |
+| ESP32-S3 | esptool and the merged image through the board's USB-UART bridge (OEP talks over the chip's USB) |
 | RP2040 / RP2350 | BOOTSEL and picotool, or an explicit UF2 drive |
 | TCP | Not updated through this entry point. The installed firmware is verified over the given network path |
 

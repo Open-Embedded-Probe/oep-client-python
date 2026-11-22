@@ -119,6 +119,7 @@ oep settings save <probe>      # 走る前に何も保存されていなけれ�
 |---|---|
 | classic ESP32 | esptool と merged image |
 | ESP32-P4 | USB DFU の app image、または明示した USB-Serial/JTAG 経路 |
+| ESP32-S3 | ボードの USB-UART bridge 越しの esptool と merged image（OEP はチップの USB で話す） |
 | RP2040 / RP2350 | BOOTSEL と picotool、または明示した UF2 drive |
 | TCP | この入口では更新しない。指定されたネットワーク経路で設置済み firmware を検証 |
 
