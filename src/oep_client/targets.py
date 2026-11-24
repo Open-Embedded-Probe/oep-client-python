@@ -35,7 +35,6 @@ class Family:
     ids: tuple[tuple[int, int], ...] = ()          # (mask, value) on the scheme-1 target_id; () = not recorded
     reset_vector: int = 0           # where an attach under reset stops (dpc)
     max_speed: int | None = None    # Hz to attach / scan with (None: the wire's own)
-    idle_clock: str | None = None   # rvswd: how SWCLK rests ("high" / "low"); None: the wire's default
     nrst: Callable | None = field(default=None, compare=False)   # nrst(dm) -> NrstState, the hart halted; None: unknown
     gpio_ports: str = ""            # the GPIO ports the map step reads (letters, at GPIO_BASE + GPIO_STEP x index); "": none
     gpio_pads: int = 0              # pads per port: 8 (CFGLR), 16 (+ CFGHR) or 24 (+ CFGXR)
@@ -142,7 +141,7 @@ FAMILIES: tuple[Family, ...] = (
                  "is the package's (CH32V006DS0 note 5: PA7 on the K8U7, PC5 on the E8R and V005E6R6, PD7 on the rest) "
                  "and the ID does not tell the package, so the reset line is found but its pad not named; RST_MODE as "
                  "the V003's (11: off)"),
-    Family("ch32x035", "rvswd", ids=((0xFFF00000, 0x03500000),), idle_clock="high", gpio_ports="ABC", gpio_pads=24,
+    Family("ch32x035", "rvswd", ids=((0xFFF00000, 0x03500000),), gpio_ports="ABC", gpio_pads=24,
            debug_pads=("PC18", "PC19"), nrst=x035_nrst, nrst_pad="PA21",
            bonded=(("PC16", "PC11"), ("PC17", "PC10")),   # datasheet note 4: one lead each except on F8U6 / D8U6
            notes="SWCLK resting low does not connect; NRST on PA21 only while the option bytes' RST_MODE turns it on "
@@ -152,12 +151,12 @@ FAMILIES: tuple[Family, ...] = (
            notes="the CH32X315 (target_id 0x31500000, CH32X315MCU6): answers on one wire (SWIO on PA13) after a "
                  "power-on; NRST on PD2 only while the option bytes' CFGRSTEN turns it on (USER bit 3 = 0); its "
                  "GPIO+0x1C is a speed register, not CFGXR"),
-    Family("ch32l103", "rvswd", ids=((0xFFF00000, 0x10300000),), max_speed=1_000_000, idle_clock="low",
+    Family("ch32l103", "rvswd", ids=((0xFFF00000, 0x10300000),), max_speed=1_000_000,
            gpio_ports="ABCD", gpio_pads=16, debug_pads=("PA13", "PA14"),
            notes="the CH32L103 (target_id 0x10310710): SWCLK resting high resets the debug link; over 1 MHz fails right "
                  "after a reset"),
     Family("ch32v20x", "rvswd", ids=((0xFFF00000, 0x20800000), (0xFFF00000, 0x20300000), (0xFFF00000, 0x20500000)),
-           idle_clock="low", gpio_ports="ABCD", gpio_pads=16, debug_pads=("PA13", "PA14"),
+           gpio_ports="ABCD", gpio_pads=16, debug_pads=("PA13", "PA14"),
            notes="the CH32V208 (target_id 0x2080051c, CH32V208WBU6), the CH32V203 (0x20310500, CH32V203C8T6) and the CH32V205 "
                  "(0x20510510, CH32V205RCT6; SDI on PA13 as well)"),
     Family("ch32v40x", "swio", ids=((0xFFFF0000, 0x46710000),), gpio_ports="ABCDE", gpio_pads=16,

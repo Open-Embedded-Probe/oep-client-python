@@ -75,7 +75,7 @@ TCP で OEP を運ぶ probe は DNS-SD で見つける（ネットワークの�
 `oep pins <probe> [--power CH] [--exclude CH,...] [--wire swio|rvswd|swd] [--pairs D:C,...] [--all-pairs] [--budget S]
 [--steps ...] [--name 口] [--save] [--json]` は、ピンを host が選ぶ probe で、target がどこにつながっているかを探します。各段は何をしたかを
 出し、全体は `--budget`（既定 55 秒）の中で終わり、最後に plan をすべて解きます。手順はこの client のものです（oep-spec の host ガイド §5.3 が決めるのは label での線の探し方だけ）。target の系統ごとに
-要ること（線、リセットのベクタ、リセットの線の有無を読む option の読み方、max_speed / idle_clock、map が読む GPIO の配置と debug の
+要ること（線、リセットのベクタ、リセットの線の有無を読む option の読み方、max_speed、map が読む GPIO の配置と debug の
 ピン、パッケージの中で 1 本のリードにつながる GPIO、探す NRST があるか）は 1 つの表 `targets.FAMILIES` にまとめます。
 
 1. **classify**: `oep.fixture.gpio` が許すすべての channel を、pull-up、pull-down の順に 16 回ずつ読む:

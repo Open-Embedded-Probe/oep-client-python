@@ -1000,8 +1000,6 @@ class PinFinder:
         parts = [f"wire {r.wire}, pins {self._pins_text(self.pins)}"]
         if fam and fam.max_speed:
             parts.append(f"max_speed {fam.max_speed}")
-        if fam and fam.idle_clock and r.wire == "rvswd":
-            parts.append(f"idle_clock {fam.idle_clock}")
         r.profile = ", ".join(parts)
         self.say(f"profile{' ' + self.name if self.name else ''}: {r.profile}   (the host's to keep: the probe keeps "
                  f"no wiring)")

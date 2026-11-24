@@ -1,6 +1,11 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) `targets.Family` no longer has `idle_clock`, and `oep pins` no longer suggests one in the profile: the rvswd rest
+  is the probe's automatic choice from the target_id (registry `idle_low_family`, oep-if-debug §3.1). The table had the
+  CH32V203 / V205 / V208 low, where the automatic choice rests them high.
+- (JA) `targets.Family` から `idle_clock` を外し、`oep pins` の profile も勧めなくなった。rvswd の休ませ方は、プローブが target_id から
+  自動で決める（registry の `idle_low_family`、oep-if-debug §3.1）。表は CH32V203 / V205 / V208 を low にしていたが、自動の判定では high。
 
 ## 0.0.63
 - (EN) `core.channels_of(hst, lines)`: the probe's channel numbers of lines named by channel name (`GPIO10`) or line label

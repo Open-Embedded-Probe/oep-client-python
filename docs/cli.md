@@ -75,7 +75,7 @@ A probe that carries OEP over TCP is found with DNS-SD (network settings belong 
 `oep pins <probe> [--power CH] [--exclude CH,...] [--wire swio|rvswd|swd] [--pairs D:C,...] [--all-pairs] [--budget S]
 [--steps ...] [--name port] [--save] [--json]` finds where a target is connected, on a probe where the host chooses the pins. Each step prints what it
 did, the whole finishes within `--budget` (default 55 seconds), and at the end every plan is undone. The procedure is this client's own (oep-spec host guide §5.3 decides only how to find a wire by label). What each target
-family needs (wires, the reset vector, how to read the option that tells whether there is a reset line, max_speed / idle_clock, the GPIO layout map reads and the debug
+family needs (wires, the reset vector, how to read the option that tells whether there is a reset line, max_speed, the GPIO layout map reads and the debug
 pins, GPIOs connected to one lead inside the package, whether there is an NRST to search for) is collected in one table, `targets.FAMILIES`.
 
 1. **classify**: reads every channel `oep.fixture.gpio` allows 16 times each, under pull-up then pull-down:
