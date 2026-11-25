@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 0.0.64
 - (EN) `targets.Family` no longer has `idle_clock`, and `oep pins` no longer suggests one in the profile: the rvswd rest
   is the probe's automatic choice from the target_id (registry `idle_low_family`, oep-if-debug §3.1). The table had the
   CH32V203 / V205 / V208 low, where the automatic choice rests them high.
