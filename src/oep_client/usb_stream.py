@@ -153,6 +153,10 @@ class UsbAsyncStream:
         self._stats = {"callbacks": 0, "inflight_min": None, "gap_max_s": 0.0, "buffered_max": 0, "bytes": 0,
                        "holds": 0, "held_max": 0}
         self._last_cb = None
+        # where a quiet spell (probe_frame_gap_ms with no data) ended, as offsets into _buffer, timed when the IN
+        # transfers came back - not when the bytes are taken, which a busy host does late (take_all_locked; _Split)
+        self._last_data = None
+        self._quiet_at = []
         for _ in range(self.depth):
             t = handle.getTransfer()
             t.setBulk(endpoint_in, self.urb_size, callback=self._done, timeout=0)
@@ -242,6 +246,9 @@ class UsbAsyncStream:
                 st["holds"] += 1
                 st["held_max"] = max(st["held_max"], len(self._held))
             if data:
+                if self._last_data is None or now - self._last_data >= _Split.QUIET_S:
+                    self._quiet_at.append(len(self._buffer))
+                self._last_data = now
                 self._buffer += data
                 st["bytes"] += len(data)
                 if len(self._buffer) > st["buffered_max"]:
@@ -287,7 +294,16 @@ class UsbAsyncStream:
         """Up to n bytes off the front; the caller holds self._cond (then calls release_held() without it)."""
         out = bytes(self._buffer[:n])
         del self._buffer[:n]
+        if self._quiet_at:
+            self._quiet_at = [k - len(out) for k in self._quiet_at if k >= len(out)]
         return out
+
+    def take_all_locked(self) -> tuple[bytes, list[int]]:
+        """Everything waiting, and the offsets in it where a quiet spell ended (as the transfers came back)."""
+        quiet, self._quiet_at = self._quiet_at, []
+        out = bytes(self._buffer)
+        self._buffer.clear()
+        return out, quiet
 
     def release_held(self) -> None:
         """The held transfers out again once the backlog is under half of backlog_max (outside self._cond)."""
@@ -370,7 +386,11 @@ class _Split:
     answer (a lease renewal, the stop) never waits behind a host that fell behind (P4 at 40 MB/s beside a host under
     load: the answers queued behind 0.6 - 1.3 GB of data and the session ended, wireskein 2026-11-25).
     Bytes that do not read as a frame (an unknown role: a start in the middle of one) go on in order, unsplit, until
-    the input is quiet for probe_frame_gap_ms with no frame half read - the next byte then starts one (transports §5)."""
+    the input was quiet for probe_frame_gap_ms - the next byte then starts one (transports §5). A frame half read is
+    never cut at a quiet spell: on a busy host the quiet is the host's, not the wire's - taken late, or the transfers'
+    callbacks themselves 0.3 - 11 s late, it cut frames still coming and half a frame went to the host ahead of the
+    data (ShortPayload, wireskein 2026-11-25). Where the probe really stopped half way, the next frame does not read
+    (its role) and the bytes go on unsplit, the host's link finding the broken boundary as before."""
 
     ROLES = frozenset(reg.ROLES.values())
     QUIET_S = reg.TIMING["probe_frame_gap_ms"] / 1000
@@ -384,17 +404,19 @@ class _Split:
         self.dropped_frames = self.dropped_bytes = 0
         self._pending = bytearray()
         self._aligned = True
-        self._last = time.monotonic()
 
-    def feed(self, chunk: bytes, now: float | None = None) -> None:
-        now = time.monotonic() if now is None else now
-        quiet = now - self._last >= self.QUIET_S
-        self._last = now
+    def feed(self, chunk: bytes, quiet_at=()) -> None:
+        """`chunk` as it came; `quiet_at`: offsets in it where a quiet spell ended."""
+        cuts = sorted({k for k in quiet_at if 0 <= k < len(chunk)})
+        if not cuts or cuts[0]:
+            cuts.insert(0, None)               # the start is not after a quiet spell
+        for j, k in enumerate(cuts):
+            end = cuts[j + 1] if j + 1 < len(cuts) else len(chunk)
+            self._feed(chunk[k or 0:end], k is not None)
+
+    def _feed(self, chunk: bytes, quiet: bool) -> None:
         first, data = [], []
-        if quiet:
-            if self._pending:                  # a frame that stopped half way: on as it is (the host's stall rule)
-                first.append(bytes(self._pending))
-                self._pending.clear()
+        if quiet:                              # only bytes that did not read as frames start over at a quiet spell
             self._aligned = True
         buf = self._pending
         buf += chunk
@@ -469,10 +491,10 @@ def _child(vid: int, pid: int, serial: str | None, urb_size: int | None, depth: 
                 if not s._buffer:
                     s._cond.wait(0.05)
                 # all of it, at once: the split holds what the host has not taken, so the IN side is never held
-                data = s.take_locked(len(s._buffer))
+                data, quiet = s.take_all_locked()
             s.release_held()
             if data:
-                split.feed(data)
+                split.feed(data, quiet)
 
     def send() -> None:
         while not stop.is_set():

@@ -1,6 +1,14 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) USB vendor streams: a frame half read in the stream's process is no longer cut at a quiet spell. On a busy host
+  the spell was the host's, not the wire's (the bytes taken late, or the transfers' callbacks late), and half a frame
+  went to the host ahead of the data (`ShortPayload` during a stream). Only bytes that do not read as frames start over
+  at a quiet spell, now timed as the transfers come back.
+- (JA) USB の vendor の流れで、受信のプロセスが読みかけのフレームを、静かな間で切らなくなった。混んだ host では、静かな間は
+  線の上のものではなく host のもの（取り出しの遅れや、受け取りの終わりの遅れ）で、半分のフレームがデータより先に host へ
+  渡っていた（流し続けの途中の `ShortPayload`）。静かな間で読み直すのは、フレームとして読めない並びのときだけにした。静かな間は
+  受け取りが終わった時刻で測る。
 
 ## 0.0.65
 - (EN) USB vendor streams: answers go ahead of stream data. The stream's process splits what arrives into frames and sends

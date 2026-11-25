@@ -201,6 +201,9 @@ def test_the_process_side_sends_what_came_in_and_answers_requests(monkeypatch):
             del self._buffer[:n]
             return out
 
+        def take_all_locked(self):
+            return self.take_locked(len(self._buffer)), []
+
         def release_held(self):
             pass
 
@@ -422,8 +425,8 @@ def test_the_split_puts_answers_ahead_of_data_and_drops_data_past_its_limit():
     r1, e1 = _frame(result, b"ok"), _frame(event, b"ev")
     sp = usb_stream._Split(limit=len(d1) + len(d2))
     stream = d1 + d2 + r1 + d3 + e1
-    sp.feed(stream[:5], now=0.0)
-    sp.feed(stream[5:], now=0.001)
+    sp.feed(stream[:5], [0])
+    sp.feed(stream[5:])
     assert sp.next_chunk(1 << 20, 0) == r1 + e1
     assert sp.next_chunk(len(d1), 0) == d1          # data by whole frames, up to `most` (one at least)
     assert sp.next_chunk(1 << 20, 0) == d2
@@ -432,23 +435,56 @@ def test_the_split_puts_answers_ahead_of_data_and_drops_data_past_its_limit():
 
 
 def test_the_split_passes_bytes_that_are_not_frames_on_in_order_until_the_input_is_quiet():
-    """Bytes whose role is unknown (a start inside a frame) go on unsplit, in order, ahead of data; after a quiet spell
-    of probe_frame_gap_ms the next byte starts a frame again. A frame that stopped half way goes on as it is."""
+    """Bytes whose role is unknown (a start inside a frame) go on unsplit, in order, ahead of data; where a quiet spell
+    ended (quiet_at, timed as the transfers came back) the next byte starts a frame again. A frame half read waits for
+    its rest, however late it is taken and whatever quiet spell the host saw inside it."""
     from oep_client import registry as reg
     from oep_client import usb_stream
     data, result = reg.ROLES["data"], reg.ROLES["result"]
-    quiet = usb_stream._Split.QUIET_S
     sp = usb_stream._Split(limit=1 << 20)
     junk = b"\x05\x00\x7f" + b"xyz" + _frame(data, b"d")
-    sp.feed(junk, now=0.0)
+    sp.feed(junk)
     assert sp.next_chunk(1 << 20, 0) == junk
-    sp.feed(_frame(result, b"r"), now=0.01)          # not quiet yet: still unsplit
+    sp.feed(_frame(result, b"r"))                    # no quiet spell: still unsplit
     assert sp.next_chunk(1 << 20, 0) == _frame(result, b"r")
     d, r = _frame(data, b"x"), _frame(result, b"y")
-    sp.feed(d + r, now=0.02 + quiet)                 # quiet: split again
-    assert sp.next_chunk(1 << 20, 0) == r and sp.next_chunk(1 << 20, 0) == d
-    half = _frame(data, b"zzzz")[:4]
-    sp.feed(half, now=1.0)
-    assert sp.next_chunk(1 << 20, 0) == b""
-    sp.feed(r, now=1.01 + quiet)                      # the half frame stopped: on as it is, then a frame again
-    assert sp.next_chunk(1 << 20, 0) == half + r
+    sp.feed(b"\x01" + d + r, [1])                   # a quiet spell before d: split again from there
+    assert sp.next_chunk(1 << 20, 0) == b"\x01" + r and sp.next_chunk(1 << 20, 0) == d
+    whole = _frame(data, b"zzzz")
+    sp.feed(whole[:4])
+    sp.feed(whole[4:] + r)                           # taken late, but no quiet spell on the wire: one frame
+    assert sp.next_chunk(1 << 20, 0) == r and sp.next_chunk(1 << 20, 0) == whole
+    sp.feed(whole[:4])
+    sp.feed(whole[4:] + r, [0])                      # a quiet spell inside a frame (the host's, not the wire's):
+    assert sp.next_chunk(1 << 20, 0) == r and sp.next_chunk(1 << 20, 0) == whole   # not cut
+
+
+def test_the_quiet_spells_are_timed_as_the_transfers_come_back(monkeypatch):
+    """UsbAsyncStream marks where data came after probe_frame_gap_ms without any, timed in the transfers' callbacks;
+    take_locked moves the marks with the bytes it takes, take_all_locked hands them over."""
+    monkeypatch.setitem(sys.modules, "usb1", usb1)
+    from oep_client import usb_stream
+    ctx = Context()
+    s = usb_stream.UsbAsyncStream(ctx, Handle(ctx), 0x81, 0x01, 0, depth=1)
+    q = usb_stream._Split.QUIET_S
+    clock = [100.0]
+    monkeypatch.setattr(usb_stream.time, "monotonic", lambda: clock[0])
+    (t,) = s.handle.transfers
+
+    def back(data, at):
+        clock[0] = at
+        t.status, t.out = usb1.TRANSFER_COMPLETED, False
+        t.getActualLength = lambda: len(data)
+        t.getBuffer = lambda: bytearray(data)
+        t.callback(t)
+    try:
+        back(b"ab", 100.0)
+        back(b"cd", 100.01)
+        back(b"ef", 100.02 + q)
+        assert s._quiet_at == [0, 4]
+        with s._cond:
+            assert s.take_locked(1) == b"a" and s._quiet_at == [3]
+            assert s.take_all_locked() == (b"bcdef", [3]) and s._quiet_at == []
+    finally:
+        monkeypatch.undo()
+        s.close()
