@@ -210,7 +210,7 @@ def test_the_process_side_sends_what_came_in_and_answers_requests(monkeypatch):
     monkeypatch.setattr(usb_stream.UsbAsyncStream, "open", classmethod(lambda cls, *a, **k: fake))
     data_parent, data_child = mp.Pipe(duplex=False)
     cmd_parent, cmd_child = mp.Pipe()
-    t = threading.Thread(target=usb_stream._child, args=(1, 2, None, None, None, data_child, cmd_child), daemon=True)
+    t = threading.Thread(target=usb_stream._child, args=(1, 2, None, None, None, None, data_child, cmd_child), daemon=True)
     t.start()
     assert cmd_parent.recv() == ("ready", 64)
     for part in (b"ab", b"cd", b"e"):
@@ -357,3 +357,50 @@ def test_the_process_stream_stops_taking_the_pipe_while_its_buffer_is_full(monke
         time.sleep(0.01)
     assert s.in_waiting == 25                           # 5 left, under 15: two more taken
     s.close()
+
+
+def test_the_backlog_is_chosen_by_oep_usb_backlog_mb(monkeypatch):
+    """OEP_USB_BACKLOG_MB (MiB) sets the backlog when the caller gives none; unset, BACKLOG_MAX; not a whole number
+    from 1, ValueError. The process stream passes it to its process, which reads no environment of its own."""
+    from oep_client import usb_stream
+    monkeypatch.delenv("OEP_USB_BACKLOG_MB", raising=False)
+    assert usb_stream.backlog_bytes(7) == 7
+    monkeypatch.setenv("OEP_USB_BACKLOG_MB", "512")
+    assert usb_stream.backlog_bytes(7) == 512 * 1024 * 1024
+    for bad in ("0", "-1", "1.5", "big"):
+        monkeypatch.setenv("OEP_USB_BACKLOG_MB", bad)
+        with pytest.raises(ValueError):
+            usb_stream.backlog_bytes(7)
+    monkeypatch.setenv("OEP_USB_BACKLOG_MB", "256")
+    monkeypatch.setitem(sys.modules, "usb1", usb1)
+    ctx = Context()
+    s = usb_stream.UsbAsyncStream(ctx, Handle(ctx), 0x81, 0x01, 0, depth=4)
+    try:
+        assert s.backlog_max == 256 * 1024 * 1024
+    finally:
+        s.close()
+    ctx = Context()
+    s = usb_stream.UsbAsyncStream(ctx, Handle(ctx), 0x81, 0x01, 0, depth=4, backlog_max=8)
+    try:
+        assert s.backlog_max == 8
+    finally:
+        s.close()
+
+
+def test_the_process_stream_hands_its_backlog_to_its_process(monkeypatch):
+    """UsbProcessStream.open gives its process the backlog chosen here (backlog_max=, else OEP_USB_BACKLOG_MB)."""
+    import subprocess
+    from oep_client import usb_stream
+    seen = []
+
+    def popen(args, **kw):
+        seen.append(args)
+        raise OSError("not run")
+
+    monkeypatch.setattr(subprocess, "Popen", popen)
+    monkeypatch.setenv("OEP_USB_BACKLOG_MB", "128")
+    with pytest.raises(ChildProcessError):
+        usb_stream.UsbProcessStream.open(1, 2)
+    with pytest.raises(ChildProcessError):
+        usb_stream.UsbProcessStream.open(1, 2, backlog_max=9)
+    assert [a[8] for a in seen] == [str(128 * 1024 * 1024), "9"]

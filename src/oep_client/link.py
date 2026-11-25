@@ -1337,16 +1337,18 @@ class SerialLink:
 
 def open_usb_host(vid: int = USB_VID, pid: int = USB_PID, serial: str | None = None, timeout: float = 3.0,
                   transports: tuple[str, ...] = ("vendor", "hid"), *, urb_size: int | None = None,
-                  depth: int | None = None):
+                  depth: int | None = None, backlog_max: int | None = None):
     """A Host on the probe's USB device (the P4's HS OTG port), trying its ways in in the transports §3 order: vendor bulk,
     then vendor-defined HID (when raw USB is not permitted or the probe offers no vendor interface). A CDC port is
     opened by path (open_host). Length-prefixed frames on all of them. The device is one the caller chose (or named),
     not one identified: each way in is probed by the confirm-only rule (SerialLink.probe); one that gives no valid
     answer is closed and the next tried. NotOepProbe when every opened way in failed that way. `urb_size` / `depth`:
-    the vendor way's IN transfers (UsbAsyncStream.URB_SIZE x DEPTH by default)."""
+    the vendor way's IN transfers (UsbAsyncStream.URB_SIZE x DEPTH by default). `backlog_max`: the bytes it holds for
+    the host at most (OEP_USB_BACKLOG_MB, else UsbAsyncStream.BACKLOG_MAX; usb_stream.backlog_bytes)."""
     from . import host
     errors, probed = [], []
-    sizes = {k: v for k, v in (("urb_size", urb_size), ("depth", depth)) if v}   # only when the caller chose them
+    sizes = {k: v for k, v in (("urb_size", urb_size), ("depth", depth), ("backlog_max", backlog_max))
+             if v}   # only when the caller chose them
     for kind in transports:
         try:
             stream = _open_usb_stream(kind, vid, pid, serial, **sizes)
@@ -1595,7 +1597,7 @@ def find_usb(unit_id: str) -> tuple[int, int]:
 
 
 def _open_usb_stream(kind: str, vid: int, pid: int, serial: str | None, urb_size: int | None = None,
-                     depth: int | None = None):
+                     depth: int | None = None, backlog_max: int | None = None):
     if kind == "hid":
         from .hid_stream import open_hid
         return open_hid(vid, pid, serial)
@@ -1607,11 +1609,11 @@ def _open_usb_stream(kind: str, vid: int, pid: int, serial: str | None, urb_size
         # 3 in a process - wireskein, 2026-10-20). OEP_USB_STREAM=thread: on this process's thread, as before.
         if os.name == "posix" and os.environ.get("OEP_USB_STREAM", "process") != "thread":
             try:
-                return UsbProcessStream.open(vid, pid, serial, urb_size=urb_size, depth=depth)
+                return UsbProcessStream.open(vid, pid, serial, urb_size=urb_size, depth=depth, backlog_max=backlog_max)
             except (TimeoutError, ChildProcessError, PermissionError) as e:   # the process itself did not run
                 import warnings
                 warnings.warn(f"the USB stream's process did not start ({e}); its thread instead", RuntimeWarning)
-        return UsbAsyncStream.open(vid, pid, serial, urb_size=urb_size, depth=depth)
+        return UsbAsyncStream.open(vid, pid, serial, urb_size=urb_size, depth=depth, backlog_max=backlog_max)
     except ImportError:
         return UsbBulkStream.open(vid, pid, serial)
 

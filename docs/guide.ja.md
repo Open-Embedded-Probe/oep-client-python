@@ -145,6 +145,9 @@ for ch in res.channels:
   capture-group を使います。
 - 失ったデータは `res.lost` に出ます。流し続けで失うと、既定ではそこで止まります（`on_loss="continue"` で最後まで取る）。
 - 長い流し続けは `spool_dir=` でディスクに書きながら取ります。
+- USB の vendor の口は、host が受け取りに遅れた分を 64 MiB（40 MB/s で 1.6 秒分）まで持っておきます。ディスクの書き込みが数秒止まる
+  host など、もっと余裕が要るときは環境変数 `OEP_USB_BACKLOG_MB`（MiB）で増やします（例: `OEP_USB_BACKLOG_MB=512`）。持つ分は
+  メモリを使います。
 
 取り込みの速さ・チャネル数の上限はプローブごとに違い、`oep dump` が describe の値を示します。
 

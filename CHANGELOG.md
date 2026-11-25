@@ -6,6 +6,10 @@
   CH32V203 / V205 / V208 low, where the automatic choice rests them high.
 - (JA) `targets.Family` から `idle_clock` を外し、`oep pins` の profile も勧めなくなった。rvswd の休ませ方は、プローブが target_id から
   自動で決める（registry の `idle_low_family`、oep-if-debug §3.1）。表は CH32V203 / V205 / V208 を low にしていたが、自動の判定では high。
+- (EN) `OEP_USB_BACKLOG_MB` (or `link.open_usb_host(backlog_max=)`) chooses how much a USB vendor stream holds for a host
+  that falls behind (64 MiB by default, 1.6 s at 40 MB/s): a host whose disk stops writing for seconds needs more.
+- (JA) `OEP_USB_BACKLOG_MB`（または `link.open_usb_host(backlog_max=)`）で、USB の vendor の流れが、遅れた host のために持っておく量を
+  選べるようにした（既定は 64 MiB、40 MB/s で 1.6 秒分）。ディスクの書き込みが数秒止まる host ではもっと要る。
 
 ## 0.0.63
 - (EN) `core.channels_of(hst, lines)`: the probe's channel numbers of lines named by channel name (`GPIO10`) or line label

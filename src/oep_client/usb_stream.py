@@ -125,7 +125,8 @@ class UsbAsyncStream:
     # The bytes waiting for read() at most: past it, a transfer that comes back is held, not sent out again, until read()
     # takes them under half - the kernel then takes no more, the probe's own buffer fills and it drops whole frames,
     # which the stream's positions show (core §10.4). Without it a host slower than the stream grew without end (a
-    # P4X at 40 MB/s: the process killed out of memory, 2026-11-17). 64 MiB: 1.6 s at 40 MB/s.
+    # P4X at 40 MB/s: the process killed out of memory, 2026-11-17). 64 MiB: 1.6 s at 40 MB/s. A host whose disk
+    # stops writing for seconds (writeback) needs more: OEP_USB_BACKLOG_MB or backlog_max= chooses it (backlog_bytes).
     BACKLOG_MAX = 64 * 1024 * 1024
 
     def __init__(self, context, handle, endpoint_in: int, endpoint_out: int, interface: int, out_packet: int = 512,
@@ -140,7 +141,7 @@ class UsbAsyncStream:
         self._closed = False           # no more resubmits (close() started)
         self._stop = False             # the event thread ends (every transfer is back)
         self.urb_size, self.depth = urb_size or self.URB_SIZE, depth or self.DEPTH
-        self.backlog_max = backlog_max or self.BACKLOG_MAX
+        self.backlog_max = backlog_max or backlog_bytes(self.BACKLOG_MAX)
         self._held = []                # transfers back while the backlog was full: out again when it drains
         self._transfers = []
         self._active = 0               # transfers submitted and not yet back for good
@@ -172,10 +173,10 @@ class UsbAsyncStream:
 
     @classmethod
     def open(cls, vid: int, pid: int, serial: str | None = None, *, urb_size: int | None = None,
-             depth: int | None = None) -> "UsbAsyncStream":
+             depth: int | None = None, backlog_max: int | None = None) -> "UsbAsyncStream":
         """`urb_size` / `depth`: the IN transfers (URB_SIZE x DEPTH by default). Each transfer back is a callback that
         takes the GIL: fewer, larger ones keep up better beside a thread that holds it (a low rate's latency grows
-        with the size)."""
+        with the size). `backlog_max`: the bytes waiting for read() at most (backlog_bytes by default)."""
         import usb1
         context = usb1.USBContext()
         context.open()
@@ -197,7 +198,7 @@ class UsbAsyncStream:
                 if ins and outs:
                     handle.claimInterface(setting.getNumber())
                     return cls(context, handle, ins[0], outs[0], setting.getNumber(), sizes[outs[0]],
-                               urb_size=urb_size, depth=depth)
+                               urb_size=urb_size, depth=depth, backlog_max=backlog_max)
             handle.close()
         context.close()
         raise FileNotFoundError(f"no USB device {vid:04x}:{pid:04x}" + (f" serial {serial}" if serial else ""))
@@ -345,11 +346,28 @@ class UsbAsyncStream:
             self.context.close()
 
 
-def _child(vid: int, pid: int, serial: str | None, urb_size: int | None, depth: int | None, data_conn, cmd_conn) -> None:
+def backlog_bytes(default: int) -> int:
+    """The USB stream's backlog (UsbAsyncStream.BACKLOG_MAX): OEP_USB_BACKLOG_MB (MiB, a whole number from 1) when set,
+    else `default`. The user chooses the margin: a host whose disk stops for seconds holds that long's data here."""
+    import os
+    value = os.environ.get("OEP_USB_BACKLOG_MB", "").strip()
+    if not value:
+        return default
+    try:
+        mib = int(value)
+    except ValueError:
+        mib = 0
+    if mib < 1:
+        raise ValueError(f"OEP_USB_BACKLOG_MB={value!r}: a whole number of MiB from 1")
+    return mib * 1024 * 1024
+
+
+def _child(vid: int, pid: int, serial: str | None, urb_size: int | None, depth: int | None, backlog_max: int | None,
+           data_conn, cmd_conn) -> None:
     """UsbProcessStream's process: a UsbAsyncStream of its own (its event thread and its GIL away from the host's), a
     thread sending what came in to the host as it can take it, and the host's writes and requests on `cmd_conn`."""
     try:
-        s = UsbAsyncStream.open(vid, pid, serial, urb_size=urb_size, depth=depth)
+        s = UsbAsyncStream.open(vid, pid, serial, urb_size=urb_size, depth=depth, backlog_max=backlog_max)
     except Exception as e:                           # noqa: BLE001  the host raises it
         cmd_conn.send(("err", f"{type(e).__name__}: {e}"))
         return
@@ -445,7 +463,7 @@ class UsbProcessStream:
 
     @classmethod
     def open(cls, vid: int, pid: int, serial: str | None = None, *, urb_size: int | None = None,
-             depth: int | None = None, start_timeout: float = 10.0) -> "UsbProcessStream":
+             depth: int | None = None, backlog_max: int | None = None, start_timeout: float = 10.0) -> "UsbProcessStream":
         """The process is `python -m oep_client.usb_stream` (not multiprocessing's spawn: that runs the caller's
         __main__ again, a script without a main guard twice), the data on a pipe and the requests on a socket pair."""
         import os
@@ -457,10 +475,11 @@ class UsbProcessStream:
         cmd_parent, cmd_child = socket.socketpair()
         package_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         env = dict(os.environ, PYTHONPATH=os.pathsep.join(filter(None, [package_root, os.environ.get("PYTHONPATH")])))
-        # this process's sizes (UsbAsyncStream.URB_SIZE / DEPTH as set here), not the new process's own defaults
+        # this process's sizes (UsbAsyncStream.URB_SIZE / DEPTH / backlog_bytes as set here), not the new process's own
         urb_size, depth = urb_size or UsbAsyncStream.URB_SIZE, depth or UsbAsyncStream.DEPTH
+        backlog_max = backlog_max or backlog_bytes(UsbAsyncStream.BACKLOG_MAX)
         args = [sys.executable, "-m", "oep_client.usb_stream", str(vid), str(pid), serial or "", str(urb_size),
-                str(depth), str(data_w), str(cmd_child.fileno())]
+                str(depth), str(backlog_max), str(data_w), str(cmd_child.fileno())]
         try:
             p = subprocess.Popen(args, pass_fds=(data_w, cmd_child.fileno()), env=env, stdin=subprocess.DEVNULL)
         except OSError as e:
@@ -574,9 +593,9 @@ class UsbProcessStream:
                 pass
 
 
-if __name__ == "__main__":   # UsbProcessStream's process: vid pid serial urb_size depth data_fd cmd_fd
+if __name__ == "__main__":   # UsbProcessStream's process: vid pid serial urb_size depth backlog_max data_fd cmd_fd
     import sys
     from multiprocessing.connection import Connection
-    _vid, _pid, _serial, _urb, _depth, _data_fd, _cmd_fd = sys.argv[1:8]
-    _child(int(_vid), int(_pid), _serial or None, int(_urb) or None, int(_depth) or None,
+    _vid, _pid, _serial, _urb, _depth, _backlog, _data_fd, _cmd_fd = sys.argv[1:9]
+    _child(int(_vid), int(_pid), _serial or None, int(_urb) or None, int(_depth) or None, int(_backlog) or None,
            Connection(int(_data_fd), readable=False), Connection(int(_cmd_fd)))
