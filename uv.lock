@@ -384,7 +384,7 @@ wheels = [
 
 [[package]]
 name = "oep-client-python"
-version = "0.0.64"
+version = "0.0.65"
 source = { editable = "." }
 dependencies = [
     { name = "hidapi" },

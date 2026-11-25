@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 0.0.65
 - (EN) USB vendor streams: answers go ahead of stream data. The stream's process splits what arrives into frames and sends
   results and events to the host before data still waiting, and drops data past its backlog instead of holding the IN
   side (the positions show the loss); this process holds 4 MiB at most. A stream put together on disk drops what
