@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 0.0.66
 - (EN) USB vendor streams: a frame half read in the stream's process is no longer cut at a quiet spell. On a busy host
   the spell was the host's, not the wire's (the bytes taken late, or the transfers' callbacks late), and half a frame
   went to the host ahead of the data (`ShortPayload` during a stream). Only bytes that do not read as frames start over
