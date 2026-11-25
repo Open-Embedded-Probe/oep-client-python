@@ -132,6 +132,29 @@ def test_a_stream_runs_while_the_caller_works_on_the_same_session(probe, tmp_pat
         hst.link.close()
 
 
+def test_a_stream_whose_link_fails_half_way_keeps_what_arrived(probe, tmp_path):
+    """The link failing half way (here raised in during=): what was put together up to there is the result, the
+    failure its last loss (stopped), the session's cleanup not raised over it. A failure that is not the link's goes
+    out as it was, and the spool's directory is removed."""
+    def fails(wait):
+        wait(0.2)
+        raise link.TransportFailed("a request and its resend got no answer")
+    lines = [(f"L{k}", f"GPIO{10 + k}") for k in range(8)]   # a byte a sample: put together on disk as it comes
+    res = acquire.capture_at(probe(), acquire.Request(lines, 1_000_000, 0, mode="stream", during=fails,
+                                                      spool_dir=str(tmp_path)))
+    assert not res.complete and res.parts and sum(p.channels[0].n for p in res.parts) > 0
+    assert res.lost[-1]["stopped"] and res.lost[-1]["reason"].startswith("the link failed: TransportFailed")
+    assert res.meta["stream"]["failed"].startswith("TransportFailed")
+    assert res.temp_dir and res.temp_dir.startswith(str(tmp_path))
+    other = tmp_path / "other"
+    other.mkdir()
+    with pytest.raises(RuntimeError):
+        acquire.capture_at(probe(), acquire.Request(lines, 1_000_000, 0, mode="stream",
+                                                    during=lambda wait: (wait(0.05), (_ for _ in ()).throw(RuntimeError())),
+                                                    spool_dir=str(other)))
+    assert not list(other.iterdir())
+
+
 def test_during_is_for_a_stream_in_place_of_duration_s():
     for kw in ({"mode": "oneshot"}, {"mode": "stream", "duration_s": 1.0}):
         with pytest.raises(ValueError):

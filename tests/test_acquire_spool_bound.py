@@ -1,6 +1,5 @@
-"""acquire._Spool's queue to its worker is bounded (QUEUE_MAX bytes): past it the caller's thread waits for the worker,
-so a stream faster than this host fills no memory - the transport's bounded buffers then hold it back and the probe
-drops whole frames (core §10.4), which the positions show as a loss."""
+"""acquire._Spool's queue to its worker is bounded (QUEUE_MAX bytes): past it what arrives is dropped (a loss at its
+positions) and the caller's thread never waits - it goes on reading the link, so answers are not held behind the stream."""
 import queue
 import threading
 import time
@@ -18,6 +17,7 @@ def spool(slow_s):
     sp.QUEUE_MAX, sp.received, sp.end, sp.segs = 10, 0, 0, {}
     sp._queue, sp._error = queue.Queue(), None
     sp._queued, sp._room = 0, threading.Condition()
+    sp._host_gaps = set()
     sp.done = []
     sp._run = lambda pos, data: (time.sleep(slow_s), sp.done.append(bytes(data)))
     sp._work = lambda final, write_pos: None
@@ -27,18 +27,19 @@ def spool(slow_s):
     return sp
 
 
-def test_the_caller_waits_while_the_queue_is_past_its_bound():
+def test_past_the_bound_what_arrives_is_dropped_and_the_caller_does_not_wait():
     sp = spool(0.2)
     got = Got()
     t0 = time.monotonic()
-    for k in range(4):                                   # 8 bytes each: the third waits for the worker
+    for k in range(4):                                   # 8 bytes each: past 10 queued, dropped
         got.data += bytes([k]) * 8
         sp.take(got)
-    waited = time.monotonic() - t0
-    assert waited >= 0.15 and sp._queued <= sp.QUEUE_MAX + 8
+    assert time.monotonic() - t0 < 0.15 and sp._queued <= sp.QUEUE_MAX + 8
     sp._queue.put(("final", None))
     sp._worker.join(2)
-    assert [d[0] for d in sp.done] == [0, 1, 2, 3] and sp._queued == 0
+    kept = [d[0] for d in sp.done]
+    assert kept[0] == 0 and len(kept) < 4 and sp._queued == 0
+    assert all(k * 8 in sp._host_gaps for k in range(4) if k not in kept)
 
 
 def test_a_worker_that_failed_does_not_keep_the_caller_waiting():
@@ -88,3 +89,19 @@ def test_the_spill_diagnostics_go_into_meta_with_the_harvest_gap_in_us():
     probe = {}
     acquire._note_spill(probe, oc, Old())
     assert "spill" not in probe
+
+
+def test_a_loss_where_this_host_dropped_says_so():
+    """A skipped position at a place take() dropped is "this host fell behind", elsewhere the probe's drop."""
+    import types
+    sp = acquire._Spool.__new__(acquire._Spool)
+    sp.req = types.SimpleNamespace(on_loss="continue")
+    sp.at, sp.pending, sp.parts, sp.cur, sp.lost, sp.stopped, sp.bytes = None, bytearray(), [], None, [], False, 0
+    sp._work = lambda final, write_pos: None
+    sp._close = lambda: None
+    sp._host_gaps = {8}
+    sp._run(0, b"x" * 8)
+    sp._run(16, b"y" * 8)            # 8..16 dropped here
+    sp._run(40, b"z" * 8)            # 24..40 not ours: the probe's
+    assert [x["reason"].split(" (")[0] for x in sp.lost] == ["this host fell behind",
+                                                              "the probe dropped a segment"]

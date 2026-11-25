@@ -387,7 +387,7 @@ def _run(target: str, req: Request, fast, hst, owner, link) -> Result:
     try:
         res = _capture(link, core, oc, oh, message, target, req, None, None, fast, hst,
                        owner or "oep_client.acquire")
-        if isinstance(res, (_Streamed, _GroupStreamed)):   # put together after the session closed: it may take a while
+        if isinstance(res, (_Streamed, _GroupStreamed, _FailedStream)):   # put together after the session closed
             res = _put_together(res, hst)
         return res
     except oh.OepError as e:        # the probe refused or failed: say what, not where
@@ -395,6 +395,18 @@ def _run(target: str, req: Request, fast, hst, owner, link) -> Result:
         if "(storage)" in str(e):     # capture §2.2: data lost inside a segment stops the track with error 2
             hint = " - the probe lost data inside a segment: try a lower rate or fewer channels"
         raise RuntimeError(f"probe {target}: {e}{hint}") from e
+
+
+def _quietly_if(failed: list, fn) -> None:
+    """fn(), its error dropped when the stream already failed (`failed`): the session is most likely gone with the link,
+    and what the stream kept is the result, its failure among its losses."""
+    if not failed:
+        fn()
+        return
+    try:
+        fn()
+    except Exception:                            # noqa: BLE001
+        pass
 
 
 def _put_together(res, hst):
@@ -701,6 +713,14 @@ def _link_info(hst, rates: list[int], open_s: float, read_bytes: int, read_s: fl
     reader = getattr(lk, "reader", None)
     if isinstance(reader, str):
         out["reader"] = reader                            # usb-async / usb-sync (a one-read host's pauses drop data)
+    stats = getattr(getattr(lk, "stream", None), "stats", None)
+    if callable(stats):                                   # the USB stream's own counts (usb_stream: split_dropped_*)
+        try:
+            got = stats()
+            if isinstance(got, dict):
+                out["stream"] = got
+        except Exception:                                 # noqa: BLE001 - a bonus to the record
+            pass
     rep = getattr(lk, "speed", None)
     if rates:
         out["asked"] = rates
@@ -735,6 +755,7 @@ def _capture(link, core, oc, oh, message, target: str, req: Request, ids: list[i
     names = [n for n, _ in req.channels]
     t_open = time.monotonic()
     remembered, own = False, hst is None
+    failed = []                                    # a stream whose link failed half way: its cleanup may fail too
     if own:
         hst = link.open_host(target)
     try:
@@ -795,7 +816,8 @@ def _capture(link, core, oc, oh, message, target: str, req: Request, ids: list[i
                         return _group_stream_result(cap, an, hst, cfg, acfg, req, names, ids, aids, probe, fast,
                                                     open_s, clock_before, oc, an.calibration(),
                                                     _frontends(core, hst, an.fn))
-                    return _stream_result(cap, hst, cfg, req, names, ids, probe, fast, open_s, clock_before, oc)
+                    return _stream_result(cap, hst, cfg, req, names, ids, probe, fast, open_s, clock_before, oc,
+                                          failed)
                 if req.mode == "repeat":       # with a trigger, one per segment (rearm 1, capture §2.1 / §3.3)
                     if trigger:
                         blocks["trigger_opts"] = oc.TriggerOpts(arm=0 if req.arm == "now" else 1, rearm=1)
@@ -926,11 +948,11 @@ def _capture(link, core, oc, oh, message, target: str, req: Request, ids: list[i
                 probe["clock"] = clock
             frontends = _frontends(core, hst, an.fn) if an else {}
         finally:
-            core.plan_release(hst, fns)
+            _quietly_if(failed, lambda: core.plan_release(hst, fns))
     finally:
         if own:
             try:
-                hst.end()
+                _quietly_if(failed, hst.end)
             finally:
                 close = getattr(getattr(hst, "link", None), "close", None)
                 if close is not None:
@@ -1280,7 +1302,12 @@ def _group_stream_result(cap, an, hst, cfg, acfg, req: Request, names, ids, aids
         if getattr(cfg, "stream_buffer", None) is not None:
             probe["stream_buffer"] = {"bytes": cfg.stream_buffer, "tolerable_delay_s": cfg.tolerable_delay_s(None)}
         spool = _Spool(cap, cfg, names, ids, req) if _spools(cfg) else None
-        got, read_s = _collect_group(group, [cap, an], hst.link, req, oc, spool)
+        try:
+            got, read_s = _collect_group(group, [cap, an], hst.link, req, oc, spool)
+        except BaseException:
+            if spool is not None:                # nothing kept: logic without its analog is not this capture
+                spool.discard()
+            raise
     finally:
         group.bind([])
     lg, ag = got[cap.fn], got[an.fn]
@@ -1436,7 +1463,8 @@ def _analog_stream_result(an, hst, acfg, req: Request, aids, probe, fast, open_s
     return _Streamed(an, acfg, got, st, names, aids, req, meta, oc, None, tail, build)
 
 
-def _stream_result(cap, hst, cfg, req: Request, names, ids, probe, fast, open_s, clock_before, oc) -> Result:
+def _stream_result(cap, hst, cfg, req: Request, names, ids, probe, fast, open_s, clock_before, oc,
+                   failed: list | None = None) -> Result:
     """A stream (capture §2.1 mode 3): subscribe, start, collect for req.duration_s, stop and collect the rest. A loss
     (a skipped position: the probe dropped a segment it had no room to send) stops it at once with on_loss "stop"
     (the default), else it goes on; either way the capture is incomplete, a failure (parts and losses)."""
@@ -1446,8 +1474,26 @@ def _stream_result(cap, hst, cfg, req: Request, names, ids, probe, fast, open_s,
         probe["stream_buffer"] = {"bytes": cfg.stream_buffer, "tolerable_delay_s": cfg.tolerable_delay_s()}
     if getattr(cfg, "data_rate", None):                   # what the setting sends (§3.3): the host's margin to judge
         probe["data_rate"] = cfg.data_rate
+    from . import host as oh
     spool = _Spool(cap, cfg, names, ids, req) if _spools(cfg) else None
-    got, read_s = _collect(cap, link, req, oc, spool)
+    t_read = time.monotonic()
+    try:
+        got, read_s = _collect(cap, link, req, oc, spool)
+    except (ConnectionError, TimeoutError, oh.OepError) as e:
+        if spool is None:                        # put together at the end, in memory: nothing kept to give
+            raise
+        if failed is not None:                   # the session's cleanup may fail too: the stream's failure is the news
+            failed.append(e)
+        spool.end_input()
+        probe["link"] = _link_info(hst, fast, open_s, spool.received, time.monotonic() - t_read)
+        meta = {"probe_channels": dict(zip(names, ids)), "probe": probe,
+                "stream": {"duration_s": req.duration_s, "on_loss": req.on_loss, "bytes": spool.received,
+                           "failed": f"{type(e).__name__}: {e}"}}
+        return _FailedStream(cfg, spool, meta, e)
+    except BaseException:
+        if spool is not None:
+            spool.discard()
+        raise
     st = cap.status()
     if spool is not None:                        # handed over now; waited for once the session is closed (the worker
         spool.give(got, write_pos=st.write_pos if st.state == oc.STATE["error"] else None)   # may be behind)
@@ -1472,6 +1518,28 @@ def _stream_result(cap, hst, cfg, req: Request, names, ids, probe, fast, open_s,
             "stream": {"duration_s": req.duration_s, "on_loss": req.on_loss, "frames": got.frames,
                        "bytes": received, "read_s": round(read_s, 3)}}
     return _Streamed(cap, cfg, got, st, names, ids, req, meta, oc, spool, tail)
+
+
+class _FailedStream:
+    """A stream whose link failed half way (a request unanswered, the session gone): what was put together up to there,
+    with the failure as its last loss (stopped) - the parts are kept, not left half written in the spool. Nothing kept:
+    the spool removed and the failure raised as it was."""
+    def __init__(self, cfg, spool, meta, error):
+        self.cfg, self.spool, self.meta, self.error = cfg, spool, meta, error
+
+    def result(self) -> Result:
+        try:
+            self.spool.finish()
+        except Exception:                        # noqa: BLE001 - the link's failure is the news
+            self.spool.discard()
+            raise self.error
+        parts, lost = self.spool.parts, self.spool.done_lost
+        if not parts:
+            self.spool.discard()
+            raise self.error
+        lost.append({"after_part": len(parts) - 1, "stopped": True,
+                     "reason": f"the link failed: {type(self.error).__name__}: {self.error}"})
+        return Result(Fraction(self.cfg.rate), parts[0].channels, self.meta, parts, lost, "timeline", self.spool.dir)
 
 
 class _Streamed:
@@ -1518,10 +1586,11 @@ class _Spool:
     """A stream put together while it comes (parts and losses parts on a timeline): after each poll the bytes
     that arrived are taken out of the client's Received (its start moved on, so it goes on counting positions), the
     channels' bits appended to files by the output and the events kept; a skipped position ends the part (a loss)
-    and the next part starts where the bytes do again. The worker's queue holds QUEUE_MAX bytes at most: past it the
-    caller's thread waits for the worker, the transport's buffers fill (each bounded: usb_stream) and the probe drops
-    whole frames, which the positions show as a loss - a stream faster than this host fills no memory (a P4X at 40 MB/s
-    queued gigabytes until the process was killed, 2026-11-17)."""
+    and the next part starts where the bytes do again. The worker's queue holds QUEUE_MAX bytes at most: past it what
+    arrives is dropped here, a loss at its positions ("this host fell behind") - a stream faster than this host fills no
+    memory (a P4X at 40 MB/s queued gigabytes until the process was killed, 2026-11-17), and the caller's thread never
+    waits for the worker: it goes on reading the link, so the answers (the lease, the stop) are not held behind the
+    stream (the caller waiting here let them queue behind 0.6 - 1.3 GB and the session ended, wireskein 2026-11-25)."""
 
     QUEUE_MAX = 256 * 1024 * 1024
 
@@ -1545,7 +1614,8 @@ class _Spool:
         import queue
         import threading
         self._queue, self._error = queue.Queue(), None
-        self._queued, self._room = 0, threading.Condition()   # bytes in the queue; the caller waits on _room
+        self._queued, self._room = 0, threading.Condition()   # bytes in the queue (the worker takes them off)
+        self._host_gaps = set()         # stream positions where take() dropped what arrived (the queue was full)
         self._worker = threading.Thread(target=self._drain, name="oep-acquire-spool", daemon=True)
         self._worker.start()
 
@@ -1562,6 +1632,19 @@ class _Spool:
         if self._error is not None:
             raise self._error
 
+    def end_input(self) -> None:
+        """No more comes (the link failed): the worker puts together what it has and ends."""
+        if not self._given:
+            self._queue.put(("final", None))
+            self._given = True
+
+    def discard(self) -> None:
+        """Nothing is kept: the worker ended and the spool's directory removed."""
+        import shutil
+        self.end_input()
+        self._worker.join()
+        shutil.rmtree(self.dir, ignore_errors=True)
+
     _given = False
 
     def take(self, got, final: bool = False, write_pos: int | None = None) -> None:
@@ -1575,9 +1658,12 @@ class _Spool:
             self.received += len(data)
             self.end = got.start                 # the position just past what arrived
         with self._room:
-            while self._queued > self.QUEUE_MAX and self._worker.is_alive() and self._error is None:
-                self._room.wait(0.1)
-            self._queued += len(data)
+            full = self._queued > self.QUEUE_MAX
+            if not full:
+                self._queued += len(data)
+        if full and start is not None and data:  # dropped: the next bytes' position shows the loss
+            self._host_gaps.add(start)
+            data, gaps, start = b"", [], None
         self._queue.put((segs, start, data, gaps))
         if final:
             self._queue.put(("final", write_pos))
@@ -1619,12 +1705,14 @@ class _Spool:
                                        f"to keep (a lower --rate or fewer channels, or --on-loss continue)")
                 self.lost.append({"after_part": -1, "reason": f"the probe dropped the first {p0} bytes (no room to send)"})
             self.at = p0
-        elif p0 != self.at + len(self.pending):  # a skipped position: the probe dropped a segment
+        elif p0 != self.at + len(self.pending):  # a skipped position: the probe dropped a segment, or take() did
+            behind = self.at + len(self.pending) in self._host_gaps
             self._work(True, None)
             self._close()
             stop = self.req.on_loss == "stop"
             self.lost.append({"after_part": len(self.parts) - 1,
-                              "reason": "the probe dropped a segment (no room to send)", "_next": p0,
+                              "reason": "this host fell behind (its queue to put the stream together was full)"
+                              if behind else "the probe dropped a segment (no room to send)", "_next": p0,
                               **({"stopped": True} if stop else {})})
             if stop:
                 self.stopped = True

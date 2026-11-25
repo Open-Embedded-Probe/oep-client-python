@@ -145,10 +145,14 @@ for ch in res.channels:
 - Analog lines are added with `analog=[("V", "GPIO16", None)]` and `analog_rate_hz`. Logic and analog starting together use the
   probe's capture-group.
 - Lost data shows in `res.lost`. A stream that loses data stops there by default (`on_loss="continue"` takes it to the end).
+  When the host cannot keep up, the data it cannot take is dropped as a loss, and the answers to requests (the lease's
+  renewal, the stop) go ahead of it. When the link fails half way (no answer comes, the session is gone), what was put
+  together up to there is the result, with the failure as the last loss in `res.lost` (for a stream put together on disk
+  as it comes).
 - A long stream is written to disk as it comes with `spool_dir=`.
 - The USB vendor way holds up to 64 MiB (1.6 s at 40 MB/s) of what the host is late to take. When more margin is needed,
   such as on a host whose disk stops writing for seconds, raise it with the environment variable `OEP_USB_BACKLOG_MB`
-  (MiB; for example `OEP_USB_BACKLOG_MB=512`). What it holds is in memory.
+  (MiB; for example `OEP_USB_BACKLOG_MB=512`). What it holds is in memory; past it, data is a loss.
 
 The limits of capture rates and channel counts differ by probe; `oep dump` shows describe's values.
 

@@ -183,6 +183,7 @@ def test_the_process_side_sends_what_came_in_and_answers_requests(monkeypatch):
 
     class Fake:
         out_packet = 64
+        backlog_max = 1 << 20
 
         def __init__(self):
             self._cond, self._buffer, self.closed = threading.Condition(), bytearray(), False
@@ -226,7 +227,7 @@ def test_the_process_side_sends_what_came_in_and_answers_requests(monkeypatch):
     cmd_parent.send(("write", b"bad"))
     assert cmd_parent.recv()[0] == "err"
     cmd_parent.send(("stats", None))
-    assert cmd_parent.recv() == ("ok", {"callbacks": 1})
+    assert cmd_parent.recv() == ("ok", {"callbacks": 1, "split_dropped_frames": 0, "split_dropped_bytes": 0})
     cmd_parent.send(("close", None))
     t.join(2.0)
     assert not t.is_alive() and fake.closed
@@ -404,3 +405,50 @@ def test_the_process_stream_hands_its_backlog_to_its_process(monkeypatch):
     with pytest.raises(ChildProcessError):
         usb_stream.UsbProcessStream.open(1, 2, backlog_max=9)
     assert [a[8] for a in seen] == [str(128 * 1024 * 1024), "9"]
+
+
+def _frame(role: int, body: bytes = b"") -> bytes:
+    import struct
+    return struct.pack("<H", 1 + len(body)) + bytes([role]) + body
+
+
+def test_the_split_puts_answers_ahead_of_data_and_drops_data_past_its_limit():
+    """_Split: a result or an event goes out before data frames still waiting; data frames past the limit are dropped
+    whole (counted); a frame split across chunks is put together; every frame keeps its length prefix."""
+    from oep_client import registry as reg
+    from oep_client import usb_stream
+    data, result, event = reg.ROLES["data"], reg.ROLES["result"], reg.ROLES["event"]
+    d1, d2, d3 = _frame(data, b"a" * 10), _frame(data, b"b" * 10), _frame(data, b"c" * 10)
+    r1, e1 = _frame(result, b"ok"), _frame(event, b"ev")
+    sp = usb_stream._Split(limit=len(d1) + len(d2))
+    stream = d1 + d2 + r1 + d3 + e1
+    sp.feed(stream[:5], now=0.0)
+    sp.feed(stream[5:], now=0.001)
+    assert sp.next_chunk(1 << 20, 0) == r1 + e1
+    assert sp.next_chunk(len(d1), 0) == d1          # data by whole frames, up to `most` (one at least)
+    assert sp.next_chunk(1 << 20, 0) == d2
+    assert sp.next_chunk(1 << 20, 0) == b""
+    assert sp.stats() == {"split_dropped_frames": 1, "split_dropped_bytes": len(d3)}
+
+
+def test_the_split_passes_bytes_that_are_not_frames_on_in_order_until_the_input_is_quiet():
+    """Bytes whose role is unknown (a start inside a frame) go on unsplit, in order, ahead of data; after a quiet spell
+    of probe_frame_gap_ms the next byte starts a frame again. A frame that stopped half way goes on as it is."""
+    from oep_client import registry as reg
+    from oep_client import usb_stream
+    data, result = reg.ROLES["data"], reg.ROLES["result"]
+    quiet = usb_stream._Split.QUIET_S
+    sp = usb_stream._Split(limit=1 << 20)
+    junk = b"\x05\x00\x7f" + b"xyz" + _frame(data, b"d")
+    sp.feed(junk, now=0.0)
+    assert sp.next_chunk(1 << 20, 0) == junk
+    sp.feed(_frame(result, b"r"), now=0.01)          # not quiet yet: still unsplit
+    assert sp.next_chunk(1 << 20, 0) == _frame(result, b"r")
+    d, r = _frame(data, b"x"), _frame(result, b"y")
+    sp.feed(d + r, now=0.02 + quiet)                 # quiet: split again
+    assert sp.next_chunk(1 << 20, 0) == r and sp.next_chunk(1 << 20, 0) == d
+    half = _frame(data, b"zzzz")[:4]
+    sp.feed(half, now=1.0)
+    assert sp.next_chunk(1 << 20, 0) == b""
+    sp.feed(r, now=1.01 + quiet)                      # the half frame stopped: on as it is, then a frame again
+    assert sp.next_chunk(1 << 20, 0) == half + r

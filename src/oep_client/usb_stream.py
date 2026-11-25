@@ -11,6 +11,7 @@ transfer; if its timeout hits first, pyusb raises and the bytes already received
 from __future__ import annotations
 
 import atexit
+import collections
 import threading
 import time
 
@@ -362,10 +363,97 @@ def backlog_bytes(default: int) -> int:
     return mib * 1024 * 1024
 
 
+class _Split:
+    """UsbProcessStream's process: the IN bytes as length-prefixed frames (transports §2), answers ahead of data. A
+    result or an event goes to the host before any data frame still waiting; data frames past `limit` bytes waiting
+    are dropped whole, which the stream's positions show as a loss (core §10.4) - the IN side is never held, so an
+    answer (a lease renewal, the stop) never waits behind a host that fell behind (P4 at 40 MB/s beside a host under
+    load: the answers queued behind 0.6 - 1.3 GB of data and the session ended, wireskein 2026-11-25).
+    Bytes that do not read as a frame (an unknown role: a start in the middle of one) go on in order, unsplit, until
+    the input is quiet for probe_frame_gap_ms with no frame half read - the next byte then starts one (transports §5)."""
+
+    ROLES = frozenset(reg.ROLES.values())
+    QUIET_S = reg.TIMING["probe_frame_gap_ms"] / 1000
+
+    def __init__(self, limit: int):
+        self.limit = limit
+        self.cond = threading.Condition()
+        self.first = collections.deque()       # answers, events and unsplit bytes: out first, in order
+        self.data = collections.deque()        # data frames (with their length prefix)
+        self.data_bytes = 0
+        self.dropped_frames = self.dropped_bytes = 0
+        self._pending = bytearray()
+        self._aligned = True
+        self._last = time.monotonic()
+
+    def feed(self, chunk: bytes, now: float | None = None) -> None:
+        now = time.monotonic() if now is None else now
+        quiet = now - self._last >= self.QUIET_S
+        self._last = now
+        first, data = [], []
+        if quiet:
+            if self._pending:                  # a frame that stopped half way: on as it is (the host's stall rule)
+                first.append(bytes(self._pending))
+                self._pending.clear()
+            self._aligned = True
+        buf = self._pending
+        buf += chunk
+        i = 0
+        if self._aligned:
+            while len(buf) - i >= 2:
+                length = buf[i] | buf[i + 1] << 8
+                if length and len(buf) - i >= 3 and buf[i + 2] not in self.ROLES:
+                    self._aligned = False
+                    break
+                if len(buf) - i < 2 + length:
+                    break
+                frame = bytes(buf[i:i + 2 + length])
+                (data if length and frame[2] == reg.ROLES["data"] else first).append(frame)
+                i += 2 + length
+        if not self._aligned:
+            first.append(bytes(buf[i:]))
+            i = len(buf)
+        del buf[:i]
+        if not first and not data:
+            return
+        with self.cond:
+            self.first.extend(first)
+            for frame in data:
+                if self.data_bytes + len(frame) > self.limit:
+                    self.dropped_frames += 1
+                    self.dropped_bytes += len(frame)
+                    continue
+                self.data.append(frame)
+                self.data_bytes += len(frame)
+            self.cond.notify_all()
+
+    def next_chunk(self, most: int, timeout: float) -> bytes:
+        """What goes to the host next: every waiting answer, else data frames up to `most` bytes (one at least)."""
+        with self.cond:
+            if not self.first and not self.data:
+                self.cond.wait(timeout)
+            if self.first:
+                out = b"".join(self.first)
+                self.first.clear()
+                return out
+            parts, n = [], 0
+            while self.data and (not parts or n + len(self.data[0]) <= most):
+                frame = self.data.popleft()
+                parts.append(frame)
+                n += len(frame)
+            self.data_bytes -= n
+            return b"".join(parts)
+
+    def stats(self) -> dict:
+        with self.cond:
+            return {"split_dropped_frames": self.dropped_frames, "split_dropped_bytes": self.dropped_bytes}
+
+
 def _child(vid: int, pid: int, serial: str | None, urb_size: int | None, depth: int | None, backlog_max: int | None,
            data_conn, cmd_conn) -> None:
     """UsbProcessStream's process: a UsbAsyncStream of its own (its event thread and its GIL away from the host's), a
-    thread sending what came in to the host as it can take it, and the host's writes and requests on `cmd_conn`."""
+    thread taking what came in at once and splitting it (_Split: answers ahead, data past the backlog dropped), a
+    thread sending it to the host as it can take it, and the host's writes and requests on `cmd_conn`."""
     try:
         s = UsbAsyncStream.open(vid, pid, serial, urb_size=urb_size, depth=depth, backlog_max=backlog_max)
     except Exception as e:                           # noqa: BLE001  the host raises it
@@ -373,24 +461,31 @@ def _child(vid: int, pid: int, serial: str | None, urb_size: int | None, depth: 
         return
     cmd_conn.send(("ready", s.out_packet))
     stop = threading.Event()
+    split = _Split(s.backlog_max)
 
-    def send() -> None:
+    def take() -> None:
         while not stop.is_set():
             with s._cond:
                 if not s._buffer:
                     s._cond.wait(0.05)
-                # one chunk at a time off the front (a bytearray drops its front without moving the rest): a backlog
-                # copied whole at each send held every byte back while it copied - tens of MB beside a host swapping
-                # (P4X e8f60ae84dd7 at 160 MS/s x 2, 40 MB/s, 2026-11-17)
-                data = s.take_locked(ProcessStreamChunk)
+                # all of it, at once: the split holds what the host has not taken, so the IN side is never held
+                data = s.take_locked(len(s._buffer))
             s.release_held()
+            if data:
+                split.feed(data)
+
+    def send() -> None:
+        while not stop.is_set():
+            data = split.next_chunk(ProcessStreamChunk, 0.05)
             try:
                 if data:
                     data_conn.send_bytes(data)
             except (OSError, EOFError):
                 return
 
+    taker = threading.Thread(target=take, daemon=True)
     sender = threading.Thread(target=send, daemon=True)
+    taker.start()
     sender.start()
     try:
         while True:
@@ -404,13 +499,14 @@ def _child(vid: int, pid: int, serial: str | None, urb_size: int | None, depth: 
                 if kind == "write":
                     cmd_conn.send(("ok", s.write(arg)))
                 elif kind == "stats":
-                    cmd_conn.send(("ok", s.stats()))
+                    cmd_conn.send(("ok", {**s.stats(), **split.stats()}))
                 else:
                     cmd_conn.send(("err", f"unknown request {kind!r}"))
             except Exception as e:                   # noqa: BLE001
                 cmd_conn.send(("err", f"{type(e).__name__}: {e}"))
     finally:
         stop.set()
+        taker.join(timeout=0.5)
         sender.join(timeout=0.5)
         s.close()
         data_conn.close()
@@ -447,8 +543,9 @@ class UsbProcessStream:
     2026-10-20). What came in waits in that process until this one reads it."""
     READER = "usb-process"
     # The bytes waiting for read() here at most: past it this process stops taking the pipe, so the stream's process
-    # holds them, then its transfers (UsbAsyncStream.BACKLOG_MAX) - memory stays bounded whatever the host keeps up with
-    BUFFER_MAX = 64 * 1024 * 1024
+    # holds them (_Split: data past its backlog dropped there) - memory stays bounded whatever the host keeps up with.
+    # Small: an answer waits behind what is here, and the stream's process puts answers ahead only of what it holds.
+    BUFFER_MAX = 4 * 1024 * 1024
 
     def __init__(self, process, data_conn, cmd_conn, out_packet: int):
         self.process, self._data, self._cmd, self.out_packet = process, data_conn, cmd_conn, out_packet

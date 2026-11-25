@@ -1,6 +1,24 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) USB vendor streams: answers go ahead of stream data. The stream's process splits what arrives into frames and sends
+  results and events to the host before data still waiting, and drops data past its backlog instead of holding the IN
+  side (the positions show the loss); this process holds 4 MiB at most. A stream put together on disk drops what
+  arrives while its queue is full (a loss: "this host fell behind") instead of making the reader wait. A host that cannot
+  keep up loses data but keeps its session: before, the answers queued behind the data and the lease ran out.
+  `meta.probe.link.stream` has the USB stream's counts (`split_dropped_frames` / `split_dropped_bytes`).
+- (JA) USB の vendor の流れで、要求の答えをデータより先に通すようにした。受信のプロセスは届いたものをフレームに分け、結果と
+  出来事を、待っているデータより先に host へ送る。持ち分を超えたデータは IN を止めずに捨てる（位置の飛びで損失に出る）。
+  こちらのプロセスが持つのは 4 MiB まで。ディスクで組み立てる流し続けは、組み立ての待ちが満ちている間に届いた分を捨てて
+  損失にし（「this host fell behind」）、読む側を待たせない。追いつかない host はデータを失うが、セッションは保たれる。これまでは
+  答えがデータの後ろに並び、lease が切れていた。`meta.probe.link.stream` に USB の流れの数（`split_dropped_frames` /
+  `split_dropped_bytes`）を出す。
+- (EN) A stream put together on disk whose link fails half way (no answer, the session gone) gives what it put together
+  up to there, with the failure as its last loss (stopped) and in `meta.stream.failed`; with nothing put together, or
+  on any other failure, its spool directory is removed and the error raised. Before, the partial files were left behind.
+- (JA) ディスクで組み立てる流し続けで途中で link が失敗したとき（答えが来ない、セッションが切れた）、そこまでに組み立てた分を
+  結果として返す。失敗は最後の損失（stopped）と `meta.stream.failed` に出る。何も組み立てていないとき、ほかの失敗のときは、
+  一時ディレクトリを消して例外を上げる。これまでは途中のファイルが残っていた。
 
 ## 0.0.64
 - (EN) `targets.Family` no longer has `idle_clock`, and `oep pins` no longer suggests one in the profile: the rvswd rest
