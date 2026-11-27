@@ -119,11 +119,13 @@ TABLE: dict[str, Board] = {b.id: b for b in (
           flash_port=f"{BY_ID}/esp32-s3-e4b063b49f2c",
           notes="ESP32-S3 board (ESP32-S3R8: octal PSRAM), its CH343 bridge on UART0 and its USB-OTG port both on the host; "
                 "nothing wired: free for OEP tests", **_S3),
-    Board("152a3f44e811780e", "rp2", "rp2040", "rp2040", "oep://152a3f44e811780e?via=cdc", unit_id="152a3f44e811780e",
-          gpio=(2, 3), disable=4, uart=(13, 12),
-          notes="Raspberry Pi Pico (RP2040), ours: a CH32V003's SWIO on GP1 (v003.swio@pd1), a Pico's SWD on GP10 / GP8 "
-                "(pico.swdio / pico.swclk), a Pico 2's (RP2350) on GP21 / GP22 (pico2.swdio / pico2.swclk): "
-                "OEP_HW_RP2=pico or pico2 for the rp2_swd test; keyed by unit id"),
+    Board("152a3f44e820407f", "rp2", "rp2040", "rp2040", "oep://152a3f44e820407f?via=cdc", unit_id="152a3f44e820407f",
+          gpio=(2, 3), disable=4, uart=(17, 16), analog=26,
+          notes="Raspberry Pi Pico (RP2040), ours (resident 10-1): a Pico's SWD on GP0 / GP1 (rp2040-407f.swdio / .swclk), "
+                "a Pico 2's (RP2350) on GP12 / GP13 (rp2350-407f.swdio / .swclk), a CH32V003's SWIO on GP5 "
+                "(v003f4p6-407f.swio@pd1), a CH32X035F8U6's RVSWD on GP9 / GP8 (x035f8u6-407f.swdio@pc18 / .swclk@pc19), "
+                "GP16 and GP17 joined by a jumper (UART0 TX / RX), GP26 (ADC0) free: OEP_HW_RP2=rp2040-407f or rp2350-407f for the rp2_swd "
+                "test; keyed by unit id"),
     # The ATOM over Wi-Fi / TCP: the same board and firmware as above, flashed and given its networks through its bridge
     # entry (OEP_WIFI_SSID_<n> / OEP_WIFI_PASS_<n> on that run); found by DNS-SD unless OEP_HW_ATOM_TCP names it
     # (tcp://HOST:PORT - from WSL 2's NAT mDNS does not reach the board; `oep settings network` over the bridge shows its ip)
